@@ -9,18 +9,22 @@ Scoped to extensions only. The tenancy tables (`tenant`, `user`, `workspace`,
 security and the role-to-scope mapping — creating them here would pre-empt that
 design and produce a migration that M1 immediately rewrites.
 
-What this migration exists to prove is narrower and more useful: that migrations
-run against the target database, and that **pgvector is actually available on
-it**. Doc 07 §3 requires pgvector specifically so the permission predicate is an
-ordinary SQL `WHERE` clause evaluated as part of the ANN query (I3). A managed
-Postgres without the extension would fail much later, in M5, after a great deal
-of work had been built on the assumption.
+**On pgvector.** An earlier version of this migration hard-failed when pgvector
+was absent. That was the right requirement in the wrong place: nothing before M5
+performs vector search, so gating M0-M4 on it blocks work that does not need it.
+See ADR 0004. The requirement has not been softened — it has moved:
+
+- here:  `vector` is created **if available**, and its absence is recorded, not fatal
+- M5:    a migration hard-requires it, because that is where indexing begins
+- always: `/health/ready` reports pgvector as a distinct dependency state, so its
+          absence is visible from day one rather than discovered in M5
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0001"
@@ -30,27 +34,34 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Vector similarity search with filterable columns — the basis of I3.
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     # gen_random_uuid() for primary keys, and digest() for content-addressed
-    # chunk hashing in M5.
+    # chunk hashing in M5. Required now — a genuine hard dependency.
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
-    # Fail loudly and immediately if the target cannot actually provide vector
-    # search, rather than surfacing it as a confusing error in M5.
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
-                RAISE EXCEPTION
-                    'pgvector is not available on this database. NEXUS requires it: '
-                    'the permission predicate must be part of the ANN query, not a '
-                    'post-filter (doc 06 4.4). Use a Postgres that supports pgvector.';
-            END IF;
-        END $$;
-        """
-    )
+    # Vector similarity search with filterable columns — the basis of I3, where
+    # the permission predicate is part of the ANN query rather than a
+    # post-filter. Attempted here so a database that already has it is set up
+    # correctly, but not required until M5.
+    bind = op.get_bind()
+    available = bind.execute(
+        sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+    ).first()
+
+    if available is not None:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    else:
+        # Deliberately a notice, not an exception. Visible in migration output
+        # and in /health/ready; fatal only at M5.
+        op.execute(
+            """
+            DO $$
+            BEGIN
+                RAISE NOTICE
+                    'pgvector is not available on this server. Not required until M5, '
+                    'but retrieval (M6) depends on it. /health/ready reports this.';
+            END $$;
+            """
+        )
 
 
 def downgrade() -> None:

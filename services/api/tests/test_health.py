@@ -29,7 +29,38 @@ def test_readiness_reports_not_ready_without_a_database() -> None:
     assert body["status"] == "not_ready"
 
     names = {check["name"] for check in body["checks"]}
-    assert names == {"database", "object_storage"}
+    assert names == {"database", "pgvector", "object_storage"}
+
+
+def test_pgvector_is_reported_but_advisory() -> None:
+    """ADR 0004 — pgvector is not required until M5.
+
+    It must still be *visible* from day one, so it is reported as its own
+    dependency rather than folded into the database check or omitted. Absent it
+    would only be discovered when indexing starts; required it would block four
+    milestones that never touch vector search.
+    """
+    with TestClient(create_app()) as client:
+        checks = client.get("/health/ready").json()["checks"]
+
+    pgvector = next(c for c in checks if c["name"] == "pgvector")
+    assert pgvector["required_now"] is False
+    assert pgvector["detail"]
+
+    database = next(c for c in checks if c["name"] == "database")
+    assert database["required_now"] is True
+
+
+def test_advisory_checks_do_not_gate_readiness() -> None:
+    """A failing advisory check alone must not make the service not_ready."""
+    from app.health import DependencyCheck
+
+    checks = [
+        DependencyCheck(name="database", state="ok"),
+        DependencyCheck(name="object_storage", state="ok"),
+        DependencyCheck(name="pgvector", state="unconfigured", required_now=False),
+    ]
+    assert all(c.state == "ok" for c in checks if c.required_now)
 
 
 def test_readiness_never_reports_ok_for_an_unconfigured_dependency() -> None:

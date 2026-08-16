@@ -1,0 +1,44 @@
+# NEXUS OS — Documentation Set
+
+Version 0.9 (Draft for review) · 16 August 2026 · Parul Bhoite
+
+| File | What it is | Read it if you are |
+|---|---|---|
+| `01-NEXUS-OS-PRD.md` / `.docx` | **Lean PRD** — analysis of the idea and its motive, users, principles, MVP scope cut, module requirements with acceptance criteria, NFRs, AI grounding contract, metrics, risks, open decisions | Building the product |
+| `02-NEXUS-OS-Solution-Offering.md` / `.docx` | **Solution offering** — problem, value narrative, seven pillars, AI executive team, competitive position, packaging and tiers, cost to run, delivery model | Selling or positioning it |
+| `03-NEXUS-OS-Architecture-and-Roadmap.md` / `.docx` | **Architecture & roadmap** — component design, grounding pipeline, data model, integration inventory, phased roadmap, effort estimate, engineering standards | Scoping or estimating the build |
+| `04-NEXUS-OS-Flow-and-Cold-Start-Analysis.md` / `.docx` | **Flow & cold-start analysis** — a deliberately adversarial read of the onboarding flow: what we ask the user, what the crawler should infer instead, the data-source truth table for every capability, and what the dashboard can honestly show when the customer connects nothing | Designing onboarding or the empty states |
+| `05-Department-Dashboard-Offerings-and-Data-Assumptions.md` / `.docx` | **Department dashboard spec** — every offering for each of the seven AI directors, the information assumptions behind each widget, degraded states, the CRM normalisation model, the new Operations data layer, and which departments are scoreable | Designing or building the dashboard |
+| `06-User-Journey-and-System-Design.md` / `.docx` | **User journey & system design** — the 17-step journey specified stage by stage: account types, role-derived departments, the persona object, domain verification, the Company Brain permission model, the review gate, the always-on assistant, the untrusted-content and prompt-injection boundary, the Claude Agent SDK mapping, the admin panel, and the gaps in the journey | Building the application |
+| `NEXUS-OS-Solution-Overview.pptx` | **Executive deck** (20 slides) — opportunity, solution, capability, trust model, architecture, business model, roadmap, risks, next steps | Presenting to stakeholders |
+
+## Source material
+
+Everything here derives from four supplied documents plus the interactive prototype:
+
+- `Ai Business.pdf` — project understanding, resourcing, tech stack, INR 49K setup cost
+- `AI-Business-OS-Business-Model.pdf` — market, revenue model, 12 Phase-1 modules, architecture
+- `NEXUS-OS-AI-Prompt-Library.docx` — 23 production prompt modules with grounding rules and JSON schemas
+- `NEXUS-OS-Monthly-Running-Costs.xlsx` — per-service cost breakdown, ~$260/month total
+- `https://nexusdraftnew.netlify.app/` — landing page, 11-step onboarding, full dashboard
+
+## The findings that shaped these documents
+
+1. **The prototype is a materially bigger product than the written scope.** The business-model document commits 12 modules to Phase 1; the prototype adds Business Simulator, Opportunity Radar, Competitor War Room, Customer Intelligence, Decision Intelligence and NEXUS Labs on top. These documents reconcile the two by cutting an explicit MVP and dating — not deleting — the rest.
+
+2. **The moat is the Company Brain, not the feature list.** Any single feature is copyable. A customer's accumulated business context is not, and it compounds every week they use the product.
+
+3. **The cold-start problem is unsolved in the current flow.** None of the prototype's headline dashboard numbers are available on day one. Document 04 works this through in full.
+
+4. **NEXUS connects to the customer's CRM rather than replacing it** (decision, Aug 2026). That makes the new **Operations / Delivery layer the only first-party data NEXUS owns** — so its adoption, not CRM adoption, now determines whether the executive layer ever works. Document 05 specifies the consequences.
+
+5. **Trust is an engineering problem, not a marketing one.** The supplied prompt library is unusually disciplined about never inventing numbers. That discipline is elevated here into a per-module contract enforced in code and CI, because it is the single thing that decides whether people keep believing the product.
+
+## Figures and their status
+
+All numbers reproduced from the source material are labelled as such. Two in particular are flagged as unvalidated **in the source itself** and should be treated as planning inputs, not commitments:
+
+- **$49/month** — reference price point, explicitly to be validated with real customers
+- **~$260/month** — running cost at validation-stage volume, scaling with usage
+
+Effort estimates (~18 / ~17 / ~23 person-months by phase) are derived from the stated scope and team composition; they are planning estimates, not quotes.

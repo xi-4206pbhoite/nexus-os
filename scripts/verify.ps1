@@ -46,12 +46,27 @@ function Probe([string]$Url) {
 
 Write-Host "`n=== Infrastructure ===" -ForegroundColor Cyan
 
+# Two backends can serve 5432 (ADR 0006 Docker, ADR 0001 native). Report which
+# one is actually answering — a passing check against the wrong database is
+# worse than a failing one.
+$backend = 'none'
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    $health = docker inspect --format '{{.State.Health.Status}}' nexus-db 2>$null
+    if ($health -eq 'healthy') { $backend = 'docker (pgvector image)' }
+}
+
 $pgReady = 'D:\PostgreSQL\pgsql\bin\pg_isready.exe'
+$reachable = $false
 if (Test-Path $pgReady) {
     & $pgReady -h 127.0.0.1 -p 5432 | Out-Null
-    Show 'postgres' ($LASTEXITCODE -eq 0) '127.0.0.1:5432'
+    $reachable = ($LASTEXITCODE -eq 0)
+    if ($reachable -and $backend -eq 'none') { $backend = 'native cluster' }
+}
+
+if ($backend -eq 'none' -and -not $reachable) {
+    Show 'postgres' $false 'nothing on 127.0.0.1:5432 - see scripts\db-docker.ps1'
 } else {
-    Show 'postgres' $false 'not installed - see scripts\pg-local.ps1'
+    Show 'postgres' $true "127.0.0.1:5432 via $backend"
 }
 
 Write-Host "`n=== Services (start them first if these fail) ===" -ForegroundColor Cyan

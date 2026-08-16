@@ -147,9 +147,17 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M5 — Documents, classification, indexing
 
-⛔ **Gate before starting: pgvector must be resolved** (ADR 0004). Three options — Docker + the official
-`pgvector/pgvector` image · a hosted Postgres with pgvector · a local build from official source with MSVC.
-Supersede ADR 0004 with the choice.
+⛔ **Blocked: Docker Desktop is not installed.** Route chosen and recorded as **ADR 0006** — the official
+`pgvector/pgvector:pg17` image via `docker-compose.yml`. Everything is prepared; the install needs two
+elevated commands and a reboot, which this session cannot perform:
+
+```
+wsl --install          # elevated; Windows Home needs WSL2 for Docker Desktop
+(restart)
+winget install --id Docker.DockerDesktop
+```
+
+Then `.\scripts\db-docker.ps1 -Action up` brings the database up with pgvector and runs migrations.
 
 - [ ] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
 - [ ] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)

@@ -10,14 +10,25 @@ function Invoke-Step {
     param([string]$Name, [string]$Dir, [scriptblock]$Body)
     Write-Host "`n=== $Name ===" -ForegroundColor Cyan
     Push-Location (Join-Path $root $Dir)
+
+    # Windows PowerShell 5.1 wraps a native command's stderr in an ErrorRecord,
+    # which $ErrorActionPreference='Stop' turns into a terminating error. Tools
+    # here write ordinary output to stderr — npm update notices, ruff's summary,
+    # alembic's INFO — so the strict preference reports a passing step as a
+    # failure. An `npm notice` failed the whole gate while tsc exited 0.
+    # Relax around the call and branch on the real exit code.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        & $Body
-        if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
+        & $Body 2>&1 | ForEach-Object { "$_" }
+        $exit = $LASTEXITCODE
+        if ($exit -ne 0) { throw "exit $exit" }
         Write-Host "PASS  $Name" -ForegroundColor Green
     } catch {
         Write-Host "FAIL  $Name -- $_" -ForegroundColor Red
         $script:failed += $Name
     } finally {
+        $ErrorActionPreference = $previous
         Pop-Location
     }
 }

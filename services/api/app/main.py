@@ -11,8 +11,10 @@ from fastapi import FastAPI, Request, Response
 
 from app.config import Env, get_settings
 from app.health import router as health_router
+from app.jobs.scheduler import build_scheduler
 from app.logging import configure_logging, get_logger, request_id_var
 from app.routes.auth import router as auth_router
+from app.routes.onboarding import router as onboarding_router
 from app.routes.preview import router as preview_router
 
 log = get_logger(__name__)
@@ -26,7 +28,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         level=logging.DEBUG if settings.debug else logging.INFO,
     )
     log.info("api.startup", env=settings.env.value, embedding_dim=settings.embedding_dim)
+
+    # Only run scheduled work when there is a database to run it against.
+    # Starting a sweep that cannot connect would log a failure every hour.
+    scheduler = None
+    if settings.database_url.get_secret_value():
+        scheduler = build_scheduler()
+        scheduler.start()
+        log.info("scheduler.started", jobs=[j.id for j in scheduler.get_jobs()])
+
     yield
+
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
     log.info("api.shutdown")
 
 
@@ -63,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(preview_router)
+    app.include_router(onboarding_router)
     return app
 
 

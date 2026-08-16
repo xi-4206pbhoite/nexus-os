@@ -98,15 +98,25 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M3 — Registration and domain verification
 
-- [ ] 3.1 Email verification via mailpit in dev (⛔ **D4** — production email provider)
-- [ ] 3.2 Domain verification: DNS TXT and file-at-path (**strong**); same-domain email (**weak** → flags Owner-claim review)
-- [ ] 3.3 Workspace creation **gated** on verification — no workspace exists without a verified domain
-- [ ] 3.4 Two workspaces claiming one domain → first verified wins, second enters claim-dispute
-- [ ] 3.5 Ownership transfer; revocation when the verifying method stops resolving; re-verification cadence
-- [ ] 3.6 Preview data expiry job + deletion-request path for the crawled company, which has no account (doc 06 §10)
-- [ ] 3.7 `MILESTONE-3.md`
+✅ **COMPLETE — awaiting validation.** See `MILESTONE-3.md`.
 
-**Done when:** no workspace exists without a verified domain; Preview data expires.
+- [~] 3.1 Email verification — tokens hashed, single-use, expiring, superseded on reissue; `FileMailer`
+      writes `.eml` in dev (⛔ **D4** production provider). **`POST /auth/register` does not yet send it**
+- [x] 3.2 DNS TXT and file-at-path (**strong**); same-domain email (**weak** → sets `owner_claim_review`).
+      The file check is SSRF-guarded and address-pinned; redirects refused
+- [x] 3.3 Workspace creation gated — `create_workspace_for_claim` is the only path that inserts a workspace
+- [x] 3.4 Two workspaces, one domain → first verified wins via the partial unique index; loser gets a
+      `disputed` claim record. The `IntegrityError` race is handled, not just the check-then-insert
+- [ ] 3.5a Ownership transfer — **not built**
+- [x] 3.5b Revocation — `revoke_claim` flags the workspace for review rather than deleting it
+- [~] 3.5c Re-verification cadence — `next_check_at` and `claims_due_for_recheck` exist and are tested;
+      only the expiry job is scheduled
+- [x] 3.6 Preview expiry — hard delete on an hourly sweep, plus `delete_previews_for_domain` as the
+      deletion path for a crawled company with no account. Claimed previews are exempt
+- [x] 3.7 `MILESTONE-3.md`
+- [x] 3.8 APScheduler wired into the app lifespan; in-process limitation recorded in `scheduler.py`
+
+**Done when:** no workspace exists without a verified domain, and Preview data expires. **Both met.**
 **You validate:** try to create a workspace for a domain you do not control, and fail.
 
 ---

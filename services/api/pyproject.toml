@@ -18,6 +18,10 @@ dependencies = [
   "httpx>=0.28",
   "tenacity>=9.0",
   "structlog>=24.4",
+  # Scheduler for expiry sweeps and, later, crawls and score recomputation.
+  "apscheduler>=3.10",
+  # DNS TXT lookups for domain verification; the stdlib resolves addresses only.
+  "dnspython>=2.7",
 ]
 
 [project.optional-dependencies]
@@ -81,7 +85,8 @@ disallow_any_generics = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "fastembed.*"]
+# No type stubs published upstream.
+module = ["pgvector.*", "fastembed.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 # ─────────────────────────────────────────────────────────────

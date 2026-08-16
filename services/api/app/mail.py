@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formatdate
 from pathlib import Path
@@ -58,8 +59,9 @@ class FileMailer(Mailer):
     def send(self, message: Email) -> str:
         msg = _build(message, self._sender)
         message_id = str(msg["Message-ID"])
-        # Timestamp-prefixed so the directory reads in send order.
-        name = f"{formatdate(localtime=True)[:25].replace(' ', '_').replace(':', '')}-{uuid.uuid4().hex[:8]}.eml"
+        # Sortable UTC prefix so the directory reads in send order.
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+        name = f"{stamp}-{uuid.uuid4().hex[:8]}.eml"
         (self._root / name).write_bytes(bytes(msg))
         return message_id
 

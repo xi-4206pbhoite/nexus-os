@@ -89,8 +89,10 @@ def test_expired_signature_is_rejected(store: FilesystemObjectStore) -> None:
     key = workspace_key(WS, "documents", "a.pdf")
     store.put(key, b"x", content_type="application/pdf")
 
+    # Reaching into the private signer is deliberate: minting a genuinely
+    # expired signature is the only way to prove expiry is checked.
     past = int(time.time()) - 1
-    signature = store._signature(key, past)  # noqa: SLF001 — asserting expiry, not the API
+    signature = store._signature(key, past)
     assert not store.verify_signed_url(key, past, signature)
 
 

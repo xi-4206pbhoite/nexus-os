@@ -54,10 +54,35 @@ async def _check_database(settings: Settings) -> DependencyCheck:
             state="unconfigured",
             detail="NEXUS_DATABASE_URL is not set — see .env.example",
         )
-    # The real connectivity probe (and the pgvector extension assertion) lands
-    # with the database layer in M0.5. Reporting "unconfigured" honestly here is
-    # better than reporting "ok" for something not yet wired.
-    return DependencyCheck(name="database", state="degraded", detail="probe not yet implemented")
+
+    # Imported here so a missing/invalid URL cannot break module import and take
+    # the liveness endpoint down with it.
+    from sqlalchemy import text
+
+    from app.db import _unscoped_session
+
+    try:
+        async with _unscoped_session() as session:
+            await session.execute(text("SELECT 1"))
+            # Connectivity alone is not readiness. Without pgvector the
+            # permission predicate cannot be part of the ANN query (I3), so a
+            # reachable database lacking it is not a database we can serve from.
+            result = await session.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            )
+            if result.first() is None:
+                return DependencyCheck(
+                    name="database",
+                    state="degraded",
+                    detail="connected, but the pgvector extension is not installed",
+                )
+    except Exception as exc:
+        # A probe reports; it never raises. The exception *type* only — an
+        # asyncpg connection error message can contain the DSN, and doc 07 §7
+        # forbids secrets reaching the log or response stream.
+        return DependencyCheck(name="database", state="error", detail=type(exc).__name__)
+
+    return DependencyCheck(name="database", state="ok", detail="pgvector present")
 
 
 def _check_storage(settings: Settings) -> DependencyCheck:

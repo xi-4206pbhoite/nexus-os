@@ -116,18 +116,33 @@ Community prebuilt Windows DLLs exist and were **deliberately not used** — loa
 
 ## How to validate
 
-```powershell
-cd D:\Projects\NEXUS_OS
-.\scripts\pg-local.ps1 -Action status          # cluster up on 127.0.0.1:5432
-.\scripts\ci.ps1                               # expect: CI GREEN
+One command, from `D:\Projects\NEXUS_OS`:
 
-# start API:  cd services\api; .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
-# start web:  npm run dev --prefix apps\web
-curl http://127.0.0.1:8000/health/ready        # 200, database ok, pgvector advisory
-curl http://localhost:3000/api/health          # 200, api ok
+```powershell
+.\scripts\verify.ps1
 ```
 
-To prove the honest-degradation behaviour: `.\scripts\pg-local.ps1 -Action stop`, then hit `/health/ready` — it should return **503** with `database: error`, and the web endpoint should report `api: not_ready` rather than pretending.
+It runs the full gate and probes every health endpoint, printing each dependency and its state. Expect **ALL GREEN**.
+
+Start the services first if the probes fail (each in its own terminal):
+
+```powershell
+cd services\api; .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+```
+
+```powershell
+npm run dev --prefix apps\web
+```
+
+To see the honest degradation for yourself — stop the database, re-probe, restart:
+
+```powershell
+.\scripts\pg-local.ps1 -Action stop
+.\scripts\verify.ps1 -SkipGate
+.\scripts\pg-local.ps1 -Action start
+```
+
+Readiness should go **503** with `database: error`, while `/health` stays **200** — an outage must not look like a dead process.
 
 ---
 

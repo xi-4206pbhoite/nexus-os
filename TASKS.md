@@ -123,20 +123,25 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M4 — Onboarding, persona, scope enforcement
 
-⛔ **Blocked on D5** (Contributor L3 subset) and **D6** (six-director consequence).
+✅ **COMPLETE — awaiting validation.** See `MILESTONE-4.md`. `D5` resolved as **ADR 0005**.
 
-- [ ] 4.1 **Test first:** a Contributor reaching an L3 aggregate, expected to fail
-- [ ] 4.2 Pass 1 (signup): role · department (derived, confirmable) · what they want help with · company URL
-- [ ] 4.3 Pass 2 (after audit): ranked goals · challenges · ideal customer · average deal size · marketing budget · words to avoid · currency + fiscal year · brief recipients
-- [ ] 4.4 **Onboarding answers scope-tagged at capture** — deal size is L3 Sales, budget is L3 Finance, *not* company-public (doc 06 §2.5)
-- [ ] 4.5 Persona as a stored, editable record; **no persona field is ever an input to the retrieval predicate** (doc 06 §2.6) — test asserts this
-- [ ] 4.6 Invitations: **role set by the inviter, never self-declared at acceptance** (privilege escalation via dropdown)
-- [ ] 4.7 Brief-recipients question sequenced **after** team invitation (doc 06 §4.10)
-- [ ] 4.8 Role → scope enforced at the API layer, not the UI
-- [ ] 4.9 `MILESTONE-4.md`
+- [x] 4.1 **Test first** — 27 cases attacking the Contributor boundary, plus 13 on the API-layer mapping
+- [x] 4.2 Pass 1 catalogue — role · department (derived, confirmable) · purpose · company URL
+- [x] 4.3 Pass 2 catalogue — goals · challenges · ideal customer · deal size · budget · brand terms ·
+      currency · fiscal year
+- [x] 4.4 **Answers scope-tagged at capture** — `average_deal_size` L3 Sales, `monthly_marketing_budget`
+      L3 Finance; unknown keys raise rather than default; a CHECK constraint forbids L3 without a department
+- [x] 4.5 Persona stored separately and asserted **never** to reach the retrieval predicate — three ways
+- [x] 4.6 Invitations carry the role and who set it; acceptance copies it, never supplies it
+- [x] 4.7 `brief_recipients` sequenced into a post-invite stage (doc 06 §4.10)
+- [x] 4.8 Role → scope enforced at the API layer via `deps_scope`; LOCKED is a 200 rendered state,
+      DENY is a 404, and neither leaks a count
+- [x] 4.9 `MILESTONE-4.md`
+- [ ] 4.10 Onboarding wizard UI and the answer/invitation routes — **not built**; the tables, rules and
+      enforcement layer they will use are
 
-**Done when:** the role → scope table is enforced at the API layer and a Contributor cannot reach L3 aggregates.
-**You validate:** log in as each role; confirm the surface matches doc 06 §2.3.
+**Done when:** the role → scope table is enforced at the API layer and a Contributor cannot reach L3 aggregates. **Met.**
+**You validate:** log in as each role and confirm the surface matches doc 06 §2.3.
 
 ---
 

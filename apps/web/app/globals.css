@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --shell-x: clamp(1.25rem, 5vw, 3.5rem);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Scroll-reveal animations translate elements horizontally before they enter
+     the viewport, which can widen the document. `clip` contains that without
+     creating a scroll container (which would break position: sticky). */
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  body {
+    @apply bg-white text-ink-800 font-sans antialiased;
+    /* Fine paper grain — sells the cut-paper concept without an image request. */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    @apply bg-gold-300 text-ink-900;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-steel-500 ring-offset-2 ring-offset-white rounded-sm;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display text-ink-800;
+  }
+
+  /* Respect the OS setting — motion is decoration, never information. */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-shell px-[var(--shell-x)];
+  }
+
+  .eyebrow {
+    @apply font-mono text-2xs uppercase tracking-[0.22em] text-steel-500;
+  }
+
+  /* Cut-paper surface: warm edge, inset highlight, soft cast shadow. */
+  .paper {
+    @apply rounded-card border border-bone-300/70 bg-white shadow-paper;
+  }
+
+  .paper-tinted {
+    @apply rounded-card border border-bone-300/70 bg-bone-50 shadow-paper;
+  }
+
+  .link-underline {
+    @apply relative inline-block;
+  }
+  .link-underline::after {
+    content: '';
+    @apply absolute -bottom-0.5 left-0 h-px w-full origin-right scale-x-0 bg-current transition-transform duration-300 ease-out-expo;
+  }
+  .link-underline:hover::after {
+    @apply origin-left scale-x-100;
+  }
+
+  .hairline {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-bone-300 to-transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+
+  .mask-fade-x {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+
+  .pause-on-hover:hover > * {
+    animation-play-state: paused;
+  }
+}

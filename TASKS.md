@@ -20,10 +20,11 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 - [x] 0.4c `ObjectStore` — interface + filesystem driver with expiring HMAC-signed URLs (12 tests)
 - [x] 0.4d `Mailer` — interface + file driver writing `.eml`
 - [x] 0.5a Alembic wired; fails with an actionable message when `DATABASE_URL` is absent; `0001` resolves as head
-- [x] 0.5b Migration 0001 — `vector` + `pgcrypto` extensions, with a guard that raises if pgvector is unavailable.
+- [x] 0.5b Migration 0001 — `pgcrypto` required; `vector` created if available, `NOTICE` if not (**ADR 0004**).
       **Scoped to extensions only**: `tenant`/`user`/`workspace`/`membership` move to M1, where they are designed
       together with RLS and the role→scope mapping rather than being rewritten immediately
 - [ ] 0.5c **Apply** migration 0001 against a real database ⛔ needs `NEXUS_DATABASE_URL`
+- [ ] 0.5d Local PostgreSQL 17 install (official EnterpriseDB build) so 0.5c can run without Docker or a hosted account
 - [x] 0.6 Config and secrets — pydantic-settings, `.env` gitignored, no usable default for any secret
 - [x] 0.7 `structlog` JSON logging with request id; secret redaction **and** a hard refusal to log customer content
 - [x] 0.8 `/health` (liveness, touches nothing) · `/health/ready` (per-dependency, asserts pgvector is present, leaks
@@ -112,6 +113,11 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M5 — Documents, classification, indexing
 
+⛔ **Gate before starting: pgvector must be resolved** (ADR 0004). Three options — Docker + the official
+`pgvector/pgvector` image · a hosted Postgres with pgvector · a local build from official source with MSVC.
+Supersede ADR 0004 with the choice.
+
+- [ ] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
 - [ ] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)
 - [ ] 5.2 Upload with **consent capture** including the right-to-use warranty (doc 06 §5)
 - [ ] 5.3 Parse PDF/DOCX/PPTX/XLSX; chunk with **source doc and page retained** (citations depend on it)

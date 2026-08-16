@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { PaperLandscape } from '@/components/art/PaperLandscape'
 import { Button, ArrowRight } from '@/components/ui/Button'
+import { PreviewForm } from '@/components/preview/PreviewForm'
 import { RevealWords } from '@/components/motion/Reveal'
 import { IconSparkle, IconCheck } from '@/components/art/Icons'
 import { hero } from '@/lib/content'
@@ -154,18 +155,21 @@ export function Hero() {
               {hero.sub}
             </motion.p>
 
+            {/* Doc 06 §1: one primary action — enter your website. The URL is
+                captured before registration and becomes the first fact NEXUS
+                holds. */}
             <motion.div
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.84, ease: [0.16, 1, 0.3, 1] }}
-              className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center"
+              className="mt-9"
             >
-              <Button href="#cta" size="lg" icon={<ArrowRight />}>
-                {hero.primaryCta}
-              </Button>
-              <Button href="#loop" size="lg" variant="secondary">
-                {hero.secondaryCta}
-              </Button>
+              <PreviewForm />
+              <div className="mt-4">
+                <Button href="#loop" size="md" variant="ghost">
+                  {hero.secondaryCta}
+                </Button>
+              </div>
             </motion.div>
 
             <motion.p

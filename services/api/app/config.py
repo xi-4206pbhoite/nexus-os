@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     tenant_daily_token_budget: int = 2_000_000
     user_daily_token_budget: int = 200_000
 
+    # ── Trusted proxies ───────────────────────────────────────
+    # X-Forwarded-For is attacker-controlled by default: anyone can send it,
+    # and believing it lets one client mint unlimited rate-limit identities.
+    # It is honoured *only* when the direct peer is listed here. Empty means
+    # trust nothing and use the direct peer — the safe default, at the cost of
+    # every visitor behind a proxy sharing one bucket.
+    trusted_proxy_ips: str = ""
+
     # ── Preview crawl (doc 06 §1.1, §1.2) ─────────────────────
     preview_ttl_days: int = 7
     crawl_max_bytes: int = 5_000_000
@@ -80,6 +88,10 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.env in (Env.local, Env.ci)
+
+    @property
+    def trusted_proxies(self) -> frozenset[str]:
+        return frozenset(p.strip() for p in self.trusted_proxy_ips.split(",") if p.strip())
 
     def require(self, name: str) -> str:
         """Fetch a secret, failing loudly if it was never configured."""

@@ -1,0 +1,194 @@
+"""Extract observable signals from a fetched page.
+
+Deliberately **observation only**. Nothing here interprets, scores or infers —
+it records what is present in the HTML, with no judgement attached. Scoring
+happens in `calculators/`, which is pure and unit-tested, and interpretation
+happens in a model call that does not exist in M2 at all.
+
+That split is I1 in structural form: an extractor that returned a "brand score"
+would make the number's origin a matter of trust rather than of construction.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from urllib.parse import urljoin, urlsplit
+
+from bs4 import BeautifulSoup, Tag
+
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# Loose on purpose: GCC numbers vary in shape and this only records presence.
+PHONE_RE = re.compile(r"(?:\+\d{1,4}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?){2,4}\d{2,4}")
+
+SOCIAL_HOSTS = {
+    "facebook.com": "facebook",
+    "instagram.com": "instagram",
+    "linkedin.com": "linkedin",
+    "twitter.com": "twitter",
+    "x.com": "twitter",
+    "youtube.com": "youtube",
+    "tiktok.com": "tiktok",
+    "wa.me": "whatsapp",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class PageSignals:
+    """What the page demonstrably contains. No interpretation."""
+
+    url: str
+    is_https: bool
+
+    title: str | None
+    title_length: int
+    meta_description: str | None
+    meta_description_length: int
+
+    h1_texts: tuple[str, ...] = field(default=())
+    h2_texts: tuple[str, ...] = field(default=())
+
+    has_viewport_meta: bool = False
+    has_canonical: bool = False
+    canonical_url: str | None = None
+    has_robots_meta: bool = False
+    robots_blocks_indexing: bool = False
+    has_structured_data: bool = False
+    has_open_graph: bool = False
+    declared_language: str | None = None
+
+    image_count: int = 0
+    images_with_alt: int = 0
+
+    internal_link_count: int = 0
+    external_link_count: int = 0
+
+    emails: tuple[str, ...] = field(default=())
+    has_phone: bool = False
+    social_profiles: tuple[str, ...] = field(default=())
+
+    word_count: int = 0
+    html_bytes: int = 0
+    script_count: int = 0
+    stylesheet_count: int = 0
+    inline_style_count: int = 0
+
+    text_sample: str = ""
+    """Leading body text. Untrusted content — see the M12 boundary."""
+
+
+def _text_of(tags: list[Tag], limit: int) -> tuple[str, ...]:
+    out = []
+    for tag in tags[:limit]:
+        text = tag.get_text(" ", strip=True)
+        if text:
+            out.append(text[:300])
+    return tuple(out)
+
+
+def extract_signals(html: str, *, url: str) -> PageSignals:
+    soup = BeautifulSoup(html, "lxml")
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+
+    for junk in soup(["script", "style", "noscript", "template"]):
+        junk.decompose()
+    body_text = soup.get_text(" ", strip=True)
+
+    soup_with_scripts = BeautifulSoup(html, "lxml")
+
+    title_tag = soup_with_scripts.title
+    title = title_tag.get_text(strip=True) if title_tag else None
+
+    def _attr(tag: Tag, key: str) -> str | None:
+        """Read one attribute as a plain string.
+
+        bs4 returns a list for multi-valued attributes such as `rel` and
+        `class`, so a bare `.get()` is not reliably a `str`.
+        """
+        value = tag.get(key)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list) and value:
+            return " ".join(str(v) for v in value)
+        return None
+
+    def meta(name: str | None = None, prop: str | None = None) -> str | None:
+        attrs: Mapping[str, str] = {"name": name} if name else {"property": prop or ""}
+        tag = soup_with_scripts.find("meta", attrs=dict(attrs))
+        if isinstance(tag, Tag):
+            content = _attr(tag, "content")
+            if content is not None:
+                return content.strip()
+        return None
+
+    description = meta(name="description")
+    robots = meta(name="robots") or ""
+
+    canonical_tag = soup_with_scripts.find("link", rel="canonical")
+    canonical = None
+    if isinstance(canonical_tag, Tag):
+        href = _attr(canonical_tag, "href")
+        if href:
+            canonical = urljoin(url, href)
+
+    html_tag = soup_with_scripts.find("html")
+    language = None
+    if isinstance(html_tag, Tag):
+        lang = _attr(html_tag, "lang")
+        language = lang.strip() if lang and lang.strip() else None
+
+    images = soup_with_scripts.find_all("img")
+    with_alt = sum(
+        1 for img in images if isinstance(img, Tag) and (_attr(img, "alt") or "").strip()
+    )
+
+    internal = external = 0
+    socials: set[str] = set()
+    for anchor in soup_with_scripts.find_all("a", href=True):
+        href = _attr(anchor, "href") if isinstance(anchor, Tag) else None
+        if not href:
+            continue
+        target_host = (urlsplit(urljoin(url, href)).hostname or "").lower()
+        if not target_host or target_host == host:
+            internal += 1
+        else:
+            external += 1
+            for social_host, label in SOCIAL_HOSTS.items():
+                if target_host.endswith(social_host):
+                    socials.add(label)
+
+    return PageSignals(
+        url=url,
+        is_https=parts.scheme == "https",
+        title=title,
+        title_length=len(title or ""),
+        meta_description=description,
+        meta_description_length=len(description or ""),
+        h1_texts=_text_of(soup_with_scripts.find_all("h1"), 10),
+        h2_texts=_text_of(soup_with_scripts.find_all("h2"), 25),
+        has_viewport_meta=meta(name="viewport") is not None,
+        has_canonical=canonical is not None,
+        canonical_url=canonical,
+        has_robots_meta=bool(robots),
+        robots_blocks_indexing="noindex" in robots.lower(),
+        has_structured_data=bool(
+            soup_with_scripts.find("script", attrs={"type": "application/ld+json"})
+        ),
+        has_open_graph=meta(prop="og:title") is not None,
+        declared_language=language,
+        image_count=len(images),
+        images_with_alt=with_alt,
+        internal_link_count=internal,
+        external_link_count=external,
+        emails=tuple(sorted(set(EMAIL_RE.findall(body_text)))[:10]),
+        has_phone=bool(PHONE_RE.search(body_text)),
+        social_profiles=tuple(sorted(socials)),
+        word_count=len(body_text.split()),
+        html_bytes=len(html.encode("utf-8", errors="ignore")),
+        script_count=len(soup_with_scripts.find_all("script")),
+        stylesheet_count=len(soup_with_scripts.find_all("link", rel="stylesheet")),
+        inline_style_count=len(soup_with_scripts.find_all("style")),
+        text_sample=body_text[:2000],
+    )

@@ -13,6 +13,7 @@ from app.config import Env, get_settings
 from app.health import router as health_router
 from app.logging import configure_logging, get_logger, request_id_var
 from app.routes.auth import router as auth_router
+from app.routes.preview import router as preview_router
 
 log = get_logger(__name__)
 
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(preview_router)
     return app
 
 

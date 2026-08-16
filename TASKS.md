@@ -74,22 +74,27 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M2 — Landing integration, URL capture, Preview audit
 
-- [ ] 2.1 **Test first:** the SSRF corpus — `127.0.0.1`, `169.254.169.254`, `[::1]`, `10./172.16./192.168.`, `file://`, `gopher://`, DNS-rebinding, redirect-to-private, oversized body, slowloris
-- [ ] 2.2 Port landing page into `apps/web` as the public route (mostly done in 0.2; wire the URL capture form)
-- [ ] 2.3 URL capture pre-registration → `preview_session` row with short TTL (⛔ **D9** — TTL value)
-- [ ] 2.4 Crawler with the **doc 06 §1.2 SSRF guard** — resolve-then-connect, public IPs only, no metadata endpoints, **redirects re-validated per hop**, size and time caps, `robots.txt` respected
-- [ ] 2.5 Extraction: services, segments, tone, contacts, locations, languages — every fact carries a `source_ref`
-- [ ] 2.6 PageSpeed Insights connector (⛔ **D3** — API key)
-- [ ] 2.7 Preview audit = **brand + performance + technical SEO on the entered domain only.** No competitor discovery, no keyword data, no metered API, nothing persisted to a Brain
-- [ ] 2.8 Rate limits in Postgres: per IP, per domain, global daily ceiling
-- [ ] 2.9 Test: **no metered API is reachable from an unauthenticated path**
-- [ ] 2.10 `MILESTONE-2.md`
+✅ **COMPLETE — awaiting validation.** See `MILESTONE-2.md`.
 
-**Done when:** a URL produces a reduced audit and every SSRF case is blocked.
-**You validate:** enter a URL, see a real audit; run the SSRF suite; confirm no metered API called.
-**Invariants:** I7 (crawled content wrapped from first contact), I10.
+- [x] 2.1 **SSRF corpus first** — 79 cases: schemes, private/reserved/link-local v4 and v6, IPv4-mapped forms,
+      hostnames resolving privately, mixed DNS answers, octal/decimal/hex literals, metadata hostnames,
+      userinfo, port allowlist, malformed URLs, address pinning, per-hop redirect re-validation
+- [x] 2.2 Landing page in `apps/web` with the hero URL-capture form (doc 06 §1's single primary action)
+- [x] 2.3 URL captured pre-registration into `preview_session` with a TTL
+- [x] 2.4 Crawler with the doc 06 §1.2 guard — resolve-then-pin, redirects followed by hand and
+      re-validated per hop, size cap read incrementally (not from `Content-Length`), time and hop caps
+- [x] 2.5 Extraction — observation only, no scoring, no interpretation
+- [ ] 2.6 PageSpeed Insights ⛔ **D3** — performance scores structural weight only, labelled as not Core Web Vitals
+- [x] 2.7 Preview audit = brand + performance + technical SEO on the entered domain only; competitor
+      discovery and keyword data held behind verification; 7 categories render as named unlocks, never zero
+- [x] 2.8 Rate limits in Postgres — per IP, per domain, global daily ceiling; atomic upsert proven under
+      concurrency; `X-Forwarded-For` honoured only from a configured trusted proxy
+- [x] 2.9 Test: **no metered API and no model** is reachable from the unauthenticated path (import-graph walk)
+- [x] 2.10 `MILESTONE-2.md`
+- [ ] 2.11 Preview TTL sweep job — `expires_at` set and indexed; the deleting job needs the scheduler
 
----
+**Done when:** a URL produces a reduced audit and every SSRF case is blocked. **Both met.**
+**You validate:** enter a URL and see a real audit; run the SSRF suite; confirm no metered API is called.
 
 ## M3 — Registration and domain verification
 

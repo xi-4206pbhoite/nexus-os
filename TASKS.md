@@ -45,15 +45,19 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M1 — Tenancy, auth, roles
 
-- [ ] 1.1 **Test first:** cross-tenant and cross-workspace read attempts, expected to fail (doc 07 §5.3)
-- [ ] 1.2 Migration: `session`, `persona`, `audit_log`; RLS policies on every tenant-scoped table
+- [x] 1.1 **Test first** — 12 isolation tests against real PostgreSQL as the real app role. Cross-workspace,
+      cross-tenant, targeted read of a known id, count leakage, forged insert/update/delete, pooled-connection
+      switch, and both default-deny states. First assertion is that the app role *cannot* bypass RLS
+- [x] 1.2 Migration 0002 — `tenant`, `app_user`, `workspace`, `membership`, `user_session`, `persona`,
+      `audit_log`; RLS **ENABLEd and FORCEd** on all four workspace-scoped tables
 - [ ] 1.3 Registration + login — argon2id, signed HttpOnly session cookie, CSRF, session fixation prevention
-- [ ] 1.4 **Many-to-many user ↔ workspace** from day one (agency case), even though the agency UI ships later
-- [ ] 1.5 **Active workspace resolved server-side per request**, never from a client value — a `X-Workspace` header is untrusted input
-- [ ] 1.6 `ScopedSession` construction as a FastAPI dependency (ARCHITECTURE §3.1)
-- [ ] 1.7 Role → scope mapping **as data** (table + frozen mapping), not scattered conditionals — doc 06 §2.3
+- [x] 1.4 **Many-to-many user ↔ workspace** — `membership` with unique `(workspace_id, user_id)`
+- [ ] 1.5 **Active workspace resolved server-side per request**, never from a client value. Column exists on
+      `user_session`; the request-layer resolution is outstanding
+- [~] 1.6 `ScopedSession` built and tested (39 tests); **FastAPI dependency outstanding**
+- [x] 1.7 Role → scope mapping **as data** — frozen `ROLE_GRANTS`, doc 06 §2.3 asserted row by row
 - [ ] 1.8 Workspace switch tears down agent sessions and invalidates scope-keyed caches (doc 06 §2.1)
-- [ ] 1.9 Lint rule + test: **nothing in `retrieval/` accepts a `user_id`** (guards I2 before the code it guards exists)
+- [ ] 1.9 Lint rule + test: **nothing in `retrieval/` accepts a `user_id`**
 - [ ] 1.10 `MILESTONE-1.md`
 
 **Done when:** cross-tenant and cross-workspace access is impossible, with tests that try and fail.

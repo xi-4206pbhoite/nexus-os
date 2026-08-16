@@ -10,24 +10,30 @@ Milestones are from doc 07 §6, expanded into concrete tasks. One milestone at a
 ## M0 — Foundation
 
 Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local only) · **ADR 0003** (local embeddings, 1024d).
-⛔ Remaining blocker: **a `DATABASE_URL` for a pgvector-enabled Postgres** (0.5 onward).
+⛔ One task remains: **applying** migration 0001, which needs a `DATABASE_URL` for a pgvector-enabled Postgres.
 
 - [x] 0.1 `git init` (branch `main`), `.gitignore`, `.gitattributes` (LF)
 - [x] 0.2 Restructure `nexus_os_application/web` → `apps/web`; update `.claude/launch.json`; landing page still builds
 - [x] 0.3 `services/api` skeleton — FastAPI app, `pyproject.toml`, layout per doc 07 §4
 - [x] 0.4a ADRs 0001–0003 recording your decisions (doc 07 §1)
-- [~] 0.4b Native setup replacing Compose: `scripts/setup.ps1`, `scripts/ci.ps1`, `.env.example`
-- [ ] 0.4c `ObjectStore` — filesystem driver with HMAC-signed URLs, S3 driver stub, shared interface
-- [ ] 0.4d `Mailer` — file driver writing `.eml`, SMTP driver stub
-- [ ] 0.5 Alembic wired; migration 0001: extensions (`vector`, `pgcrypto`), `tenant`, `user`, `workspace`, `membership` ⛔
+- [x] 0.4b Native setup replacing Compose: `scripts/setup.ps1`, `scripts/ci.ps1`, `.env.example`
+- [x] 0.4c `ObjectStore` — interface + filesystem driver with expiring HMAC-signed URLs (12 tests)
+- [x] 0.4d `Mailer` — interface + file driver writing `.eml`
+- [x] 0.5a Alembic wired; fails with an actionable message when `DATABASE_URL` is absent; `0001` resolves as head
+- [x] 0.5b Migration 0001 — `vector` + `pgcrypto` extensions, with a guard that raises if pgvector is unavailable.
+      **Scoped to extensions only**: `tenant`/`user`/`workspace`/`membership` move to M1, where they are designed
+      together with RLS and the role→scope mapping rather than being rewritten immediately
+- [ ] 0.5c **Apply** migration 0001 against a real database ⛔ needs `NEXUS_DATABASE_URL`
 - [x] 0.6 Config and secrets — pydantic-settings, `.env` gitignored, no usable default for any secret
-- [x] 0.7 `structlog` JSON logging with request id; secret redaction **and** a hard refusal to log customer content, with tests
-- [~] 0.8 `/health` (liveness, touches nothing) and `/health/ready` (per-dependency states); web `/api/health` proxy outstanding
+- [x] 0.7 `structlog` JSON logging with request id; secret redaction **and** a hard refusal to log customer content
+- [x] 0.8 `/health` (liveness, touches nothing) · `/health/ready` (per-dependency, asserts pgvector is present, leaks
+      no DSN on error) · web `/api/health` reporting API reachability as a separate field
 - [x] 0.9a CI workflow committed (`ruff` · `ruff format` · `mypy --strict` · `pytest` · `tsc` · `eslint` · `next build` · gitleaks)
-- [~] 0.9b `scripts/ci.ps1` runs the identical gate locally — the real gate until a remote exists (ADR 0002)
-- [ ] 0.10 First commit · `MILESTONE-0.md`
+- [x] 0.9b `scripts/ci.ps1` runs the identical gate locally — the real gate until a remote exists (ADR 0002)
+- [x] 0.10 `MILESTONE-0.md`
 
 **Done when** *(amended by ADR 0001)*: `scripts/setup.ps1` prepares the stack from a clean clone; API and web both start; `/health` returns ok and `/health/ready` reports every dependency honestly; `scripts/ci.ps1` is green.
+**Status:** all of the above verified. Outstanding: 0.5c, and `/health/ready` returning `ok` for the database rather than `unconfigured`.
 **You validate:** clean clone → `.\scripts\setup.ps1` → start both → hit both health endpoints → `.\scripts\ci.ps1` passes.
 
 ---

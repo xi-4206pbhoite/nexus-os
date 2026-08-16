@@ -74,17 +74,21 @@ def test_http_and_https_are_allowed(url: str) -> None:
 @pytest.mark.parametrize(
     "ip",
     [
-        "127.0.0.1", "127.1.1.1", "0.0.0.0",  # loopback / unspecified
-        "10.0.0.5", "10.255.255.255",          # RFC1918
-        "172.16.0.1", "172.31.255.254",
+        "127.0.0.1",
+        "127.1.1.1",
+        "0.0.0.0",  # noqa: S104 - asserting it is refused, not binding to it
+        "10.0.0.5",
+        "10.255.255.255",  # RFC1918
+        "172.16.0.1",
+        "172.31.255.254",
         "192.168.1.1",
-        "169.254.169.254",                      # cloud metadata
-        "169.254.0.1",                          # link-local
-        "100.64.0.1",                           # carrier-grade NAT
-        "192.0.0.1",                            # IETF protocol assignments
-        "198.18.0.1",                           # benchmarking
-        "224.0.0.1",                            # multicast
-        "255.255.255.255",                      # broadcast
+        "169.254.169.254",  # cloud metadata
+        "169.254.0.1",  # link-local
+        "100.64.0.1",  # carrier-grade NAT
+        "192.0.0.1",  # IETF protocol assignments
+        "198.18.0.1",  # benchmarking
+        "224.0.0.1",  # multicast
+        "255.255.255.255",  # broadcast
     ],
 )
 def test_private_and_reserved_ipv4_are_not_public(ip: str) -> None:
@@ -94,12 +98,13 @@ def test_private_and_reserved_ipv4_are_not_public(ip: str) -> None:
 @pytest.mark.parametrize(
     "ip",
     [
-        "::1",                    # loopback
-        "fe80::1",                # link-local
-        "fc00::1", "fd00::1",     # unique local
-        "::ffff:127.0.0.1",       # IPv4-mapped loopback
-        "::ffff:169.254.169.254", # IPv4-mapped metadata
-        "::",                     # unspecified
+        "::1",  # loopback
+        "fe80::1",  # link-local
+        "fc00::1",
+        "fd00::1",  # unique local
+        "::ffff:127.0.0.1",  # IPv4-mapped loopback
+        "::ffff:169.254.169.254",  # IPv4-mapped metadata
+        "::",  # unspecified
     ],
 )
 def test_private_and_reserved_ipv6_are_not_public(ip: str) -> None:
@@ -157,8 +162,8 @@ def test_host_with_no_dns_answer_is_blocked() -> None:
         "http://[::1]/",
         "http://169.254.169.254/latest/meta-data/",
         "http://[::ffff:169.254.169.254]/",
-        "http://0177.0.0.1/",        # octal
-        "http://2130706433/",        # decimal
+        "http://0177.0.0.1/",  # octal
+        "http://2130706433/",  # decimal
         "http://0x7f.0x0.0x0.0x1/",  # hex
     ],
 )
@@ -259,9 +264,7 @@ def test_redirect_target_is_validated_the_same_way() -> None:
 def test_relative_redirects_resolve_against_the_previous_hop() -> None:
     from app.connectors.ssrf import resolve_redirect
 
-    assert (
-        resolve_redirect("https://example.com/a/b", "../c") == "https://example.com/c"
-    )
+    assert resolve_redirect("https://example.com/a/b", "../c") == "https://example.com/c"
     assert resolve_redirect("https://example.com/a/b", "/d") == "https://example.com/d"
 
 

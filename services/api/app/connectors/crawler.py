@@ -95,9 +95,7 @@ async def fetch_page(
                 # Logged with the reason, surfaced without it: the reason can
                 # confirm internal network shape to whoever supplied the URL.
                 log.info("crawl.blocked", hop=hop, reason=str(exc))
-                raise FetchError(
-                    "That address cannot be analysed.", blocked=True
-                ) from exc
+                raise FetchError("That address cannot be analysed.", blocked=True) from exc
 
             try:
                 response = await _request(client, target)

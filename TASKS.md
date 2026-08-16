@@ -9,8 +9,8 @@ Milestones are from doc 07 §6, expanded into concrete tasks. One milestone at a
 
 ## M0 — Foundation
 
-Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local only) · **ADR 0003** (local embeddings, 1024d).
-⛔ One task remains: **applying** migration 0001, which needs a `DATABASE_URL` for a pgvector-enabled Postgres.
+✅ **COMPLETE — awaiting validation.** See `MILESTONE-0.md`.
+Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local only) · **ADR 0003** (local embeddings, 1024d) · **ADR 0004** (pgvector from M5).
 
 - [x] 0.1 `git init` (branch `main`), `.gitignore`, `.gitattributes` (LF)
 - [x] 0.2 Restructure `nexus_os_application/web` → `apps/web`; update `.claude/launch.json`; landing page still builds
@@ -23,8 +23,12 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 - [x] 0.5b Migration 0001 — `pgcrypto` required; `vector` created if available, `NOTICE` if not (**ADR 0004**).
       **Scoped to extensions only**: `tenant`/`user`/`workspace`/`membership` move to M1, where they are designed
       together with RLS and the role→scope mapping rather than being rewritten immediately
-- [ ] 0.5c **Apply** migration 0001 against a real database ⛔ needs `NEXUS_DATABASE_URL`
-- [ ] 0.5d Local PostgreSQL 17 install (official EnterpriseDB build) so 0.5c can run without Docker or a hosted account
+- [x] 0.5c **Applied** migration 0001 — `alembic_version = 0001`, `pgcrypto` present
+- [x] 0.5d Local PostgreSQL 17.11 via the EnterpriseDB **binaries zip** (the installer needs UAC even with
+      `--extract-only`); loopback only, no service, no admin. `scripts/pg-local.ps1`
+- [x] 0.5e `scripts/db-init.ps1` — database, non-superuser `NOBYPASSRLS` app role, extensions, `.env`, migrations.
+      Idempotent; will not rotate a password `.env` depends on without `-Rotate`
+- [x] 0.11 Hermetic test fixture — the suite no longer reads the developer's `.env`, with a regression guard
 - [x] 0.6 Config and secrets — pydantic-settings, `.env` gitignored, no usable default for any secret
 - [x] 0.7 `structlog` JSON logging with request id; secret redaction **and** a hard refusal to log customer content
 - [x] 0.8 `/health` (liveness, touches nothing) · `/health/ready` (per-dependency, asserts pgvector is present, leaks

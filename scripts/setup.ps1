@@ -48,6 +48,20 @@ if (-not (Test-Path $envFile)) {
     Write-Host '.env already exists -- left untouched.'
 }
 
+Write-Host "`n=== Database ===" -ForegroundColor Cyan
+if (Test-Path 'D:\PostgreSQL\pgsql\bin\pg_ctl.exe') {
+    Write-Host 'Local PostgreSQL present.'
+    Write-Host '  start:  .\scripts\pg-local.ps1 -Action start'
+    Write-Host '  init :  .\scripts\db-init.ps1 -SuperPassword (Get-Content D:\PostgreSQL\superuser.pw)'
+} else {
+    Write-Host 'No local PostgreSQL. Per ADR 0001 (no Docker), install the self-contained cluster:' -ForegroundColor Yellow
+    Write-Host '  1. Download the EnterpriseDB binaries zip for PostgreSQL 17 (x64)'
+    Write-Host '  2. .\scripts\pg-local.ps1 -Action install -ZipPath <zip>'
+    Write-Host '  3. .\scripts\pg-local.ps1 -Action start'
+    Write-Host '  4. .\scripts\db-init.ps1 -SuperPassword (Get-Content D:\PostgreSQL\superuser.pw)'
+    Write-Host 'Note: pgvector is not in the stock build. Not needed until M5 - see ADR 0004.'
+}
+
 Write-Host "`nSetup complete." -ForegroundColor Green
 Write-Host 'Start the API:  cd services\api; .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000'
 Write-Host 'Start the web:  npm run dev --prefix apps\web'

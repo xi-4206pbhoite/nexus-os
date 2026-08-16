@@ -18,14 +18,23 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 # ── Locate psql ─────────────────────────────────────────────
-$psql = Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending | Select-Object -First 1
-if (-not $psql) { $psql = Get-Command psql -ErrorAction SilentlyContinue }
-if (-not $psql) {
-    Write-Host 'psql not found. Install PostgreSQL first.' -ForegroundColor Red
+# Prefer the self-contained cluster from pg-local.ps1, then a system install,
+# then PATH.
+$candidates = @(
+    'D:\PostgreSQL\pgsql\bin\psql.exe'
+    'C:\Program Files\PostgreSQL\*\bin\psql.exe'
+)
+$psqlPath = $null
+foreach ($c in $candidates) {
+    $found = Get-ChildItem $c -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1
+    if ($found) { $psqlPath = $found.FullName; break }
+}
+if (-not $psqlPath) { $psqlPath = (Get-Command psql -ErrorAction SilentlyContinue).Source }
+if (-not $psqlPath) {
+    Write-Host 'psql not found. Run: .\scripts\pg-local.ps1 -Action install -ZipPath <zip>' -ForegroundColor Red
     exit 1
 }
-$psqlPath = if ($psql.FullName) { $psql.FullName } else { $psql.Source }
 Write-Host "psql: $psqlPath"
 
 # ── Generate an application-role password ───────────────────

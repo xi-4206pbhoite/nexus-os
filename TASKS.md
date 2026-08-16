@@ -50,15 +50,21 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
       switch, and both default-deny states. First assertion is that the app role *cannot* bypass RLS
 - [x] 1.2 Migration 0002 — `tenant`, `app_user`, `workspace`, `membership`, `user_session`, `persona`,
       `audit_log`; RLS **ENABLEd and FORCEd** on all four workspace-scoped tables
-- [ ] 1.3 Registration + login — argon2id, signed HttpOnly session cookie, CSRF, session fixation prevention
+- [x] 1.3 Registration + login — argon2id, HttpOnly `SameSite=Lax` session cookie, double-submit CSRF,
+      session fixation prevented by construction (login always mints a fresh token), timing-equalised
+      login with an undifferentiated error so it is not a user-enumeration oracle
 - [x] 1.4 **Many-to-many user ↔ workspace** — `membership` with unique `(workspace_id, user_id)`
-- [ ] 1.5 **Active workspace resolved server-side per request**, never from a client value. Column exists on
-      `user_session`; the request-layer resolution is outstanding
-- [~] 1.6 `ScopedSession` built and tested (39 tests); **FastAPI dependency outstanding**
+- [x] 1.5 **Active workspace resolved server-side per request** from `user_session`, re-validated against
+      current memberships every request. No header, query param or body field can set it
+- [x] 1.6 `ScopedSession` + `current_scope` FastAPI dependency
 - [x] 1.7 Role → scope mapping **as data** — frozen `ROLE_GRANTS`, doc 06 §2.3 asserted row by row
-- [ ] 1.8 Workspace switch tears down agent sessions and invalidates scope-keyed caches (doc 06 §2.1)
-- [ ] 1.9 Lint rule + test: **nothing in `retrieval/` accepts a `user_id`**
-- [ ] 1.10 `MILESTONE-1.md`
+- [~] 1.8 Workspace switch validates the target against current membership and calls the teardown seam.
+      **The seam logs only** — agent sessions (M12) and scope-keyed caches (M6/M8) do not exist yet
+- [x] 1.9 `test_retrieval_signatures.py` — walks every public callable in `app.retrieval` and fails the
+      build on an identity argument. Includes a self-test proving the guard can fail
+- [x] 1.10 `MILESTONE-1.md`
+- [x] 1.11 Migration 0003 — narrow `membership_own_rows` SELECT policy so the workspace switcher can list
+      the caller's own memberships without widening the isolation policy
 
 **Done when:** cross-tenant and cross-workspace access is impossible, with tests that try and fail.
 **You validate:** run the isolation suite; switch workspace and confirm session teardown.

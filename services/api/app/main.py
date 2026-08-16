@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, Response
 from app.config import Env, get_settings
 from app.health import router as health_router
 from app.logging import configure_logging, get_logger, request_id_var
+from app.routes.auth import router as auth_router
 
 log = get_logger(__name__)
 
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health_router)
+    app.include_router(auth_router)
     return app
 
 

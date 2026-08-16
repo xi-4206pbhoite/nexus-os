@@ -1,0 +1,269 @@
+"""Registration, login, and session lifecycle.
+
+These queries deliberately run outside `retrieval/`. Authentication happens
+*before* a workspace context exists — resolving which workspace the caller is in
+is the outcome of this module, not an input to it — so it uses the unscoped
+session on the three tables that carry no workspace column (`app_user`,
+`user_session`, `tenant`). Everything workspace-scoped goes through
+`retrieval.scoped_connection`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.passwords import (
+    hash_password,
+    needs_rehash,
+    spend_dummy_verification,
+    verify_password,
+)
+from app.auth.tokens import hash_token, new_token
+from app.domain.scopes import Department, Role
+from app.domain.session import ScopedSession
+
+
+class AuthError(Exception):
+    """Authentication failed. Deliberately undifferentiated — see `login`."""
+
+
+class EmailAlreadyRegisteredError(Exception):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedSession:
+    token: str
+    session_id: UUID
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Membership:
+    workspace_id: UUID
+    tenant_id: UUID
+    workspace_name: str
+    role: Role
+    departments: frozenset[Department]
+
+
+# ── Registration ──────────────────────────────────────────────
+
+
+async def register_user(
+    db: AsyncSession, *, email: str, password: str, display_name: str | None = None
+) -> UUID:
+    normalised = email.strip().lower()
+    password_hash = hash_password(password)
+
+    existing = await db.execute(
+        text("SELECT 1 FROM app_user WHERE lower(email) = :email"), {"email": normalised}
+    )
+    if existing.first() is not None:
+        raise EmailAlreadyRegisteredError(normalised)
+
+    row = await db.execute(
+        text(
+            "INSERT INTO app_user (email, password_hash, display_name)"
+            " VALUES (:email, :hash, :name) RETURNING id"
+        ),
+        {"email": normalised, "hash": password_hash, "name": display_name},
+    )
+    return UUID(str(row.scalar_one()))
+
+
+# ── Login ─────────────────────────────────────────────────────
+
+
+async def authenticate(db: AsyncSession, *, email: str, password: str) -> UUID:
+    """Return the user id, or raise `AuthError`.
+
+    The error is deliberately identical for "no such account", "wrong password"
+    and "account disabled". Distinguishing them turns login into a user
+    enumeration oracle, and the timing is equalised for the same reason.
+    """
+    normalised = email.strip().lower()
+    row = (
+        await db.execute(
+            text("SELECT id, password_hash, disabled_at FROM app_user WHERE lower(email) = :email"),
+            {"email": normalised},
+        )
+    ).first()
+
+    if row is None or row.password_hash is None:
+        # Spend comparable time so absence is not measurably faster.
+        spend_dummy_verification()
+        raise AuthError("invalid credentials")
+
+    if not verify_password(row.password_hash, password):
+        raise AuthError("invalid credentials")
+
+    if row.disabled_at is not None:
+        raise AuthError("invalid credentials")
+
+    if needs_rehash(row.password_hash):
+        await db.execute(
+            text("UPDATE app_user SET password_hash = :hash WHERE id = :id"),
+            {"hash": hash_password(password), "id": str(row.id)},
+        )
+
+    return UUID(str(row.id))
+
+
+# ── Sessions ──────────────────────────────────────────────────
+
+
+async def issue_session(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    ttl_seconds: int,
+    active_workspace_id: UUID | None = None,
+    user_agent: str | None = None,
+) -> IssuedSession:
+    """Mint a new session. Always a *new* row — never reuse an existing id.
+
+    Session fixation is prevented by construction: because login always issues
+    a fresh token, a token an attacker planted before authentication is never
+    the token that ends up authenticated.
+    """
+    token = new_token()
+    expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+
+    row = await db.execute(
+        text(
+            "INSERT INTO user_session"
+            " (user_id, token_hash, expires_at, active_workspace_id, user_agent)"
+            " VALUES (:uid, :hash, :exp, :ws, :ua) RETURNING id"
+        ),
+        {
+            "uid": str(user_id),
+            "hash": hash_token(token),
+            "exp": expires_at,
+            "ws": str(active_workspace_id) if active_workspace_id else None,
+            "ua": (user_agent or "")[:500] or None,
+        },
+    )
+    return IssuedSession(token=token, session_id=UUID(str(row.scalar_one())), expires_at=expires_at)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSession:
+    session_id: UUID
+    user_id: UUID
+    active_workspace_id: UUID | None
+
+
+async def resolve_session(db: AsyncSession, *, token: str) -> ResolvedSession | None:
+    """Look a session up by token hash. Expired or revoked sessions are absent.
+
+    The lookup is by hash, so the plaintext token is never compared in SQL and
+    never stored.
+    """
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, user_id, active_workspace_id FROM user_session"
+                " WHERE token_hash = :hash"
+                "   AND revoked_at IS NULL"
+                "   AND expires_at > now()"
+            ),
+            {"hash": hash_token(token)},
+        )
+    ).first()
+
+    if row is None:
+        return None
+
+    return ResolvedSession(
+        session_id=UUID(str(row.id)),
+        user_id=UUID(str(row.user_id)),
+        active_workspace_id=(
+            UUID(str(row.active_workspace_id)) if row.active_workspace_id else None
+        ),
+    )
+
+
+async def revoke_session(db: AsyncSession, *, session_id: UUID) -> None:
+    await db.execute(
+        text("UPDATE user_session SET revoked_at = now() WHERE id = :id"),
+        {"id": str(session_id)},
+    )
+
+
+async def revoke_all_sessions_for_user(db: AsyncSession, *, user_id: UUID) -> None:
+    """Used on password change and on offboarding (doc 06 §4.15)."""
+    await db.execute(
+        text(
+            "UPDATE user_session SET revoked_at = now() WHERE user_id = :uid AND revoked_at IS NULL"
+        ),
+        {"uid": str(user_id)},
+    )
+
+
+# ── Membership resolution ─────────────────────────────────────
+
+
+async def memberships_for_user(db: AsyncSession, *, user_id: UUID) -> list[Membership]:
+    """Every workspace this user belongs to.
+
+    Relies on the `membership_own_rows` policy from migration 0003, so the GUC
+    `nexus.user_id` must be set on this connection. It discloses only the
+    caller's own memberships — never another person's.
+    """
+    await db.execute(text("SELECT set_config('nexus.user_id', :uid, true)"), {"uid": str(user_id)})
+    rows = (
+        await db.execute(
+            text(
+                "SELECT m.workspace_id, m.role, m.departments,"
+                "       w.tenant_id, w.name"
+                "  FROM membership m"
+                "  JOIN workspace w ON w.id = m.workspace_id"
+                " WHERE m.user_id = :uid AND m.revoked_at IS NULL"
+                " ORDER BY w.name"
+            ),
+            {"uid": str(user_id)},
+        )
+    ).all()
+
+    return [
+        Membership(
+            workspace_id=UUID(str(r.workspace_id)),
+            tenant_id=UUID(str(r.tenant_id)),
+            workspace_name=r.name,
+            role=Role(r.role),
+            departments=frozenset(Department(d) for d in (r.departments or [])),
+        )
+        for r in rows
+    ]
+
+
+async def set_active_workspace(db: AsyncSession, *, session_id: UUID, workspace_id: UUID) -> None:
+    await db.execute(
+        text("UPDATE user_session SET active_workspace_id = :ws WHERE id = :sid"),
+        {"ws": str(workspace_id), "sid": str(session_id)},
+    )
+
+
+def build_scope(*, user_id: UUID, membership: Membership) -> ScopedSession:
+    """Assemble the caller's authority from server-side facts only.
+
+    Every field comes from the session row and the membership row. Nothing here
+    is read from a header, a body or a query string — doc 06 §2.1 requires the
+    active workspace to be resolved server-side per request, because a
+    client-supplied value plus claim-based RLS is a cross-tenant read waiting to
+    happen.
+    """
+    return ScopedSession(
+        user_id=user_id,
+        tenant_id=membership.tenant_id,
+        workspace_id=membership.workspace_id,
+        role=membership.role,
+        departments=membership.departments,
+        named_l4_item_ids=frozenset(),
+    )

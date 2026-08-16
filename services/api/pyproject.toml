@@ -27,6 +27,10 @@ dev = [
   # starlette >=1.6 deprecates httpx for TestClient in favour of httpx2.
   # Test-only: application code still uses httpx (a runtime dependency above).
   "httpx2>=0.1",
+  # Test-only sync driver. The isolation suite asserts a *database* behaviour
+  # (RLS) rather than application behaviour, so it runs plain synchronous SQL
+  # as the real app role; the app itself stays on asyncpg.
+  "psycopg2-binary>=2.9",
   "ruff>=0.8",
   "mypy>=1.13",
   "types-python-dateutil",

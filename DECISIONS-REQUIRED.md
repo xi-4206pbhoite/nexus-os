@@ -59,7 +59,10 @@ PageSpeed Insights (M2), plus GA4 and Search Console OAuth (M10) need a Google C
 ### D4 — Production email provider *(blocks M3)*
 M3 needs verification email. Dev uses mailpit in Compose, so this only blocks a real deployment. Doc 03 names SendGrid/Postmark as Phase 2. **Which, and do you have an account?**
 
-### D5 — Contributor L3 subset *(blocks M4, M6)* — doc 06 §11.5, listed as genuinely open
+### ~~D5 — Contributor L3 subset~~ · RESOLVED (ADR 0005)
+
+Ratified as proposed and shipped in M4. `decide_l3_access` implements it and `test_contributor_scope.py` proves it. Doc 06 §11.5 asks for a per-department definition with a design partner, so this is the default to revisit, not the final word. **Original text kept below for that revisit.**
+
 Doc 06 §2.3 says a Contributor gets *"own department, restricted subset — excludes department-wide financial aggregates and other people's records."* That is a principle, not a specification, and M4's acceptance is *"a Contributor cannot reach L3 aggregates"* — which I cannot test without the per-department definition.
 
 **My proposed default, for you to ratify or correct:** a Contributor sees (i) records where they are the owner or assignee, (ii) records they created, (iii) department reference data (stages, services, price list); and is denied (iv) any aggregate over the department, (v) any record owned by another user, (vi) any field marked `sensitivity: financial` on a record they do not own. Doc 06 §11.5 says define it per department with a design partner — so I would ship this default and revisit.
@@ -84,9 +87,12 @@ Doc 04 §6 specifies the completeness meter as *"6 of 21 capabilities"*; doc 05 
 
 **My recommendation:** build a capability registry as data — each capability declaring its required sources — and derive the denominator from it. Then the number is computed rather than asserted, and it self-corrects as scope changes. I would still want you to ratify the registry contents at M9.
 
-### D9 — Preview data TTL *(blocks M2)*
+### D9 — Preview data TTL *(needs ratification, not a decision from scratch)*
 Doc 06 §1.1 and §10 say "short TTL" without a value. This governs crawl data held for a domain whose owner has no account and has not consented.
-**My recommendation:** 7 days, plus the deletion-request path doc 06 §10 requires.
+
+**The code has moved ahead of this entry.** `preview_ttl_hours` is now **24 hours**, changed alongside the preview cache with the reasoning that the subject is a company that never consented to the crawl, and a day is long enough to serve a reload. That supersedes the 7 days originally recommended here.
+
+**What is still needed from you:** ratify 24 hours, or name a different number. And the deletion-request path doc 06 §10 requires **does not exist** — there is no way for a domain owner to ask for their audit to be removed before it expires. That is the part of D9 still genuinely open.
 
 ### D10 — Which CRM connector? *(blocks M10)*
 Doc 05 §9 names Zoho and HubSpot as a *working assumption on expected GCC SME prevalence*, explicitly flags that no source contains regional market-share data, and says confirm with design partners rather than building on the guess. Doc 07 M10 narrows it to **one** connector and doc 07 §8 puts a second out of scope.

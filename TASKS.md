@@ -139,6 +139,10 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 - [x] 4.9 `MILESTONE-4.md`
 - [ ] 4.10 Onboarding wizard UI and the answer/invitation routes — **not built**; the tables, rules and
       enforcement layer they will use are
+- [ ] 4.11 **Member onboarding, if D15 says yes.** The catalogue today is a *company* setup flow run once
+      by the founder; `Question.department` tags **which department owns the answer as an L3 fact**, not
+      who is asked. A per-department question set for invited members is a second flow that no source
+      document specifies — see **D15**
 
 **Done when:** the role → scope table is enforced at the API layer and a Contributor cannot reach L3 aggregates. **Met.**
 **You validate:** log in as each role and confirm the surface matches doc 06 §2.3.
@@ -235,6 +239,11 @@ statement is a round trip to `us-east-2`.
 ## M9 — Dashboard shell and Marketing
 
 - [ ] 9.1 Global shell: director header · score · data ribbon with freshness · gap banner · period selector · **global completeness meter** (⛔ **D8** — capability count)
+- [ ] 9.1b **Reserve the assistant panel in the shell**, on all seven department dashboards, from M9 —
+      doc 06 §7.2 specifies *"persistent panel on every screen"*. The assistant itself is M12, but the
+      panel is a **layout** commitment: retrofitting a persistent side panel into seven finished
+      dashboards is a rewrite of all of them. Until M12 it renders its own honest empty state naming
+      what it will do, rather than being absent
 - [ ] 9.2 All **seven** render states, each with a component test (doc 06 §7.1)
 - [ ] 9.3 Composite score always shows its denominator, **out of six**, never seven (doc 05 §10)
 - [ ] 9.4 Marketing end to end — the doc 05 §3 widgets that work without integrations: 3.4 Growth Plan · 3.5 Calendar · 3.6 Content Studio · 3.8 Brand Intelligence · market half of 3.7 SEO
@@ -292,7 +301,11 @@ statement is a round trip to `us-east-2`.
 - [ ] 12.4 **Subagent return-path filtering against the end user's scope**, not the parent's (doc 06 §4.11)
 - [ ] 12.5 Untrusted-content boundary + action gating (I7) — no external action from a tainted turn without confirmation showing the exact payload
 - [ ] 12.6 Read tools and write tools as separate sets; assistant defaults to read + draft
-- [ ] 12.7 Always-on assistant: citations, honest refusals, **per-user** rate limits, company-fact vs general-knowledge separation
+- [ ] 12.7 Always-on assistant, **present on every one of the seven department dashboards** (doc 06 §7.2 —
+      persistent panel on every screen), filling the panel M9 reserved: citations, honest refusals,
+      **per-user** rate limits, company-fact vs general-knowledge separation. Its scope is the caller's,
+      not the department's — opening the Finance dashboard grants nothing; a Contributor asking the
+      panel a Finance question gets the same Locked answer they would get anywhere else
 - [ ] 12.8 Chief of Staff and Strategy read the **same computed objects** so they cannot contradict each other (doc 06 §7.3)
 - [ ] 12.9 **No agent has shell access** — test asserts no Bash tool in any allowlist (I8)
 - [ ] 12.10 `MILESTONE-12.md`

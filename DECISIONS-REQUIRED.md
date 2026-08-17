@@ -123,6 +123,22 @@ Three questions, and the third is why this is not a default I can pick:
 
 My recommendation if you want one: per-IP *and* per-email counters, exponential backoff instead of a lock, and an identical 401 in every case with the delay applied silently — so nothing observable distinguishes a rate-limited known address from an unknown one. That preserves the enumeration guarantee, which is the property most easily lost here.
 
+### D15 — Department-branched onboarding for invited members *(new scope; would extend M4)*
+
+**Raised by you**, and it is not in any source document — which is why it is here rather than being built.
+
+Onboarding today is a **company setup flow, run once by the founder**. Doc 04 §5 redesigns it as six stages — audit, justified questions, connections, documents, team last — and there is no "select your department" step, because the person running it is configuring the whole company.
+
+`Question.department` exists on the catalogue but means something different from what the name suggests: it records **which department owns the answer as an L3 fact**, so `average_deal_size` is L3 Sales and `monthly_marketing_budget` is L3 Finance. Doc 06 §2.5 is explicit — *"Tag them at capture"* — it is a scope classification, not a routing rule. Only 2 of the 14 questions carry one; the other 12 are company-wide.
+
+**What you appear to want is a second flow**: when a Sales Manager accepts an invitation, ask them Sales-specific questions. That is reasonable and no document rules it out. It is also genuinely new work, and it raises three questions worth deciding before it is built:
+
+1. **Does a member's answer bind the department, or only themselves?** If an invited Sales Manager states the average deal size, that becomes an L3 Sales fact the whole department reads. Two managers can disagree. The Brain's conflict precedence (M7 task 7.4) puts user-confirmed above crawl, but not one user above another.
+2. **Who may answer department-scoped questions?** A Contributor is denied department aggregates by ADR 0005. Letting one *write* a department-wide fact through an onboarding form would route around that boundary.
+3. **What happens when someone changes department?** Their answers stay tagged to the old one unless something re-classifies them, which is the same problem M5 task 5.10 solves for superseded documents.
+
+**My recommendation:** build the founder flow first (task 4.10) and treat member onboarding as a follow-on. Restrict department-scoped questions to the Owner, Executive and that department's Manager, and have Contributors confirm rather than assert. But this is your product call, and answering (1) is what unblocks the design.
+
 ---
 
 ## 4. Assumptions I have made — object if any is wrong

@@ -147,17 +147,12 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M5 — Documents, classification, indexing
 
-⛔ **Blocked: Docker Desktop is not installed.** Route chosen and recorded as **ADR 0006** — the official
-`pgvector/pgvector:pg17` image via `docker-compose.yml`. Everything is prepared; the install needs two
-elevated commands and a reboot, which this session cannot perform:
+✅ **Unblocked.** pgvector 0.8.6 is live via `pgvector/pgvector:pg17` on Docker Engine in WSL2
+(**ADR 0006** image, **ADR 0007** engine — Docker Desktop is ruled out). `/health/ready` reports
+`pgvector: ok`, and all 448 tests pass against it including the M1 isolation suite.
 
-```
-wsl --install          # elevated; Windows Home needs WSL2 for Docker Desktop
-(restart)
-winget install --id Docker.DockerDesktop
-```
-
-Then `.\scripts\db-docker.ps1 -Action up` brings the database up with pgvector and runs migrations.
+Bring the database up with `.\scripts\db-docker.ps1 -Action up`. The daemon does not survive a
+WSL restart; the script starts it.
 
 - [ ] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
 - [ ] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)

@@ -12,7 +12,9 @@ I have invented no resolutions. Conflicts that doc 07's own precedence rule sett
 
 These are not spec questions; they are missing prerequisites on this machine. M0's done-when is *"`docker compose up` gives a running web and API"*, which is currently impossible.
 
-### E1 — Docker is not installed
+### ~~E1 — Docker is not installed~~ · RESOLVED (ADR 0001, then ADR 0006/0007)
+
+Settled: Docker Engine in WSL2 serves pgvector; Docker Desktop is ruled out. Original text kept below.
 `docker` is not on PATH and Docker Desktop is not present at the default location. Doc 07 §3 requires Postgres + pgvector + object storage via Compose, and M0's acceptance is a working `docker compose up`.
 
 **Options:** (a) install Docker Desktop — matches the spec exactly; (b) run Postgres+pgvector natively on Windows and drop Compose — diverges from doc 07 §3 and M0's acceptance criterion.

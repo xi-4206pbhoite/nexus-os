@@ -1,15 +1,16 @@
 # How this repo talks to Docker.
 #
-# ADR 0006 chose Docker Desktop; what is actually installed is **Docker Engine
-# inside WSL2 Ubuntu** (ADR 0007). Docker Desktop's installer needs UAC and
-# could not be run from an automated session, whereas root inside WSL needs no
-# password at all.
+# **Docker Engine inside WSL2 Ubuntu** is the decided local stack (ADR 0007).
+# Docker Desktop is ruled out, not deferred.
 #
-# The consequence is that `docker` is not on the Windows PATH, so every call is
-# routed through `wsl -d Ubuntu -u root`, translating `D:\...` to `/mnt/d/...`.
-# If Docker Desktop is ever installed, `Get-DockerMode` returns 'native' and
-# every caller works unchanged — which is why this lives in one file rather than
-# `wsl` being sprinkled through the scripts.
+# `docker` is therefore not on the Windows PATH, and every call is routed through
+# `wsl -d Ubuntu -u root`, translating `D:\...` to `/mnt/d/...`. That routing
+# lives here rather than being sprinkled through the scripts so there is one
+# place to change if the host ever changes.
+#
+# `Get-DockerMode` still recognises a native `docker` binary. That branch exists
+# to keep this abstraction honest — not to anticipate a migration — and is
+# untested against a real Docker Desktop.
 #
 # **Two entry points, deliberately separate.** An earlier version had a single
 # function that both emitted output and returned an exit code; callers capturing

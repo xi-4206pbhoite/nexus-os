@@ -1,8 +1,10 @@
 # ADR 0007 — Docker Engine inside WSL2, not Docker Desktop
 
 **Status:** Accepted · 17 August 2026
-**Decider:** Claude, after Docker Desktop proved uninstallable from this session; flagged to Parul Bhoite for objection
-**Amends:** [ADR 0006](0006-pgvector-via-official-docker-image.md) — the image and the outcome are unchanged; only the engine differs
+**Decider:** Parul Bhoite — *"We will not use Docker Desktop, we will use wsl only"*
+**Supersedes:** [ADR 0006](0006-pgvector-via-official-docker-image.md)'s engine choice. The image, the Compose file and the outcome are unchanged; only the engine differs.
+
+Docker Desktop is **ruled out**, not deferred. This is the settled local development stack, not a workaround pending something better.
 
 ## Context
 
@@ -43,10 +45,11 @@ The isolation suite passing here matters more than the extension: it proves RLS 
 
 - **`docker` is not on the Windows PATH.** Anything invoking it must go through `scripts/lib/docker.ps1`. A direct `docker …` in a script will fail on this machine.
 - **The daemon does not survive a WSL restart.** There is no systemd session by default, so `Start-DockerDaemon` is called by the scripts that need it.
-- **No Docker Desktop GUI**, and no automatic start at login. Acceptable; the container is managed by script.
+- **No Docker Desktop GUI**, and no automatic start at login. Accepted deliberately; the container is managed by script, which is the only interface CI would have anyway.
+- **`docker` on the Windows PATH is not a supported configuration.** `Get-DockerMode` still returns `native` if it ever appears, but that branch exists to keep the abstraction honest rather than to anticipate a migration — it is three lines and untested against a real Docker Desktop.
 - Building this exposed a real bug worth recording: an earlier `Invoke-Docker` both printed output *and* returned an exit code, so `verify.ps1` captured the exit code as the health string and reported the **native cluster** while the container was serving. That is exactly the misreport the backend check exists to prevent. The interface is now split — `Invoke-Docker` prints and returns a code, `Get-DockerOutput` returns lines, `Get-DockerContainerHealth` returns a state.
-- Docker Desktop remains a valid future choice; it needs one UAC click from an interactive terminal and a clean download with the signature verified before running.
-
 ## Revisit
 
-If a Windows-native Docker is wanted (for a GUI, or for `docker` on PATH), or when a deployment target is chosen — the Compose file is already the starting point for it.
+Not for a GUI, and not to put `docker` on the Windows PATH — both are explicitly out.
+
+The one case that would reopen this is a **deployment target**, where the Compose file becomes the starting point for real infrastructure and the engine question is answered by the host rather than by this machine. Nothing before then.

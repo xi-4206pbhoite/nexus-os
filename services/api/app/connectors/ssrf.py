@@ -47,6 +47,42 @@ BLOCKED_HOST_SUFFIXES = (".internal", ".local", ".localdomain", ".localhost")
 
 Resolver = Callable[[str], list[str]]
 
+# RFC 6052 §2.1. A DNS64 resolver on a NAT64 network synthesises an AAAA record
+# under this prefix for every IPv4-only host, embedding the v4 address in the low
+# 32 bits. Recognised so the embedded address can be classified on its own
+# merits — see `_unwrap_embedded_ipv4`.
+#
+# Only the well-known prefix. RFC 6052 also permits Network-Specific Prefixes,
+# which are chosen per site and cannot be identified from the address alone; one
+# of those is indistinguishable from ordinary global unicast and is treated as
+# such.
+NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _unwrap_embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 address carries, if it carries one.
+
+    Three encodings put an IPv4 address inside an IPv6 one, and all three let it
+    slip past IPv6-shaped checks. IPv4-mapped and 6to4 were handled from the
+    start; NAT64 was not, and it is the one that shows up in practice — this
+    machine's network runs DNS64, so `omantel.om` resolved to
+    `64:ff9b::d448:ad3` alongside its real A record and every fetch was refused.
+
+    Python reports the whole `64:ff9b::/96` block as `is_reserved`, so those
+    addresses were being rejected — correct-looking, but by accident rather than
+    by decision. Unwrapping makes it a decision: a NAT64 address wrapping
+    `127.0.0.1` is refused because loopback is refused, and one wrapping a real
+    public address is allowed because that address is allowed. The alternative,
+    trusting the prefix, would have been a clean SSRF bypass.
+    """
+    if ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    if ip.sixtofour is not None:
+        return ip.sixtofour
+    if ip in NAT64_WELL_KNOWN_PREFIX:
+        return ipaddress.ip_address(int(ip) & 0xFFFFFFFF)  # type: ignore[return-value]
+    return None
+
 
 class UrlNotAllowedError(ValueError):
     """The URL may not be fetched. The message is safe to log, not to display."""
@@ -69,13 +105,12 @@ def is_public_ip(candidate: str) -> bool:
     except ValueError:
         return False
 
-    # IPv4-mapped and 6to4 forms smuggle IPv4 addresses through IPv6 checks,
-    # so unwrap before classifying.
+    # IPv4-mapped, 6to4 and NAT64 forms all smuggle IPv4 addresses through IPv6
+    # checks, so unwrap before classifying.
     if isinstance(ip, ipaddress.IPv6Address):
-        if ip.ipv4_mapped is not None:
-            ip = ip.ipv4_mapped
-        elif ip.sixtofour is not None:
-            ip = ip.sixtofour
+        embedded = _unwrap_embedded_ipv4(ip)
+        if embedded is not None:
+            ip = embedded
 
     # `is_global` is the authoritative test and the primary gate: it is False
     # for every non-globally-routable range, including ones the individual

@@ -8,6 +8,7 @@ unconfigured. That is the same failure mode as a dashboard tile showing `0`.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.main import create_app
 
@@ -72,6 +73,48 @@ def test_readiness_never_reports_ok_for_an_unconfigured_dependency() -> None:
         assert check["state"] in {"ok", "degraded", "unconfigured", "error"}
         if check["state"] != "ok":
             assert check["detail"], f"{check['name']} must explain why it is not ok"
+
+
+async def test_an_unreachable_database_is_not_reported_as_missing_pgvector() -> None:
+    """The failure mode created by answering both checks in one query.
+
+    Connectivity and the pgvector lookup share a single statement, because two
+    sessions against a managed database cost eight round trips and made readiness
+    a 3.5s call (ADR 0008). The hazard in that merge is misattribution: if the
+    statement fails, a naive implementation reports `database: error` alongside
+    `pgvector: unconfigured — not available on this server`, sending someone to
+    install an extension while the real problem is that nothing can reach the
+    database.
+
+    We did not learn pgvector is missing. We failed to look. I10 says say so.
+    """
+    from app.config import Settings
+    from app.db import get_engine
+    from app.health import _probe_database
+
+    # Port 1 on loopback: nothing listens, and it fails fast rather than waiting
+    # on a DNS or routing timeout.
+    unreachable = Settings(
+        database_url=SecretStr("postgresql+asyncpg://nobody:nothing@127.0.0.1:1/absent")
+    )
+
+    get_engine.cache_clear()
+    try:
+        database, pgvector = await _probe_database(unreachable)
+    finally:
+        get_engine.cache_clear()
+
+    assert database.state == "error"
+    assert pgvector.state == "error", "an unreachable database must not read as 'no pgvector'"
+    assert pgvector.detail is not None
+    assert "not determined" in pgvector.detail
+    assert pgvector.required_now is False, "an unreachable database is the database check's failure"
+
+    # Doc 07 §7 — the DSN must not reach a response body. It carries a password.
+    for check in (database, pgvector):
+        assert check.detail is not None
+        assert "nothing" not in check.detail
+        assert "absent" not in check.detail
 
 
 def test_every_response_carries_a_request_id() -> None:

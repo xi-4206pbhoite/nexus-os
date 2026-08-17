@@ -147,19 +147,26 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 
 ## M5 — Documents, classification, indexing
 
-✅ **Unblocked.** pgvector 0.8.6 is live via `pgvector/pgvector:pg17` on Docker Engine in WSL2
-(**ADR 0006** image, **ADR 0007** engine — Docker Desktop is ruled out). `/health/ready` reports
-`pgvector: ok`, and all 448 tests pass against it including the M1 isolation suite.
+✅ **Unblocked, and running on the real database.** **ADR 0008** — the application is developed
+and tested against **Neon serverless Postgres 18.4** with `vector` 0.8.6. All seven migrations are
+applied, `/health/ready` reports `pgvector: ok`, and all 459 tests pass there **including the M1
+isolation suite** — so RLS is proved against the backend that will serve production, not only
+against a local one.
 
-Bring the database up with `.\scripts\db-docker.ps1 -Action up`. The daemon does not survive a
-WSL restart; the script starts it.
+The app connects as `nexus_app`, never as `neondb_owner`, which has `rolbypassrls = true` and would
+render every policy inert while the whole suite kept passing. `db/bootstrap.sql` verifies both flags
+and raises if either is true.
 
-- [ ] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
-- [ ] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)
+The container of **ADR 0006/0007** remains as an offline fallback: `.\scripts\db-docker.ps1 -Action up`.
+Worth keeping — the suite takes ~5 minutes against Neon versus ~8 seconds locally, because every
+statement is a round trip to `us-east-2`.
+
+- [x] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
+- [x] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)
 - [ ] 5.2 Upload with **consent capture** including the right-to-use warranty (doc 06 §5)
-- [ ] 5.3 Parse PDF/DOCX/PPTX/XLSX; chunk with **source doc and page retained** (citations depend on it)
-- [ ] 5.4 Classify scope + department; persist `classified_by`, `confidence`, `review_state`
-- [ ] 5.5 **I4 default-deny** — parse failure, classification failure, or below-threshold confidence → L5 + review queue
+- [x] 5.3 Parse PDF/DOCX/PPTX/XLSX; chunk with **source doc and page retained** (citations depend on it)
+- [x] 5.4 Classify scope + department; persist `classified_by`, `confidence`, `review_state`
+- [x] 5.5 **I4 default-deny** — parse failure, classification failure, or below-threshold confidence → L5 + review queue
 - [ ] 5.6 Embed into pgvector with **all scope fields on the row** (doc 03's schema lacks them — doc 06 §12)
 - [ ] 5.7 **Spike: filtered-ANN recall at expected cardinality.** HNSW + iterative index scan vs partial indexes per scope. M6 depends on the answer
 - [ ] 5.8 Review queue UI; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it

@@ -117,6 +117,77 @@ def test_genuinely_public_addresses_are_public(ip: str) -> None:
     assert is_public_ip(ip) is True
 
 
+# ── NAT64 (RFC 6052) ──────────────────────────────────────────
+#
+# The third way an IPv4 address hides inside an IPv6 one, and the one this guard
+# originally missed. A DNS64 resolver synthesises these for every IPv4-only host,
+# so on such a network they arrive in ordinary answers for ordinary websites —
+# `omantel.om` resolved to `64:ff9b::d448:ad3` and the crawl was refused.
+
+
+@pytest.mark.parametrize(
+    "ip",
+    [
+        "64:ff9b::7f00:1",  # 127.0.0.1        loopback
+        "64:ff9b::a9fe:a9fe",  # 169.254.169.254  cloud metadata
+        "64:ff9b::a00:1",  # 10.0.0.1         private
+        "64:ff9b::c0a8:1",  # 192.168.0.1      private
+        "64:ff9b::6440:1",  # 100.64.0.1       carrier-grade NAT
+        "64:ff9b::",  # 0.0.0.0          unspecified
+    ],
+)
+def test_nat64_wrapping_a_private_address_is_not_public(ip: str) -> None:
+    """The bypass this unwrapping exists to prevent.
+
+    Before unwrapping these were refused, but only because Python reports the
+    whole `64:ff9b::/96` block as `is_reserved` — the embedded address was never
+    examined. Anything that widened the reserved test, or a `is_global`-only
+    gate, would have turned each of these into a live SSRF.
+    """
+    assert is_public_ip(ip) is False
+
+
+def test_nat64_wrapping_a_public_address_is_public() -> None:
+    """And the false negative that surfaced it.
+
+    `64:ff9b::d448:ad3` embeds 212.72.10.211, the same public address the host's
+    A record gives. Refusing it made every IPv4-only site unreachable from a
+    NAT64 network — environment-dependent, so it passed in CI and failed on a
+    developer's machine.
+    """
+    assert is_public_ip("64:ff9b::d448:ad3") is True
+    assert is_public_ip("212.72.10.211") is True, "the address it embeds"
+
+
+def test_a_mixed_answer_with_nat64_is_accepted_when_both_are_public() -> None:
+    """The shape a DNS64 network actually returns: one A record, one synthesised
+    AAAA for the same host. `validate_url` requires *every* answer to be public,
+    so the synthesised one must not be the thing that fails."""
+    target = validate_url(
+        "https://example.om",
+        resolve=lambda _: ["212.72.10.211", "64:ff9b::d448:ad3"],
+    )
+    assert target.ip == "212.72.10.211"
+
+
+def test_a_nat64_answer_hiding_a_private_address_still_fails_the_whole_answer() -> None:
+    """Cherry-picking the public record would leave the connection free to use
+    the other one."""
+    with pytest.raises(UrlNotAllowedError):
+        validate_url(
+            "https://example.om",
+            resolve=lambda _: ["93.184.216.34", "64:ff9b::a9fe:a9fe"],
+        )
+
+
+def test_a_network_specific_nat64_prefix_is_treated_as_ordinary_unicast() -> None:
+    """RFC 6052 also allows site-chosen prefixes, which cannot be recognised from
+    the address alone. Documenting the limit rather than pretending to cover it:
+    such an address is classified as the global unicast it looks like."""
+    assert is_public_ip("2001:db8:122:344::a9fe:a9fe") is False  # 2001:db8::/32 is documentation
+    assert is_public_ip("2606:2800:220::a9fe:a9fe") is True
+
+
 # ── Hostnames resolving somewhere they should not ─────────────
 
 

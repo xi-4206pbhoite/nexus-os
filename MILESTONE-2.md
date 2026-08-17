@@ -2,6 +2,7 @@
 
 **Status:** ✅ complete — **ready for validation**
 **Date:** 16 August 2026 · 267 tests · CI green
+**Amended:** 17 August 2026 — the NAT64 gap below, found while bringing the real database up
 
 Doc 07 M2: *"Done when a URL produces a reduced audit and every SSRF test case is blocked."*
 
@@ -46,6 +47,14 @@ Two decisions carry most of the weight:
 Also covered: non-HTTP schemes including `gopher` and `dict` (which can drive plaintext protocols like Redis); credentials in the authority (`http://expected.com@evil.com/`); a port **allowlist** rather than a blocklist; octal, decimal and hex literal forms; metadata hostnames blocked by name as well as by address; and mixed DNS answers refused outright rather than cherry-picked.
 
 **The corpus caught a real gap.** `is_public_ip` originally tested the individual flags, which pass carrier-grade NAT (`100.64.0.0/10`) — `is_private` is `False` for it, but it is emphatically not the public internet. It now gates on `is_global`, with the explicit checks kept as documented defence in depth.
+
+**A second gap, found later by a false positive rather than by the corpus** (recorded here because it belongs with the guard, not with the milestone that surfaced it). Three encodings put an IPv4 address inside an IPv6 one; the guard unwrapped two of them. The third, **NAT64** (`64:ff9b::/96`, RFC 6052), it did not.
+
+It surfaced from the honest end. `omantel.om` was refused. The machine's network runs DNS64, so the resolver synthesised `64:ff9b::d448:ad3` alongside the real A record — and that address embeds `212.72.10.211`, the *same public address* the A record gives. Since every answer must be public, the synthesised one failed the whole set, and on such a network **every IPv4-only site was unreachable**. Environment-dependent, so CI was green throughout.
+
+The reason it was refused is the interesting part: Python reports the whole `64:ff9b::/96` block as `is_reserved`, so NAT64 addresses were being rejected — correctly, but *by accident*, with the embedded address never examined. `64:ff9b::a9fe:a9fe` is the cloud metadata endpoint, and it was one semantic change to `is_reserved` away from being reachable. Unwrapping makes it a decision instead: the embedded address is classified on its own merits, so a NAT64 address wrapping loopback is refused because loopback is refused. Six new cases assert exactly that, plus one for the false positive and one documenting the limit — RFC 6052's site-chosen Network-Specific Prefixes cannot be recognised from an address alone and are treated as the ordinary global unicast they resemble.
+
+Fixing a false positive closed a latent bypass. Both directions are now tested.
 
 ---
 

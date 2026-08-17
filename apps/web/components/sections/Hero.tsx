@@ -9,14 +9,25 @@ import { IconSparkle, IconCheck } from '@/components/art/Icons'
 import { hero } from '@/lib/content'
 import { usePointerParallax } from '@/lib/hooks'
 
+/* Entrance animations here are CSS classes (`animate-rise`, `animate-rise-scale`,
+   `animate-fade-in` in globals.css), not framer-motion.
+ 
+   Everything in this section is above the fold. A JS-driven entrance writes its
+   hidden state into the server HTML, so the hero renders at `opacity: 0` and
+   stays there until React hydrates — a blank first paint on a slow connection,
+   and a permanently blank one if the bundle fails. CSS keyframes run at first
+   paint with no bundle and no hydration, and the global reduced-motion rule
+   collapses their duration instead of leaving anything hidden.
+ 
+   framer-motion is still the right tool below the fold, where reveals need
+   viewport detection and the bundle has long since arrived. */
+
 /** A product fragment that floats over the illustration — proof, not decoration. */
 function FloatingBrief() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.9, delay: 0.85, ease: [0.16, 1, 0.3, 1] }}
-      className="absolute -left-2 top-[22%] w-[17.5rem] rounded-2xl border border-bone-300/80 bg-white/90 p-4 shadow-paper-lg backdrop-blur-md sm:-left-8"
+    <div
+      style={{ animationDelay: '0.85s' }}
+      className="animate-rise-scale absolute -left-2 top-[22%] w-[17.5rem] rounded-2xl border border-bone-300/80 bg-white/90 p-4 shadow-paper-lg backdrop-blur-md sm:-left-8"
     >
       <div className="flex items-center gap-2">
         <span className="relative flex h-2 w-2">
@@ -40,17 +51,15 @@ function FloatingBrief() {
           </span>
         ))}
       </div>
-    </motion.div>
+    </div>
   )
 }
 
 function FloatingScore() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.9, delay: 1.05, ease: [0.16, 1, 0.3, 1] }}
-      className="absolute -right-1 bottom-[16%] w-[14.5rem] rounded-2xl border border-bone-300/80 bg-white/90 p-4 shadow-paper-lg backdrop-blur-md sm:-right-6"
+    <div
+      style={{ animationDelay: '1.05s' }}
+      className="animate-rise-scale absolute -right-1 bottom-[16%] w-[14.5rem] rounded-2xl border border-bone-300/80 bg-white/90 p-4 shadow-paper-lg backdrop-blur-md sm:-right-6"
     >
       <div className="flex items-baseline justify-between">
         <span className="font-mono text-2xs uppercase tracking-[0.18em] text-ink-400">
@@ -81,7 +90,7 @@ function FloatingScore() {
           </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -101,11 +110,8 @@ export function Hero() {
         <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr] lg:gap-10">
           {/* ── Copy ─────────────────────────────────────────── */}
           <div className="relative z-10 max-w-2xl">
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-              className="inline-flex items-center gap-2 rounded-full border border-bone-300 bg-white/70 py-1.5 pl-2 pr-4 shadow-paper backdrop-blur"
+            <div
+              className="animate-rise inline-flex items-center gap-2 rounded-full border border-bone-300 bg-white/70 py-1.5 pl-2 pr-4 shadow-paper backdrop-blur"
             >
               <span className="grid h-6 w-6 place-items-center rounded-full bg-gold-200 text-gold-600">
                 <IconSparkle className="h-3.5 w-3.5" />
@@ -113,7 +119,7 @@ export function Hero() {
               <span className="font-mono text-2xs uppercase tracking-[0.18em] text-ink-600">
                 {hero.eyebrow}
               </span>
-            </motion.div>
+            </div>
 
             <h1 className="mt-7 text-display text-balance">
               <RevealWords text={hero.headlineTop} delay={0.15} />{' '}
@@ -146,64 +152,51 @@ export function Hero() {
               />
             </h1>
 
-            <motion.p
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.72, ease: [0.16, 1, 0.3, 1] }}
-              className="mt-7 max-w-xl text-pretty text-lg leading-relaxed text-ink-500"
+            <p
+              style={{ animationDelay: '0.72s' }}
+              className="animate-rise mt-7 max-w-xl text-pretty text-lg leading-relaxed text-ink-500"
             >
               {hero.sub}
-            </motion.p>
+            </p>
 
             {/* Doc 06 §1: one primary action — enter your website. The URL is
                 captured before registration and becomes the first fact NEXUS
                 holds. */}
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.84, ease: [0.16, 1, 0.3, 1] }}
-              className="mt-9"
-            >
+            <div style={{ animationDelay: '0.84s' }} className="animate-rise mt-9">
               <PreviewForm />
               <div className="mt-4">
                 <Button href="#loop" size="md" variant="ghost">
                   {hero.secondaryCta}
                 </Button>
               </div>
-            </motion.div>
+            </div>
 
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.8, delay: 1 }}
-              className="mt-6 flex items-start gap-2 text-sm text-ink-400"
+            <p
+              style={{ animationDelay: '1s' }}
+              className="animate-fade-in mt-6 flex items-start gap-2 text-sm text-ink-400"
             >
               <IconCheck className="mt-0.5 h-4 w-4 shrink-0 text-steel-500" />
               {hero.note}
-            </motion.p>
+            </p>
           </div>
 
           {/* ── Illustration ─────────────────────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.94 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.1, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="relative mx-auto w-full max-w-[34rem] lg:max-w-none"
+          <div
+            style={{ animationDelay: '0.25s' }}
+            className="animate-rise-scale relative mx-auto w-full max-w-[34rem] lg:max-w-none"
           >
             <div className="relative">
               <PaperLandscape parallax={parallax} className="w-full drop-shadow-[0_40px_80px_rgba(9,31,70,0.16)]" />
               <FloatingBrief />
               <FloatingScore />
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* ── Value ticker ───────────────────────────────────── */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.9, delay: 1.2 }}
-          className="mt-20 border-t border-bone-200 py-6 lg:mt-24"
+        <div
+          style={{ animationDelay: '1.2s' }}
+          className="animate-fade-in mt-20 border-t border-bone-200 py-6 lg:mt-24"
         >
           <div className="mask-fade-x overflow-hidden pause-on-hover">
             <div className="flex w-max motion-safe:animate-marquee">
@@ -222,7 +215,7 @@ export function Hero() {
               ))}
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   )

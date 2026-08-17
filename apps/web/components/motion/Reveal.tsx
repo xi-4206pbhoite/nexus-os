@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, useReducedMotion, type Variants } from 'framer-motion'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 type Direction = 'up' | 'down' | 'left' | 'right' | 'none'
 
@@ -119,6 +119,18 @@ export function RevealItem({
 /**
  * Splits a string into words and reveals them in sequence. Used sparingly —
  * only the hero headline earns this much attention.
+ *
+ * CSS-animated rather than JavaScript-animated, and that is the whole point.
+ * Each word sits inside an `overflow-hidden` mask and starts translated fully
+ * out of it, so the hidden state is not a faint word — it is no word at all.
+ * Driven from JS that state renders into the server HTML, so the headline is
+ * blank until React hydrates; on a slow connection the first paint of the page
+ * is an empty hero. A keyframe animation starts at first paint instead, needs
+ * no bundle, and degrades to visible rather than absent if scripting fails.
+ *
+ * Reduced motion is handled globally in `globals.css`, which collapses every
+ * animation duration — so the words land immediately rather than staying
+ * hidden.
  */
 export function RevealWords({
   text,
@@ -131,27 +143,27 @@ export function RevealWords({
   wordClassName?: string
   delay?: number
 }) {
-  const reduced = useReducedMotion()
   const words = text.split(' ')
 
   return (
     <span className={className}>
       {words.map((word, i) => (
-        <span key={`${word}-${i}`} className="inline-block overflow-hidden align-bottom">
-          <motion.span
-            className={`inline-block ${wordClassName ?? ''}`}
-            initial={{ y: reduced ? 0 : '100%', opacity: reduced ? 1 : 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{
-              duration: reduced ? 0 : 0.85,
-              delay: reduced ? 0 : delay + i * 0.06,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          >
-            {word}
-            {i < words.length - 1 ? ' ' : ''}
-          </motion.span>
-        </span>
+        <Fragment key={`${word}-${i}`}>
+          {/* The mask has to wrap the word and nothing else. A trailing space
+              inside an `inline-block` — worse, inside one with
+              `overflow-hidden` — is collapsed away, which ran every word in the
+              headline together. The separator therefore sits between the masks
+              as an ordinary text node. */}
+          <span className="inline-block overflow-hidden align-bottom">
+            <span
+              className={`animate-word-rise inline-block ${wordClassName ?? ''}`}
+              style={{ animationDelay: `${delay + i * 0.06}s` }}
+            >
+              {word}
+            </span>
+          </span>
+          {i < words.length - 1 ? ' ' : ''}
+        </Fragment>
       ))}
     </span>
   )

@@ -73,7 +73,11 @@ class Settings(BaseSettings):
     trusted_proxy_ips: str = ""
 
     # ── Preview crawl (doc 06 §1.1, §1.2) ─────────────────────
-    preview_ttl_days: int = 7
+    # Doc 06 §1.1 says "short TTL", and the subject of this data is a company
+    # that has no account here and never consented to the crawl. A day is long
+    # enough to serve a repeat visit and reload, and short enough that we are
+    # not sitting on an audit of a third party for a week.
+    preview_ttl_hours: int = 24
     crawl_max_bytes: int = 5_000_000
     crawl_timeout_seconds: int = 15
     crawl_max_redirects: int = 5

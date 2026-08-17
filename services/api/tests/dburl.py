@@ -23,8 +23,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def database_url() -> str | None:
-    """A psycopg2-compatible DSN, or None when no database is configured."""
+def _configured_url() -> str | None:
+    """The URL exactly as configured, in the application's asyncpg spelling.
+
+    `conftest` pins `NEXUS_DATABASE_URL` to empty so no test depends on machine
+    state by accident, so the `.env` fallback is how a suite opts back in.
+    """
     url = os.environ.get("NEXUS_DATABASE_URL") or ""
 
     if not url:
@@ -38,6 +42,25 @@ def database_url() -> str | None:
                     break
 
     if not url or "USER:PASSWORD" in url:
+        return None
+    return url
+
+
+def async_database_url() -> str | None:
+    """The asyncpg DSN, for the few suites that exercise application code paths.
+
+    Most DB tests here are synchronous because they assert database behaviour.
+    A test that calls an `async def` in `app/` needs the driver the app uses, and
+    must not be handed the psycopg2 translation below — asyncpg rejects
+    `sslmode` outright.
+    """
+    return _configured_url()
+
+
+def database_url() -> str | None:
+    """A psycopg2-compatible DSN, or None when no database is configured."""
+    url = _configured_url()
+    if url is None:
         return None
 
     url = re.sub(r"^postgresql\+asyncpg://", "postgresql://", url)

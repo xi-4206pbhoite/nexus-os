@@ -1,7 +1,7 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowRight } from '@/components/ui/Button'
 import { PreviewResult, type PreviewAudit } from '@/components/preview/PreviewResult'
 
@@ -21,9 +21,54 @@ type State =
   | { status: 'done'; audit: PreviewAudit }
   | { status: 'error'; message: string }
 
+/** Whole seconds until `at`, or 0. */
+function secondsUntil(at: number) {
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000))
+}
+
+function formatWait(seconds: number) {
+  if (seconds >= 3600) {
+    const hours = Math.ceil(seconds / 3600)
+    return `${hours} hour${hours === 1 ? '' : 's'}`
+  }
+  if (seconds >= 60) {
+    const minutes = Math.ceil(seconds / 60)
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`
+  }
+  return `${seconds}s`
+}
+
+/**
+ * Counts down to a timestamp, re-rendering once a second and stopping at zero.
+ * The interval only exists while a wait is outstanding.
+ */
+function useCountdown(until: number | null) {
+  const [remaining, setRemaining] = useState(() => (until ? secondsUntil(until) : 0))
+
+  useEffect(() => {
+    if (until === null) {
+      setRemaining(0)
+      return
+    }
+    setRemaining(secondsUntil(until))
+    const id = setInterval(() => {
+      const next = secondsUntil(until)
+      setRemaining(next)
+      if (next === 0) clearInterval(id)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [until])
+
+  return remaining
+}
+
 export function PreviewForm() {
   const [url, setUrl] = useState('')
   const [state, setState] = useState<State>({ status: 'idle' })
+  // When the rate limiter says to come back. Held as a timestamp rather than a
+  // duration so a re-render cannot restart the wait.
+  const [retryAt, setRetryAt] = useState<number | null>(null)
+  const waiting = useCountdown(retryAt)
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -39,6 +84,14 @@ export function PreviewForm() {
       const payload = await response.json()
 
       if (!response.ok) {
+        // 429 carries a measured wait. Honour it: the button stays disabled
+        // until it elapses, so the visitor is told when to come back instead of
+        // being invited to retry into the same wall.
+        if (response.status === 429) {
+          const header = Number(response.headers.get('retry-after'))
+          const seconds = Number.isFinite(header) && header > 0 ? header : 60
+          setRetryAt(Date.now() + seconds * 1000)
+        }
         setState({
           status: 'error',
           // The API's message is written to be safe to show: it never confirms
@@ -47,6 +100,7 @@ export function PreviewForm() {
         })
         return
       }
+      setRetryAt(null)
       setState({ status: 'done', audit: payload as PreviewAudit })
     } catch {
       setState({ status: 'error', message: 'Something went wrong. Please try again.' })
@@ -82,11 +136,15 @@ export function PreviewForm() {
         </div>
         <button
           type="submit"
-          disabled={running || url.trim().length < 4}
+          disabled={running || waiting > 0 || url.trim().length < 4}
           className="group inline-flex h-14 shrink-0 items-center justify-center gap-2 rounded-full bg-ink-800 px-7 text-[0.975rem] font-medium text-bone-50 shadow-paper transition-all duration-300 ease-out-expo hover:-translate-y-0.5 hover:bg-ink-700 hover:shadow-lift disabled:pointer-events-none disabled:opacity-50"
         >
-          {running ? 'Analysing…' : 'Analyse my business'}
-          {!running && (
+          {running
+            ? 'Analysing…'
+            : waiting > 0
+              ? `Try again in ${formatWait(waiting)}`
+              : 'Analyse my business'}
+          {!running && waiting === 0 && (
             <ArrowRight className="transition-transform duration-300 group-hover:translate-x-0.5" />
           )}
         </button>

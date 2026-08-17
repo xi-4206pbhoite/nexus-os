@@ -84,6 +84,63 @@
   }
 }
 
+/* ── Above-the-fold entrance animations ──────────────────────────────────────
+   Deliberately CSS rather than JavaScript.
+
+   A JS-driven entrance renders its hidden state into the server HTML, so the
+   hero is `opacity: 0` — and, where words are clipped by an overflow, entirely
+   absent — until React hydrates. On a fast connection that is invisible. On a
+   slow one the first thing a visitor sees is a blank page, which is the worst
+   possible trade for a decorative flourish, and it fails outright if the bundle
+   never arrives.
+
+   A CSS animation runs at first paint with no bundle, no hydration and no
+   observer. `animation-fill-mode: both` holds the start frame until the delay
+   elapses, so staggering still works, and the global `prefers-reduced-motion`
+   rule above collapses the duration to ~0 rather than leaving anything hidden.
+
+   Below-the-fold reveals stay on framer-motion: they need viewport detection,
+   and by the time they are on screen the bundle has landed. */
+@layer utilities {
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(1rem); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @keyframes rise-scale {
+    from { opacity: 0; transform: translateY(1.5rem) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* Words rise out of a clipping mask. The mask is why this must not depend on
+     hydration: a clipped word is not faint, it is gone. */
+  @keyframes word-rise {
+    from { opacity: 0; transform: translateY(100%); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .animate-rise {
+    animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-rise-scale {
+    animation: rise-scale 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.8s ease-out both;
+  }
+
+  .animate-word-rise {
+    animation: word-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
 @layer utilities {
   .text-balance { text-wrap: balance; }
   .text-pretty { text-wrap: pretty; }

@@ -122,6 +122,11 @@ function CategoryCard({ category, index }: { category: PreviewCategory; index: n
 }
 
 export function PreviewResult({ audit }: { audit: PreviewAudit }) {
+  // The denominator is the full category set, not the scored subset — that is
+  // the whole point of showing it. Derived from the payload rather than
+  // hard-coded to 10, so adding a category cannot leave a stale label behind.
+  const totalCategories = audit.categories.length + audit.locked.length
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 16 }}
@@ -138,10 +143,12 @@ export function PreviewResult({ audit }: { audit: PreviewAudit }) {
         <div className="text-right">
           <span className="font-display text-4xl text-ink-800">{audit.overall}</span>
           <span className="text-sm text-ink-400">/100</span>
-          {/* The denominator is always visible: never a whole-business score
-              computed from part of the evidence (doc 05 §10). */}
+          {/* The denominator is always visible, and it names both halves of the
+              fraction: never a whole-business score computed from part of the
+              evidence (doc 05 §10). "3 scored categories" read as a complete
+              picture of three things; "3 of 10" cannot. */}
           <p className="mt-1 font-mono text-2xs uppercase tracking-[0.14em] text-ink-400">
-            across {audit.scored_categories} scored categories
+            across {audit.scored_categories} of {totalCategories} categories
           </p>
         </div>
       </div>

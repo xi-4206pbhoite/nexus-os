@@ -39,10 +39,24 @@ class Limit:
     window: timedelta
 
 
-# Deliberately conservative. A real visitor analyses their own site once or
-# twice; anything beyond that is a script.
-PER_IP = Limit("ip", max_count=5, window=timedelta(hours=1))
-PER_DOMAIN = Limit("domain", max_count=3, window=timedelta(hours=24))
+# Sized for the failure mode that actually costs money, which is not a curious
+# visitor. Two constraints pulled these numbers:
+#
+# - **A bucket is shared more often than it looks.** An office, a university or
+#   any carrier NAT presents one address for many people, and with no trusted
+#   proxy configured (see `client_ip`) every visitor collapses into a single
+#   bucket. At 5/hour two colleagues could lock each other out of the landing
+#   page, so the per-IP limit was rejecting customers, not scripts.
+# - **Only the global ceiling bounds the bill.** Loosening the per-key limits
+#   does not raise the maximum spend, because `GLOBAL_DAILY` still caps the
+#   number of crawls per day. That is the limit to keep tight.
+#
+# A repeated domain inside its TTL is served from `preview_session` without a
+# crawl and without consuming any of these — so the per-domain limit counts
+# *fresh crawls of one target*, which is the reflected-DoS shape it exists to
+# stop, rather than page reloads.
+PER_IP = Limit("ip", max_count=20, window=timedelta(hours=1))
+PER_DOMAIN = Limit("domain", max_count=5, window=timedelta(hours=24))
 GLOBAL_DAILY = Limit("global", max_count=500, window=timedelta(days=1))
 
 

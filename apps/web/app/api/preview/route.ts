@@ -51,7 +51,17 @@ export async function POST(request: Request) {
     clearTimeout(timeout)
 
     const payload = await upstream.json().catch(() => ({ detail: 'Analysis failed.' }))
-    return NextResponse.json(payload, { status: upstream.status })
+
+    // Forward `Retry-After`. Constructing a fresh response drops every upstream
+    // header, and dropping this one is not cosmetic: the API measures the wait
+    // and the browser is the only thing that can show it, so losing it here is
+    // what turned a precise limit into "please try again later" with no idea
+    // whether that meant seconds or a day.
+    const headers = new Headers()
+    const retryAfter = upstream.headers.get('retry-after')
+    if (retryAfter) headers.set('Retry-After', retryAfter)
+
+    return NextResponse.json(payload, { status: upstream.status, headers })
   } catch {
     return NextResponse.json(
       { detail: 'The analysis service is unavailable right now.' },

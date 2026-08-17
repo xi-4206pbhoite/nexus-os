@@ -19,7 +19,8 @@
 
 .PARAMETER PreviewUrl
     A public website for the Preview audit. Default https://example.com
-    Note the limit: 3 previews per domain per day.
+    Limits: 20 analyses per hour per IP, 5 per domain per day. A repeat of a
+    domain already audited is served from storage and costs no domain allowance.
 
 .PARAMETER SkipPreview
     Skip the Preview audit. Use this once you have spent the daily allowance on
@@ -169,13 +170,14 @@ if (-not $SkipPreview) {
         if (-not $detail) { $detail = $_.Exception.Message }
 
         if ($status -eq 429) {
-            # Expected on a re-run, and the reason is worth stating: the SSRF
-            # probes below consume the same per-IP allowance as a real audit, so
-            # one full pass costs 7 of the 5 hourly calls. The limit working is
+            # Possible on repeated runs. The SSRF probes below consume the
+            # same per-IP allowance as a real audit, so one full pass costs 7 of
+            # the 20 hourly calls - comfortable now, where at the previous 5 it
+            # made a second run inside the hour impossible. The limit working is
             # not the limit failing.
             Write-Host '  SKIP  rate limited (429) - the allowance is spent' -ForegroundColor Yellow
             Write-Host "        $detail"
-            Write-Host '        5/hour per IP, 3/day per domain. Wait, or use -SkipPreview'
+            Write-Host '        20/hour per IP, 5/day per domain. Wait, or use -SkipPreview'
             Write-Host '        to run the account and workspace-gate checks now.'
         }
         elseif ($detail -match 'too long to respond|could not be reached|did not return') {

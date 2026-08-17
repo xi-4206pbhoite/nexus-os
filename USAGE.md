@@ -69,10 +69,11 @@ happily with every guard removed.
 
 Expect `SMOKE PASSED   17 assertions`. Two things it may legitimately skip:
 
-- **`429 rate limited`** — the Preview audit is capped at 5/hour per IP and
-  3/day per domain, and the script's own six SSRF probes spend that same
-  allowance. Re-running inside the hour will hit it. Use `-SkipPreview` to run
-  the rest, or `-PreviewUrl https://another-site.com`.
+- **`429 rate limited`** — the Preview audit is capped at 20/hour per IP
+  and 5/day per domain. A repeat of a domain already audited is
+  served from storage without a crawl and costs no domain allowance, so this is
+  harder to hit than it was. Use `-SkipPreview`, or
+  `-PreviewUrl https://another-site.com`.
 - **`did not answer`** — the site you pointed it at is slow or blocking us.
   Not a defect; the API says which it was.
 
@@ -116,7 +117,8 @@ fetch where the caller picks the destination, so the guard validates the URL,
 pins the resolved IP, connects to *that address*, and re-validates every redirect
 hop by hand.
 
-Audits expire after **7 days**.
+Audits expire after **24 hours**, and a repeat request for the same
+domain inside that window is answered from storage without re-crawling the site.
 
 ### Accounts — register, sign in, sign out
 
@@ -337,8 +339,9 @@ query.
 **The test suite takes ~5 minutes.** Against Neon, every statement is a round
 trip. Locally it is ~8 seconds. Not a hang.
 
-**`429 Too many analyses`.** 5/hour per IP, 3/day per domain, 500/day globally.
-The global ceiling is the one that bounds cost.
+**`429 Too many analyses`.** 20/hour per IP, 5/day per domain,
+500/day globally. The global ceiling is the one that bounds cost; the
+response now states how long to wait rather than saying “later”.
 
 **`Invoke-RestMethod` throws on 4xx.** PowerShell 5.1 puts the response body in
 `$_.ErrorDetails.Message`, *not* in `GetResponseStream()` — the stream is already

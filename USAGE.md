@@ -15,15 +15,16 @@ You asked whether everything is implemented. It is not, and the gap is large.
 | **Milestones complete** | M0, M1, M2, M3, M4 |
 | **In progress** | M5 — 5 of 12 tasks done |
 | **Not started** | M6 through M13 |
-| **API endpoints** | 12 |
-| **Web pages** | **1** — the landing page |
-| **Signed-in UI** | **none** |
-| **Tests** | 459, green against the real database |
+| **API endpoints** | 13 |
+| **Web pages** | 4 — landing, register, sign in, account |
+| **Signed-in UI** | register, sign in, sign out, account (ADR 0009) |
+| **Tests** | 512, green against the real database |
 
-The one sentence that matters: **the only feature with a user interface is the
-Preview audit on the landing page.** Everything else that exists is reachable
-only by HTTP call or from the test suite. There is no dashboard, no document
-upload screen, no AI director, no morning brief — those are M6 onward.
+Two things now have a user interface: **the Preview audit** on the landing page,
+and **accounts** — register, sign in, sign out (ADR 0009, built out of sequence at
+your request). Everything else that exists is reachable only by HTTP call or from
+the test suite. There is no dashboard, no document upload screen, no AI director,
+no morning brief — those are M6 onward.
 
 What *is* built is the foundation those depend on: tenant isolation enforced by
 the database, the permission lattice, the workspace gate, and the document
@@ -41,8 +42,12 @@ migrated. There is nothing to start locally.
 **Terminal 1 — the API**
 
 ```powershell
-cd services\api; .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+.\scripts\api.ps1
 ```
+
+Add `-Reload` to restart the worker when a file under `services\api\app` changes.
+Development only: each reload drops the connection pool, so the next request pays
+Neon's cold-connect cost again.
 
 **Terminal 2 — the web app**
 
@@ -113,11 +118,40 @@ hop by hand.
 
 Audits expire after **7 days**.
 
-### What is on the page but not wired up
+### Accounts — register, sign in, sign out
 
-The header's **Sign in** link is `href="#"`. There is no sign-in UI. The rest of
-the landing page — the loop panel, pillars, pricing, FAQ — is content, not
-function.
+Added by **ADR 0009**, out of the milestone sequence, because you asked. Three
+screens over endpoints that already existed.
+
+**Register** — `http://localhost:3000/register`, or **Sign in → Create one**.
+Minimum password length is 12, checked as you type. On success the panel says
+plainly that **no email is actually sent** (wall 1) rather than telling you to
+check an inbox that will stay empty, and it never claims the account was created:
+the API answers identically whether or not the address was already taken, so
+saying "account created" would leak exactly what that design protects.
+
+**Sign in** — `/login`, or the header link, which is no longer a placeholder. A
+wrong password keeps your email and clears only the password; retyping an address
+you already got right is pure friction, and the error says nothing about which
+field was wrong because the API deliberately does not know either.
+
+**Your account** — `/account`, where signing in lands. It shows your user id,
+your workspaces (probably none) and, in place of an empty dashboard, the reason
+there is nothing yet: a workspace needs a verified domain. Survives a page
+reload, which is what `GET /auth/session` was added for.
+
+**Sign out** clears both cookies and returns you to `/login`.
+
+Worth opening devtools for: after signing in you can read `nexus_csrf` from
+`document.cookie` but **not** `nexus_session`. The session cookie is `httponly`,
+so XSS cannot exfiltrate it; the CSRF companion is deliberately readable, because
+the client must echo it into a header — which is precisely what an attacker on
+another origin cannot do.
+
+### On the page but not wired up
+
+The rest of the landing page — the loop panel, pillars, pricing, FAQ — is content,
+not function.
 
 ---
 
@@ -125,7 +159,7 @@ function.
 
 Interactive docs: **http://127.0.0.1:8000/docs**
 
-All 12 endpoints, and what each is good for:
+All 13 endpoints, and what each is good for:
 
 | | Endpoint | Notes |
 |---|---|---|
@@ -134,6 +168,7 @@ All 12 endpoints, and what each is good for:
 | POST | `/preview` | The audit. Unauthenticated, rate limited. |
 | POST | `/auth/register` | Returns `check_your_email` whether or not the address exists. **Sends no email — see Wall 1.** |
 | POST | `/auth/login` | Sets `nexus_session` and a readable `nexus_csrf` cookie. |
+| GET | `/auth/session` | Your own account, **with or without a workspace**. What the UI uses. Added by ADR 0009. |
 | GET | `/auth/me` | **Requires a workspace membership — 403 without one. See Wall 2.** |
 | POST | `/auth/logout` | |
 | POST | `/auth/workspace` | Switch active workspace. Needs ≥2 memberships to be meaningful. |
@@ -173,6 +208,10 @@ Consequences: `POST /auth/verify-email` cannot be exercised without inserting a
 token directly into the database, and the `email` method of domain claiming is
 unreachable because it requires a verified address.
 
+The register screen now says this on its success panel rather than telling you to
+check an inbox that will stay empty. **You can sign in immediately** — email
+verification is not required to do so.
+
 ### Wall 2 — a fresh account is a dead end
 
 `GET /auth/me` returns **403** until you have a workspace membership. A workspace
@@ -180,8 +219,12 @@ requires a verified domain. So registering and logging in gets you a session tha
 can do almost nothing.
 
 This is the gate working correctly — it is exactly what stops someone claiming a
-domain they do not own — but it means **you cannot see a signed-in state at all
-unless you control a domain.** And even then there is no UI to see it in.
+domain they do not own.
+
+**You can now see a signed-in state**: `/account` uses `GET /auth/session`, which
+answers without a workspace, and it names this gate rather than showing an empty
+dashboard. What you cannot do through the UI is get *past* the gate — claiming a
+domain still runs through the API.
 
 ### Wall 3 — documents have no way in
 
@@ -197,6 +240,21 @@ yet.** It can only be run as a test:
 ```powershell
 cd services\api; .\.venv\Scripts\python.exe -m pytest tests\test_classification_default_deny.py -v
 ```
+
+---
+
+### The gap the sign-in UI opened
+
+**Login is not rate limited.** `rate_limit.py` covers only the Preview path, so
+password attempts against `/auth/login` are unbounded. argon2id hashing and the
+dummy-hash timing equalisation defeat offline cracking and the timing oracle;
+online guessing against a weak password is not mitigated.
+
+This mattered less when reaching login required deliberate API calls. A form makes
+it ordinary. **Answer D14 in `DECISIONS-REQUIRED.md` before exposing this
+publicly** — it is a real decision, not a default I should pick, because a
+per-account lock is a denial-of-service vector against any user whose email is
+known.
 
 ---
 

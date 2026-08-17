@@ -1,6 +1,7 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Logo } from '@/components/ui/Logo'
 import { Button, ArrowRight } from '@/components/ui/Button'
@@ -73,12 +74,12 @@ export function Nav() {
             </nav>
 
             <div className="flex items-center gap-2">
-              <a
-                href="#"
+              <Link
+                href="/login"
                 className="hidden rounded-full px-4 py-2 text-sm text-ink-600 transition-colors hover:text-ink-900 sm:inline-block"
               >
                 Sign in
-              </a>
+              </Link>
               <Button href="#cta" size="md" icon={<ArrowRight />} className="hidden sm:inline-flex">
                 Start free
               </Button>
@@ -140,7 +141,7 @@ export function Nav() {
                 <Button href="#cta" size="lg" icon={<ArrowRight />}>
                   Start free
                 </Button>
-                <Button href="#" size="lg" variant="secondary">
+                <Button href="/login" size="lg" variant="secondary">
                   Sign in
                 </Button>
               </div>

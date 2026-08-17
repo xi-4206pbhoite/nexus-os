@@ -28,7 +28,7 @@ from app.auth.service import (
 from app.auth.tokens import new_csrf_token
 from app.config import Settings, get_settings
 from app.db import _unscoped_session
-from app.deps import CurrentScope
+from app.deps import CurrentScope, CurrentSession
 from app.logging import get_logger
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -160,7 +160,6 @@ async def login(
     dependencies=[Depends(require_csrf)],
 )
 async def logout(
-    response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
     nexus_session: Annotated[str | None, Cookie(alias="nexus_session")] = None,
 ) -> Response:
@@ -171,8 +170,22 @@ async def logout(
                 await revoke_session(db, session_id=resolved.session_id)
                 await db.commit()
 
+    # Cookies are cleared on the response that is actually returned.
+    #
+    # This used to call `delete_cookie` on an injected `response: Response` and
+    # then `return Response(...)`. FastAPI only merges the injected response's
+    # headers when the handler returns *data*; returning a Response replaces it
+    # outright, so both deletions were silently discarded and the browser kept
+    # sending a cookie for a session that had been revoked server-side. The
+    # revocation always worked, which is why nothing caught it — the session was
+    # genuinely dead, but no client could tell.
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(settings.session_cookie_name, path="/")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    # The CSRF companion goes too. The session cookie is httponly, so the
+    # readable CSRF cookie is the only signed-in signal a client can see; one
+    # surviving logout leaves every client believing a dead session is live.
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    return response
 
 
 class SwitchWorkspaceRequest(BaseModel):
@@ -243,6 +256,41 @@ async def _teardown_on_switch(session_id: UUID) -> None:
     exists before the things it tears down.
     """
     log.info("auth.workspace.teardown", session_id=str(session_id))
+
+
+@router.get("/session", response_model=SessionResponse)
+async def session_state(resolved: CurrentSession) -> SessionResponse:
+    """The caller's own account, whether or not they have a workspace.
+
+    `/me` cannot answer this. It depends on `CurrentScope`, which requires an
+    active workspace — correctly, because it hands back the authority used to
+    reach workspace data. But that leaves a signed-in person with no workspace
+    unable to retrieve even their own identity, so a client had no way to answer
+    "am I logged in?" after a page reload. Every sign-in UI needs that.
+
+    Returns exactly what `/login` returns, from the session cookie rather than
+    from credentials. It discloses nothing new: the same user, the same
+    memberships, read under the `membership_own_rows` policy that restricts the
+    query to the caller's own rows.
+    """
+    async with _unscoped_session() as db:
+        memberships = await memberships_for_user(db, user_id=resolved.user_id)
+
+    # The session's pointer, reported only if it still corresponds to a live
+    # membership. A revoked membership must not leave the client believing it has
+    # an active workspace; `current_scope` would refuse the next real request and
+    # the UI would have no idea why.
+    known = {m.workspace_id for m in memberships}
+    active = resolved.active_workspace_id if resolved.active_workspace_id in known else None
+
+    return SessionResponse(
+        user_id=resolved.user_id,
+        workspaces=[
+            WorkspaceSummary(workspace_id=m.workspace_id, name=m.workspace_name, role=m.role.value)
+            for m in memberships
+        ],
+        active_workspace_id=active,
+    )
 
 
 @router.get("/me", response_model=SessionResponse)

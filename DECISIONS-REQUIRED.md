@@ -103,6 +103,20 @@ Doc 05 §4.12 proposes a minimal deal tracker inside the Ops layer so the Sales 
 ### D13 — Anthropic API access *(blocks M12)*
 The Agent SDK needs an API key and a decision on which model tier backs each execution mode. Also relevant to doc 06 §8.4's cheap-model routing, which is only permitted where that module's evals pass.
 
+### D14 — Login rate limiting *(blocks exposing the sign-in UI publicly)*
+
+**Raised by ADR 0009.** `POST /auth/login` accepts unlimited attempts. `rate_limit.py` covers only the Preview path, so nothing bounds password guessing. argon2id and the dummy-hash timing equalisation defeat offline cracking and the timing oracle; **online guessing against a weak password is unmitigated.**
+
+Now urgent because a sign-in form exists, where before this required deliberate API calls.
+
+Three questions, and the third is why this is not a default I can pick:
+
+1. **Key by IP, by email, or both?** Per-IP alone is defeated by a botnet; per-email alone is defeated by rotating targets.
+2. **What is the response** — 429 with `Retry-After` (consistent with Preview), or a silent delay? A 429 keyed by email confirms the address exists, which would undo M1's account-enumeration work.
+3. **Lock the account after N failures?** A per-account lock is a **denial-of-service vector against a named user**: anyone who knows an Owner's email can lock them out at will. The usual answer is exponential backoff rather than a lock, but "the Owner cannot get in during an incident" is a business call, not a technical one.
+
+My recommendation if you want one: per-IP *and* per-email counters, exponential backoff instead of a lock, and an identical 401 in every case with the delay applied silently — so nothing observable distinguishes a rate-limited known address from an unknown one. That preserves the enumeration guarantee, which is the property most easily lost here.
+
 ---
 
 ## 4. Assumptions I have made — object if any is wrong

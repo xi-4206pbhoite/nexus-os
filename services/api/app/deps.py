@@ -14,10 +14,12 @@ there, every request.
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
 
 from app.auth.service import (
+    ResolvedSession,
     build_scope,
     memberships_for_user,
     resolve_session,
@@ -82,6 +84,52 @@ async def current_scope(
 
 
 CurrentScope = Annotated[ScopedSession, Depends(current_scope)]
+
+
+async def current_session(
+    nexus_session: Annotated[str | None, Cookie(alias="nexus_session")] = None,
+) -> ResolvedSession:
+    """The caller's session, with **no workspace requirement**.
+
+    Deliberately weaker than `current_scope`, and the distinction is the point:
+    a person exists before any workspace does. Registration creates a user; a
+    workspace needs a verified domain, which can take a DNS propagation cycle.
+    Between those two moments `current_scope` correctly refuses everything — so
+    anything that must work for a signed-in person who has no workspace yet
+    depends on this instead.
+
+    It grants authority over **nothing but the caller's own identity**. There is
+    no `ScopedSession` here and none can be built from it, and since `retrieval/`
+    accepts nothing else, no route using this can reach workspace-scoped data.
+    That is a structural limit rather than a convention — which is why this is a
+    separate dependency instead of a flag on `current_scope`.
+
+    `active_workspace_id` is carried through but is only a *pointer*. It is the
+    session's stored preference, not proof of access; `current_scope` is what
+    re-validates it against live memberships. Never treat it as authority.
+    """
+    if not nexus_session:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+
+    async with _unscoped_session() as db:
+        resolved = await resolve_session(db, token=nexus_session)
+
+    if resolved is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
+
+    user_id_var.set(str(resolved.user_id))
+    return resolved
+
+
+CurrentSession = Annotated[ResolvedSession, Depends(current_session)]
+
+
+async def current_user_id(resolved: CurrentSession) -> UUID:
+    """Just the user id, for callers that have no business knowing anything else."""
+    return resolved.user_id
+
+
+CurrentUserId = Annotated[UUID, Depends(current_user_id)]
 
 
 def require_executive_surface(scope: CurrentScope) -> ScopedSession:

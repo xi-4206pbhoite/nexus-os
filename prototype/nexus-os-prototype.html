@@ -1,0 +1,2469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEXUS OS — full prototype (illustrative data)</title>
+<meta name="robots" content="noindex, nofollow" />
+
+<!--
+  ============================================================================
+  NEXUS OS — FULL CLICKABLE PROTOTYPE
+  ============================================================================
+
+  One file. The whole journey, in order:
+
+      Landing page  →  preview audit  →  sign up  →  onboarding (7 steps)
+                    →  sign in as one of eight people
+                    →  that person's own workspace  →  admin portal
+
+  No build step, no server, no network. Double-click to open. Send the file
+  to share it.
+
+  THE IDEA THIS PROTOTYPE EXISTS TO EXPLAIN
+
+  The dashboard *is* the person. You sign in as somebody and their department is
+  the entire application — their navigation, their layout, their vocabulary. A
+  Sales manager has no Finance entry greyed out in the sidebar, because Finance
+  was never part of their product. Navigation is assembled per user, not
+  filtered per user.
+
+  Two consequences worth pointing at in a demo:
+
+    - Each department workspace is structurally different, not one grid with the
+      labels swapped. Sales gets a pipeline board, Finance gets ageing buckets
+      and an approvals queue, Operations gets a dispatch lane board.
+
+    - A Contributor gets a genuinely smaller product — "my day, my deals, my
+      targets" — rather than a manager's page with holes cut in it. That is what
+      `contributor_restricted` in scopes.py actually means, and it reads as a
+      deliberate design rather than a punishment.
+
+  WHAT THIS IS NOT
+  Not the application. No API, no database, no authentication, no enforcement.
+  Nothing typed here is saved or sent. Signing in as a persona is a demo device;
+  real scoping happens in Postgres row-level security and `retrieval/`.
+
+  ON THE NUMBERS — read before showing anyone
+  The product sells on "never invent a number" (invariant I1). Every figure here
+  is invented. That is only acceptable because this is a mock rather than the
+  running app, and the repo's content rule requires mocks to be visibly tagged:
+  a fixed banner, an ILLUSTRATIVE marker on every tile and panel, a fictional
+  company (Nakhla Trading LLC), and anonymised competitors.
+
+  Do not copy any figure from this file into a proposal. Do not let it drift into
+  apps/web. See PROTOTYPE-NOTES.md for the milestone debt it runs ahead of.
+  ============================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<style>
+/* ===========================================================================
+   TOKENS — taken verbatim from apps/web/tailwind.config.ts so the prototype
+   reads as the same product. Do not introduce a colour that is not here.
+   =========================================================================== */
+:root {
+  --ink-50:#F2F5FA; --ink-100:#E2E8F2; --ink-200:#C2CEE2; --ink-300:#93A8C7;
+  --ink-400:#5C769E; --ink-500:#2F4C7B; --ink-600:#193460; --ink-700:#0F2851;
+  --ink-800:#091F46; --ink-900:#061634; --ink-950:#030C1E;
+
+  --steel-100:#E4EDF4; --steel-200:#C3D8E7; --steel-300:#93B8D1;
+  --steel-400:#5F94B8; --steel-500:#37729C; --steel-600:#2C5C80; --steel-700:#224862;
+
+  --slate-100:#EDF2F6; --slate-200:#D6E1E9; --slate-300:#B4C7D5;
+  --slate-400:#7699AE; --slate-500:#5C8098; --slate-600:#48657A;
+
+  --bone-50:#FBFAF8; --bone-100:#F5F2EF; --bone-200:#E9E4DE;
+  --bone-300:#D8D0C7; --bone-400:#BFB4A7;
+
+  --gold-100:#FDF6E8; --gold-200:#FAE9C7; --gold-300:#F5D89B;
+  --gold-400:#EFBF6A; --gold-500:#DFA542; --gold-600:#B9822B;
+
+  --clay-100:#F8EDE6; --clay-200:#EED7C7; --clay-300:#DCB098;
+  --clay-400:#C5825A; --clay-500:#A55D35; --clay-600:#84492A;
+
+  --font-display:'Fraunces', Georgia, serif;
+  --font-sans:'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --shadow-paper:0 1px 2px rgba(9,31,70,.05), 0 8px 24px -12px rgba(9,31,70,.18);
+  --shadow-paper-lg:0 2px 4px rgba(9,31,70,.05), 0 24px 56px -24px rgba(9,31,70,.28);
+  --shadow-lift:0 1px 2px rgba(9,31,70,.06), 0 32px 64px -28px rgba(9,31,70,.32);
+
+  --ease-expo:cubic-bezier(.16,1,.3,1);
+  --banner-h:34px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; font-family:var(--font-sans); color:var(--ink-800);
+  background:#fff; font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:var(--font-display); color:var(--ink-800); margin:0; font-weight:600; letter-spacing:-.015em}
+p{margin:0}
+a{color:inherit; text-decoration:none}
+button{font:inherit; color:inherit; cursor:pointer; border:0; background:none}
+:focus-visible{outline:2px solid var(--steel-500); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important; transition-duration:.001ms!important}
+}
+
+/* ── The demo banner. Deliberately unmissable and impossible to dismiss. ──── */
+#demoBanner{
+  position:fixed; inset:0 0 auto 0; height:var(--banner-h); z-index:200;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  background:var(--ink-900); color:var(--gold-300);
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  padding:0 14px; text-align:center;
+}
+#demoBanner b{color:#fff; font-weight:500}
+#demoBanner .dot{width:6px;height:6px;border-radius:50%;background:var(--gold-400);flex:none}
+body{padding-top:var(--banner-h)}
+
+/* ── Layout primitives ──────────────────────────────────────────────────── */
+.shell{max-width:78rem; margin:0 auto; padding:0 clamp(1.25rem,5vw,3.5rem)}
+.stack{display:flex; flex-direction:column}
+.row{display:flex; align-items:center}
+.between{display:flex; align-items:center; justify-content:space-between; gap:16px}
+.wrap{flex-wrap:wrap}
+.grid{display:grid; gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1080px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}}
+
+.card{
+  background:#fff; border:1px solid rgba(216,208,199,.7); border-radius:18px;
+  padding:18px; box-shadow:var(--shadow-paper);
+}
+.card.tint{background:var(--bone-50)}
+.panel{background:var(--bone-50); border:1px solid rgba(216,208,199,.7); border-radius:26px; padding:24px}
+
+.eyebrow{font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--steel-500)}
+.muted{color:var(--ink-400)}
+.mono{font-family:var(--font-mono)}
+.tiny{font-size:11px}
+.sm{font-size:13px}
+.big{font-family:var(--font-display); font-size:34px; line-height:1; letter-spacing:-.02em}
+.huge{font-family:var(--font-display); font-size:clamp(2.5rem,5.5vw,4rem); line-height:1; letter-spacing:-.03em}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  height:44px; padding:0 20px; border-radius:999px; font-size:14px; font-weight:500;
+  background:var(--ink-800); color:var(--bone-50); box-shadow:var(--shadow-paper);
+  transition:transform .25s var(--ease-expo), background .25s, box-shadow .25s;
+}
+.btn:hover{background:var(--ink-700); transform:translateY(-1px); box-shadow:var(--shadow-lift)}
+.btn:disabled{opacity:.45; pointer-events:none}
+.btn.ghost{background:transparent; color:var(--ink-700); box-shadow:none; border:1px solid var(--bone-300)}
+.btn.ghost:hover{background:var(--bone-100); transform:none; box-shadow:none}
+.btn.sm{height:34px; padding:0 14px; font-size:13px}
+.btn.wide{width:100%}
+
+.field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px}
+.field label{font-size:13px; font-weight:500; color:var(--ink-600)}
+.input{
+  height:46px; padding:0 14px; border-radius:12px; border:1px solid var(--bone-300);
+  background:#fff; font:inherit; font-size:14px; color:var(--ink-800); width:100%;
+  transition:border-color .2s;
+}
+textarea.input{height:auto; padding:12px 14px; min-height:84px; resize:vertical}
+select.input{appearance:none; background-image:linear-gradient(45deg,transparent 50%,var(--ink-400) 50%),linear-gradient(135deg,var(--ink-400) 50%,transparent 50%); background-position:calc(100% - 18px) 20px,calc(100% - 13px) 20px; background-size:5px 5px; background-repeat:no-repeat}
+.input:focus{border-color:var(--steel-400); outline:none}
+.input::placeholder{color:var(--ink-300)}
+.hint{font-size:12px; color:var(--ink-400)}
+
+/* ── Chips, pills, badges ───────────────────────────────────────────────── */
+.chip{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:7px;
+  background:var(--bone-100); color:var(--ink-500);
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.03em; white-space:nowrap;
+}
+.chip.src{background:var(--steel-100); color:var(--steel-700)}
+.chip.warn{background:var(--clay-100); color:var(--clay-600)}
+.chip.good{background:#E8F1EA; color:#2F6B45}
+.chip.gold{background:var(--gold-100); color:var(--gold-600)}
+.chip.lock{background:var(--bone-200); color:var(--ink-400)}
+
+/* The illustrative marker. Small, but present on every single figure. */
+.illus{
+  display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px;
+  background:repeating-linear-gradient(135deg,var(--gold-100),var(--gold-100) 5px,var(--gold-200) 5px,var(--gold-200) 10px);
+  color:var(--gold-600); font-family:var(--font-mono); font-size:9.5px;
+  letter-spacing:.09em; text-transform:uppercase; white-space:nowrap; flex:none;
+}
+
+.delta{font-family:var(--font-mono); font-size:12px; font-weight:500}
+.delta.up{color:#2F6B45}
+.delta.down{color:var(--clay-500)}
+.delta.flat{color:var(--ink-400)}
+
+/* ── Metric tile ────────────────────────────────────────────────────────── */
+.metric{display:flex; flex-direction:column; gap:9px}
+.metric .top{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+.metric .label{font-size:12.5px; color:var(--ink-500); font-weight:500; line-height:1.3}
+.metric .val{font-family:var(--font-display); font-size:29px; line-height:1; letter-spacing:-.02em}
+.metric .unit{font-size:14px; color:var(--ink-400); font-family:var(--font-sans)}
+.why{
+  margin-top:2px; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-300); text-align:left;
+  transition:color .2s;
+}
+.why:hover{color:var(--ink-600)}
+.trail{
+  margin-top:9px; padding-top:9px; border-top:1px dashed var(--bone-300);
+  font-family:var(--font-mono); font-size:11px; color:var(--ink-400); line-height:1.65;
+}
+.trail div{display:flex; gap:7px}
+.trail span:first-child{color:var(--ink-300); flex:none}
+
+/* A locked tile is a call to action, never a zero (invariant I10). */
+.locked{
+  border-style:dashed; background:rgba(255,255,255,.55);
+  display:flex; flex-direction:column; gap:8px; justify-content:center;
+}
+.locked .label{font-size:12.5px; color:var(--ink-500); font-weight:500}
+.locked .unlock{font-family:var(--font-mono); font-size:11.5px; color:var(--steel-600)}
+.locked .reason{font-size:11.5px; color:var(--ink-300)}
+
+/* ── Bars & meters ──────────────────────────────────────────────────────── */
+.bar{height:6px; border-radius:99px; background:var(--bone-200); overflow:hidden}
+.bar>span{display:block; height:100%; border-radius:99px; background:var(--steel-500)}
+.bar.gold>span{background:var(--gold-500)}
+.bar.clay>span{background:var(--clay-500)}
+.bar.good>span{background:#3E8259}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+table{width:100%; border-collapse:collapse; font-size:13px}
+th{
+  text-align:left; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--ink-400); font-weight:400;
+  padding:0 10px 9px; border-bottom:1px solid var(--bone-200); white-space:nowrap;
+}
+td{padding:10px; border-bottom:1px solid var(--bone-100); vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num, th.num{text-align:right; font-family:var(--font-mono); font-size:12.5px}
+tbody tr:hover{background:var(--bone-50)}
+
+/* ── App chrome ─────────────────────────────────────────────────────────── */
+#appShell{display:none; min-height:calc(100vh - var(--banner-h))}
+#appShell.on{display:flex}
+.sidebar{
+  width:238px; flex:none; border-right:1px solid var(--bone-200); background:var(--bone-50);
+  padding:18px 12px; display:flex; flex-direction:column; gap:4px;
+  position:sticky; top:var(--banner-h); height:calc(100vh - var(--banner-h)); overflow-y:auto;
+}
+.sidebar .grp{font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-300); padding:14px 12px 6px}
+.navitem{
+  display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:10px;
+  font-size:13.5px; color:var(--ink-600); transition:background .18s, color .18s; width:100%; text-align:left;
+}
+.navitem:hover{background:var(--bone-200)}
+.navitem.active{background:var(--ink-800); color:var(--bone-50); font-weight:500}
+.navitem .ic{width:18px; text-align:center; flex:none; opacity:.85}
+.navitem .badge{margin-left:auto; font-family:var(--font-mono); font-size:10px; background:var(--clay-500); color:#fff; border-radius:99px; padding:1px 6px}
+.navitem.active .badge{background:var(--gold-500); color:var(--ink-900)}
+.navitem.deny{opacity:.4; cursor:not-allowed}
+
+.main{flex:1; min-width:0; display:flex; flex-direction:column}
+.topbar{
+  height:60px; flex:none; border-bottom:1px solid var(--bone-200); background:rgba(255,255,255,.9);
+  backdrop-filter:blur(8px); display:flex; align-items:center; gap:14px;
+  padding:0 22px; position:sticky; top:var(--banner-h); z-index:60;
+}
+.content{padding:24px 22px 64px; flex:1}
+@media(max-width:900px){
+  .sidebar{display:none}
+  .content{padding:18px 14px 48px}
+}
+
+/* ── Logo ───────────────────────────────────────────────────────────────── */
+.logo{display:inline-flex; align-items:center; gap:9px; font-family:var(--font-display); font-size:17px; font-weight:600; letter-spacing:-.01em}
+.logo .mark{width:22px; height:22px; flex:none}
+
+/* ── Screens & motion ───────────────────────────────────────────────────── */
+.screen{display:none}
+.screen.on{display:block}
+@keyframes rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
+.rise{animation:rise .5s var(--ease-expo) both}
+.d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.15s}
+.d4{animation-delay:.2s}.d5{animation-delay:.25s}.d6{animation-delay:.3s}
+
+/* ── Auth / onboarding centred layouts ──────────────────────────────────── */
+.centre{min-height:calc(100vh - var(--banner-h)); display:grid; place-items:center; padding:40px 20px}
+.authcard{width:100%; max-width:430px}
+.authcard .card{padding:28px}
+.steps{display:flex; align-items:center; gap:6px; margin-bottom:22px}
+.steps .s{flex:1; height:3px; border-radius:99px; background:var(--bone-200)}
+.steps .s.done{background:var(--steel-500)}
+.steps .s.now{background:var(--gold-400)}
+
+.tabs{display:flex; gap:4px; border-bottom:1px solid var(--bone-200); margin-bottom:20px; overflow-x:auto}
+.tab{padding:9px 14px; font-size:13.5px; color:var(--ink-400); border-bottom:2px solid transparent; white-space:nowrap}
+.tab.active{color:var(--ink-800); border-bottom-color:var(--ink-800); font-weight:500}
+
+.pagehead{display:flex; align-items:flex-end; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:20px}
+.brief{display:flex; gap:12px; padding:14px; border-radius:14px; background:#fff; border:1px solid var(--bone-200)}
+.brief .rail{width:3px; border-radius:99px; flex:none; background:var(--gold-400)}
+.brief.risk .rail{background:var(--clay-500)}
+.brief.good .rail{background:#3E8259}
+
+.avatar{
+  width:30px; height:30px; border-radius:50%; flex:none; display:grid; place-items:center;
+  background:var(--steel-200); color:var(--steel-700);
+  font-family:var(--font-mono); font-size:11px; font-weight:500;
+}
+.sep{width:1px; height:24px; background:var(--bone-300); flex:none}
+@media(max-width:860px){.hide-sm{display:none!important}}
+
+/* ── Additions for the persona model ────────────────────────────────────── */
+
+/* Sign-in as: the demo's front door. */
+.personaGrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(232px,1fr)); gap:12px}
+.personaCard{
+  text-align:left; background:#fff; border:1px solid var(--bone-300); border-radius:16px;
+  padding:15px; box-shadow:var(--shadow-paper); width:100%; height:100%;
+  display:flex; flex-direction:column;
+  transition:transform .25s var(--ease-expo), box-shadow .25s, border-color .25s;
+}
+.personaCard:hover{transform:translateY(-2px); box-shadow:var(--shadow-lift); border-color:var(--steel-400)}
+.personaCard .who{display:flex; align-items:center; gap:10px}
+.personaCard .nm{font-size:14px; font-weight:500}
+.personaCard .ttl{font-size:11.5px; color:var(--ink-400)}
+.personaCard .tags{display:flex; flex-wrap:wrap; gap:5px; margin-top:11px}
+.personaCard .sees{
+  margin-top:auto; padding-top:11px; border-top:1px dashed var(--bone-300);
+  font-family:var(--font-mono); font-size:10.5px; color:var(--steel-600); line-height:1.6;
+}
+
+/* Kanban-style pipeline board — Sales only. */
+.board{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px}
+@media(max-width:1000px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.col{background:var(--bone-50); border:1px solid var(--bone-200); border-radius:14px; padding:11px}
+.col h4{font-size:12.5px; font-family:var(--font-sans); font-weight:500; color:var(--ink-500)}
+.dealcard{
+  background:#fff; border:1px solid var(--bone-200); border-radius:10px;
+  padding:10px; margin-top:9px; box-shadow:0 1px 2px rgba(9,31,70,.04);
+}
+.dealcard .co{font-size:12.5px; font-weight:500}
+.dealcard.stale{border-left:3px solid var(--clay-500)}
+
+/* Dispatch board — Operations only. */
+.lane{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px}
+@media(max-width:1000px){.lane{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.laneHead{
+  display:flex; align-items:center; justify-content:space-between; padding:8px 11px;
+  border-radius:9px 9px 0 0; font-family:var(--font-mono); font-size:10.5px;
+  text-transform:uppercase; letter-spacing:.1em;
+}
+.orderRow{display:flex; justify-content:space-between; gap:8px; padding:8px 11px; border-bottom:1px solid var(--bone-100); font-size:12.5px}
+
+/* Approvals / task queue — Finance and Contributor. */
+.queueRow{
+  display:flex; align-items:center; gap:12px; padding:12px;
+  border:1px solid var(--bone-200); border-radius:12px; background:#fff; margin-bottom:9px;
+}
+.queueRow .grow{flex:1; min-width:0}
+.tickbox{
+  width:19px; height:19px; border-radius:6px; border:1.5px solid var(--bone-400);
+  flex:none; display:grid; place-items:center; font-size:11px; color:transparent;
+  transition:background .18s, border-color .18s, color .18s;
+}
+.queueRow.done .tickbox{background:#3E8259; border-color:#3E8259; color:#fff}
+.queueRow.done .grow{opacity:.5; text-decoration:line-through}
+
+/* Hiring pipeline — People only. */
+.stageStrip{display:flex; gap:7px; align-items:stretch}
+.stageStrip .st{flex:1; background:var(--bone-50); border:1px solid var(--bone-200); border-radius:11px; padding:10px}
+.stageStrip .st .n{font-family:var(--font-display); font-size:21px}
+
+/* Opportunity cards — Strategy only. */
+.oppCard{border-left:3px solid var(--steel-500); padding:12px 14px; background:var(--bone-50); border-radius:0 12px 12px 0; margin-bottom:10px}
+.oppCard.high{border-left-color:#3E8259}
+.oppCard.low{border-left-color:var(--bone-400)}
+
+/* Whose product am I in? A permanent, readable statement of scope. */
+.scopeStrip{
+  display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  padding:9px 13px; border-radius:11px;
+  background:var(--steel-100); border:1px solid var(--steel-200); margin-bottom:18px;
+}
+.scopeStrip .lab{font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.11em; color:var(--steel-700)}
+</style>
+</head>
+<body>
+
+<div id="demoBanner">
+  <span class="dot"></span>
+  <span>Demo prototype &mdash; <b>every figure is illustrative</b>. Not a real customer, result or dataset.</span>
+</div>
+
+<div id="screens"></div>
+
+<script>
+"use strict";
+
+/* ===========================================================================
+   1. THE COMPANY, AND THE EIGHT PEOPLE IN IT
+   ---------------------------------------------------------------------------
+   INVENTED. The company does not exist and no figure here was measured.
+
+   The important structure is `PEOPLE`. Each person carries their own navigation
+   and their own landing section, so the application is assembled per user rather
+   than filtered per user. That distinction is the whole point of this file: a
+   Sales manager has no Finance entry to grey out, because Finance was never part
+   of their product.
+   =========================================================================== */
+
+const CO = {
+  name:'Nakhla Trading LLC', domain:'nakhla-trading.om',
+  industry:'Industrial supplies & distribution', country:'Oman',
+  currency:'OMR', size:'38 employees'
+};
+
+const SCOPE_NAMES = { 1:'L1 Company public', 2:'L2 Company internal', 3:'L3 Department', 4:'L4 Restricted', 5:'L5 Personal' };
+
+/* The role → reach table, shown during onboarding. Kept as data because it is
+   the security model, and because `scopes.py` holds it as data for the same
+   reason: a rule scattered through conditionals cannot be audited as a unit. */
+const ROLE_REACH = [
+  ['Owner',              3, 'All departments',      'Composite view and admin portal'],
+  ['Executive',          3, 'All departments',      'Composite view and admin portal'],
+  ['Department manager', 3, 'Own department',       'Everything in their department'],
+  ['Contributor',        3, 'Own department',      'Their own records only — no department totals'],
+  ['Viewer',             2, 'None',                 'Company-internal summaries only'],
+  ['External',        null, 'None',                 'Only items shared with them explicitly']
+];
+
+const PEOPLE = [
+  {
+    id:'layla', name:'Layla Al-Amri', initials:'LA', title:'Managing Director',
+    role:'Owner', dept:'executive', deptLabel:'Chief of Staff', maxScope:3,
+    crossDept:true, restricted:false, admin:true,
+    sees:'Every department, plus the composite view and the admin portal.',
+    nav:[
+      ['brief','Morning brief','◆'], ['health','Business health','◇'],
+      ['depts','All departments','◈'], ['decisions','Decisions','✓'],
+      ['brain','Company Brain','▤'], ['admin','Admin portal','⚙']
+    ]
+  },
+  {
+    id:'omar', name:'Omar Al-Balushi', initials:'OB', title:'Strategy Director',
+    role:'Executive', dept:'strategy', deptLabel:'Strategy', maxScope:3,
+    crossDept:true, restricted:false, admin:true,
+    sees:'Strategy as home, with read access across every department.',
+    nav:[
+      ['opps','Opportunities','✦'], ['competitors','Competitors','◎'],
+      ['signals','Market signals','∿'], ['bets','Strategic bets','◆'],
+      ['depts','All departments','◈']
+    ]
+  },
+  {
+    id:'huda', name:'Huda Al-Kindi', initials:'HK', title:'Marketing Manager',
+    role:'Department manager', dept:'marketing', deptLabel:'Marketing', maxScope:3,
+    crossDept:false, restricted:false, admin:false,
+    sees:'Marketing only. No pipeline values, no ledger, no salaries.',
+    nav:[
+      ['overview','Overview','◈'], ['channels','Channels','⇉'],
+      ['content','Content & pages','▤'], ['campaigns','Campaigns','◍'],
+      ['enquiries','Enquiries','✉']
+    ]
+  },
+  {
+    id:'yousuf', name:'Yousuf Al-Harthy', initials:'YH', title:'Sales Manager',
+    role:'Department manager', dept:'sales', deptLabel:'Sales', maxScope:3,
+    crossDept:false, restricted:false, admin:false,
+    sees:'The whole sales pipeline and the team, but nothing outside Sales.',
+    nav:[
+      ['overview','Overview','◉'], ['pipeline','Pipeline','▦'],
+      ['accounts','Accounts','◫'], ['team','My team','◍'], ['forecast','Forecast','∿']
+    ]
+  },
+  {
+    id:'mariam', name:'Mariam Al-Saidi', initials:'MS', title:'Sales Executive',
+    role:'Contributor', dept:'sales', deptLabel:'Sales', maxScope:3,
+    crossDept:false, restricted:true, admin:false,
+    sees:'Her own accounts and her own targets. No team or department totals.',
+    nav:[
+      ['mine','My day','☀'], ['mydeals','My deals','◉'],
+      ['myaccounts','My accounts','◫'], ['mytargets','My targets','◈']
+    ]
+  },
+  {
+    id:'fatma', name:'Fatma Al-Zadjali', initials:'FZ', title:'Finance Manager',
+    role:'Department manager', dept:'finance', deptLabel:'Finance', maxScope:3,
+    crossDept:false, restricted:false, admin:false,
+    sees:'Cash, ledger and approvals. Salary bands stay L4 even for her.',
+    nav:[
+      ['overview','Overview','▦'], ['cash','Cash & runway','◈'],
+      ['receivables','Receivables','◫'], ['payables','Payables','◧'],
+      ['approvals','Approvals','✓']
+    ]
+  },
+  {
+    id:'salim', name:'Salim Al-Rawahi', initials:'SR', title:'Operations Manager',
+    role:'Department manager', dept:'operations', deptLabel:'Operations', maxScope:3,
+    crossDept:false, restricted:false, admin:false,
+    sees:'The dispatch floor, stock and suppliers. No revenue, no margins.',
+    nav:[
+      ['overview','Overview','◇'], ['dispatch','Dispatch board','⇥'],
+      ['stock','Stock','▤'], ['suppliers','Suppliers','◍']
+    ]
+  },
+  {
+    id:'nadia', name:'Nadia Al-Busaidi', initials:'NB', title:'People Manager',
+    role:'Department manager', dept:'hr', deptLabel:'People', maxScope:3,
+    crossDept:false, restricted:false, admin:false,
+    sees:'Headcount, hiring and leave. Individual salaries remain L4.',
+    nav:[
+      ['overview','Overview','◍'], ['hiring','Hiring','◈'],
+      ['people','People','◫'], ['leave','Leave','▤']
+    ]
+  }
+];
+
+/* Department health, shown to whoever is entitled to it. */
+const DEPT_SCORES = {
+  executive:{ label:'Chief of Staff', score:72, scored:7, total:7 },
+  marketing:{ label:'Marketing', score:61, scored:5, total:6 },
+  sales:{ label:'Sales', score:84, scored:6, total:6 },
+  finance:{ label:'Finance', score:77, scored:5, total:6 },
+  operations:{ label:'Operations', score:68, scored:5, total:5 },
+  hr:{ label:'People', score:74, scored:4, total:5 },
+  strategy:{ label:'Strategy', score:59, scored:3, total:5 }
+};
+
+const D = {
+  brief:[
+    { kind:'risk', title:'Three deals have gone quiet for 11 days',
+      means:'OMR 47,200 of pipeline has had no contact since 6 August. All three sat in Proposal, which historically closes in 19 days.',
+      action:'Ask Yousuf to run the follow-up sequence on Al Barka, Muscat Metals and Sohar Fit-Out.', src:['CRM'] },
+    { kind:'gold', title:'Website enquiries rose 24% while ad spend fell',
+      means:'Organic sessions to the product pages grew after the August catalogue update. Paid spend was down OMR 340.',
+      action:'Reallocate the paused paid budget to the two pages that gained.', src:['GA4','Search Console'] },
+    { kind:'good', title:'Receivables over 90 days cleared',
+      means:'The two long-overdue invoices totalling OMR 12,800 were settled on 14 August.',
+      action:'No action. The ageing profile is the healthiest in six months.', src:['Accounting'] }
+  ],
+
+  decisions:[
+    { title:'Approve the Q4 catalogue reprint', why:'Print lead time is 5 weeks; the window closes Friday.', cost:'OMR 3,400', from:'Huda' },
+    { title:'Extend credit terms for Al Barka Group', why:'Requested 60 days. They are 3.1% of revenue and have never been late.', cost:'Cash timing', from:'Fatma' },
+    { title:'Backfill the warehouse supervisor role', why:'Vacant 24 days. On-time dispatch has slipped 4 points since.', cost:'OMR 780/mo', from:'Salim' }
+  ],
+
+  trend:[58,60,59,63,62,66,64,68,67,69,71,72],
+
+  /* ── Sales ─────────────────────────────────────────────────── */
+  deals:[
+    { co:'Al Barka Group',    stage:'Proposal',    v:21400, owner:'MS', silent:13, next:'Follow up on revised quote' },
+    { co:'Muscat Metals',     stage:'Proposal',    v:15800, owner:'MS', silent:11, next:'Chase decision from procurement' },
+    { co:'Sohar Fit-Out',     stage:'Proposal',    v:10000, owner:'YH', silent:11, next:'Confirm delivery schedule' },
+    { co:'Duqm Marine',       stage:'Negotiation', v:34200, owner:'YH', silent:2,  next:'Agree payment terms' },
+    { co:'Salalah Cold Store',stage:'Negotiation', v:18600, owner:'MS', silent:1,  next:'Send final pricing' },
+    { co:'Barka Contracting', stage:'Qualified',   v:12800, owner:'MS', silent:4,  next:'Book site visit' },
+    { co:'Nizwa Builders',    stage:'Qualified',   v:9400,  owner:'YH', silent:3,  next:'Send catalogue' },
+    { co:'Rustaq Facilities', stage:'Enquiry',     v:6200,  owner:'MS', silent:1,  next:'Qualify budget' },
+    { co:'Ibri Industrial',   stage:'Enquiry',     v:4800,  owner:'YH', silent:6,  next:'First call' }
+  ],
+  salesTeam:[
+    { who:'Yousuf Al-Harthy', initials:'YH', quota:60, won:44, deals:4 },
+    { who:'Mariam Al-Saidi',  initials:'MS', quota:40, won:37, deals:5 },
+    { who:'Khalid Al-Mamari', initials:'KM', quota:40, won:19, deals:3 }
+  ],
+
+  /* ── Marketing ─────────────────────────────────────────────── */
+  channels:[
+    { name:'Organic search', sessions:4120, enq:112, spend:0 },
+    { name:'Direct',         sessions:1980, enq:58,  spend:0 },
+    { name:'Paid search',    sessions:1310, enq:110, spend:1254 },
+    { name:'Referral',       sessions:640,  enq:14,  spend:0 },
+    { name:'Social',         sessions:370,  enq:6,   spend:0 }
+  ],
+  pages:[
+    { url:'/products/valves', imp:3043, prev:1890, pos:8.2 },
+    { url:'/products/fittings', imp:2410, prev:2280, pos:11.4 },
+    { url:'/catalogue', imp:1870, prev:1120, pos:6.1 },
+    { url:'/about', imp:640, prev:690, pos:14.8 }
+  ],
+  campaigns:[
+    { name:'August catalogue launch', status:'live', spend:640, enq:48, days:11 },
+    { name:'Valve range — search',    status:'live', spend:614, enq:62, days:24 },
+    { name:'Sohar estate mailer',     status:'draft', spend:0, enq:0, days:0 }
+  ],
+
+  /* ── Finance ───────────────────────────────────────────────── */
+  ageing:[ ['Current',62.4], ['1–30 days',28.1], ['31–60 days',11.6], ['60+ days',18.9] ],
+  approvals:[
+    { what:'Catalogue reprint — Gulf Print LLC', amt:3400, who:'Huda', age:'2 days' },
+    { what:'Forklift service contract', amt:1850, who:'Salim', age:'4 days' },
+    { what:'Recruitment fee — warehouse supervisor', amt:780, who:'Nadia', age:'1 day' }
+  ],
+  payables:[
+    { who:'Gulf Steel Supply', amt:24800, due:'in 6 days' },
+    { who:'Muscat Logistics',  amt:9200,  due:'in 12 days' },
+    { who:'Oman Packaging',    amt:4100,  due:'overdue 2 days' }
+  ],
+
+  /* ── Operations ────────────────────────────────────────────── */
+  dispatch:{
+    'Awaiting pick':[ ['SO-4412','Al Barka','today'], ['SO-4415','Duqm Marine','today'], ['SO-4418','Nizwa Builders','tomorrow'] ],
+    'Picking':[ ['SO-4409','Muscat Metals','today'], ['SO-4410','Rustaq Facilities','today'] ],
+    'Ready':[ ['SO-4402','Sohar Fit-Out','today'], ['SO-4404','Ibri Industrial','today'], ['SO-4405','Barka Contracting','today'] ],
+    'Late':[ ['SO-4388','Salalah Cold Store','4 days late'], ['SO-4391','Al Barka','2 days late'] ]
+  },
+  stock:[
+    { sku:'Brass fittings 1/2"', on:0,   min:80,  status:'out' },
+    { sku:'Ball valve 3/4"',     on:14,  min:60,  status:'low' },
+    { sku:'Steel pipe 2m',       on:210, min:120, status:'ok' },
+    { sku:'Gasket set A',        on:38,  min:40,  status:'low' }
+  ],
+  suppliers:[
+    { who:'Gulf Steel Supply', onTime:96, lead:'12 days' },
+    { who:'Oman Packaging',    onTime:81, lead:'8 days' },
+    { who:'Emirates Valves',   onTime:74, lead:'21 days' }
+  ],
+
+  /* ── People ────────────────────────────────────────────────── */
+  hiring:[ ['Applied',24], ['Screened',11], ['Interviewed',5], ['Offer',1] ],
+  roles:[
+    { role:'Warehouse supervisor', dept:'Operations', days:24, stage:'Interviewed' },
+    { role:'Sales executive, Sohar', dept:'Sales', days:11, stage:'Screened' },
+    { role:'Accounts assistant', dept:'Finance', days:6, stage:'Applied' }
+  ],
+  leave:[
+    { who:'Salim Al-Rawahi', when:'24–28 Aug', kind:'Annual' },
+    { who:'Mariam Al-Saidi', when:'2–3 Sep', kind:'Annual' },
+    { who:'Khalid Al-Mamari', when:'19 Aug', kind:'Sick' }
+  ],
+
+  /* ── Strategy ──────────────────────────────────────────────── */
+  opps:[
+    { title:'Annual supply contracts', ev:'8 customers reorder monthly with no contract in place.', size:'OMR 96K of repeat revenue', conf:'High' },
+    { title:'Valve range gap', ev:'2 of 6 tracked competitors list 3/4" ball valves; you do not.', size:'Est. 4% of category search', conf:'Medium' },
+    { title:'Sohar industrial estate', ev:'19 enquiries from Sohar postcodes, no local stock point.', size:'12% of enquiries, 4% of revenue', conf:'Medium' },
+    { title:'Arabic product pages', ev:'31% of sessions set Arabic as browser language; the site is English only.', size:'Est. 1,300 sessions/mo', conf:'Low' }
+  ],
+  competitors:[
+    { who:'Competitor A', moved:'Added 3/4" valve range', when:'this month', watch:true },
+    { who:'Competitor B', moved:'Cut list prices ~6% on fittings', when:'this month', watch:true },
+    { who:'Competitor C', moved:'No observed change', when:'—', watch:false },
+    { who:'Competitor D', moved:'Opened a Sohar branch', when:'last month', watch:true }
+  ],
+  signals:[
+    ['Share of search', '19%', '+2pp', 'up'],
+    ['Category search volume', '126.8K', '+4.1%', 'up'],
+    ['Your brand searches', '1,940', '+11%', 'up'],
+    ['Competitor branch openings', '2', 'this quarter', 'flat']
+  ],
+  bets:[
+    { bet:'Move from spot orders to annual contracts', status:'Proposed', owner:'Omar', evidence:'8 uncontracted repeat customers' },
+    { bet:'Open a Sohar stock point', status:'Investigating', owner:'Salim', evidence:'19 unserved Sohar enquiries' },
+    { bet:'Publish the catalogue in Arabic', status:'Backlog', owner:'Huda', evidence:'31% Arabic browser share' }
+  ],
+
+  /* ── Contributor: Mariam's own world ──────────────────────── */
+  myTasks:[
+    { t:'Call Al Barka — revised quote', when:'09:30', done:false, why:'13 days since last contact' },
+    { t:'Send final pricing to Salalah Cold Store', when:'11:00', done:false, why:'In Negotiation, closes this week' },
+    { t:'Book site visit — Barka Contracting', when:'14:00', done:true, why:'Qualified 4 days ago' },
+    { t:'Qualify budget — Rustaq Facilities', when:'16:00', done:false, why:'New enquiry yesterday' }
+  ],
+  myTargets:{ quota:40, won:37, month:'August', deals:5, avgDays:19 },
+
+  brain:[
+    { title:'Company profile', kind:'Structured', scope:1, chunks:12, upd:'14 Aug' },
+    { title:'Website — 47 pages', kind:'Crawl', scope:1, chunks:388, upd:'17 Aug' },
+    { title:'Product catalogue 2026.pdf', kind:'Document', scope:2, chunks:214, upd:'12 Aug' },
+    { title:'Standard price list.xlsx', kind:'Document', scope:3, chunks:96, upd:'9 Aug' },
+    { title:'Supplier agreements (4 files)', kind:'Document', scope:4, chunks:172, upd:'5 Aug' },
+    { title:'Salary bands 2026.xlsx', kind:'Document', scope:4, chunks:38, upd:'2 Aug' },
+    { title:'CRM deals & contacts', kind:'Sync', scope:3, chunks:1240, upd:'17 Aug' }
+  ],
+
+  /* Connected sources — used by onboarding and by the admin portal. */
+  integrations:[
+    { name:'Google Analytics 4',      status:'connected', scope:'L2',    last:'12 minutes ago', by:'Layla Al-Amri' },
+    { name:'Google Search Console',   status:'connected', scope:'L2',    last:'1 hour ago',     by:'Layla Al-Amri' },
+    { name:'CRM (HubSpot)',           status:'connected', scope:'L3',    last:'6 minutes ago',  by:'Yousuf Al-Harthy' },
+    { name:'Accounting (Xero)',       status:'connected', scope:'L3',    last:'34 minutes ago', by:'Fatma Al-Zadjali' },
+    { name:'HRIS',                    status:'connected', scope:'L3–L4', last:'2 hours ago',    by:'Nadia Al-Busaidi' },
+    { name:'LinkedIn Pages',          status:'available', scope:'L2',    last:'—',              by:'—' },
+    { name:'Google Ads',              status:'error',     scope:'L3',    last:'3 days ago',     by:'Huda Al-Kindi' }
+  ],
+
+  audit:[
+    { at:'17 Aug 09:14', who:'Omar Al-Balushi', what:'Viewed L4 document', obj:'Board pack Q2.pptx', ok:true },
+    { at:'17 Aug 08:52', who:'Mariam Al-Saidi', what:'Denied — department total', obj:'Sales pipeline value', ok:false },
+    { at:'17 Aug 08:40', who:'System', what:'Sync completed', obj:'HubSpot — 1,240 records', ok:true },
+    { at:'17 Aug 07:31', who:'Layla Al-Amri', what:'Changed classification', obj:'Salary bands 2026.xlsx → L4', ok:true },
+    { at:'16 Aug 16:22', who:'Fatma Al-Zadjali', what:'Exported report', obj:'Receivables ageing (L3)', ok:true }
+  ]
+};
+
+/* ===========================================================================
+   2. STATE & HELPERS
+   =========================================================================== */
+
+const S = { route:'landing', step:0, me:null, section:null, open:new Set() };
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const me = () => S.me;
+const omr = (n) => n.toLocaleString('en-GB');
+
+const illus = () => '<span class="illus" title="Invented figure. This is a demo prototype.">Illustrative</span>';
+
+const logoMark = () => `<svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d="M12 2 22 12 12 22 2 12Z" fill="var(--ink-800)"/>
+  <path d="M12 6.5 17.5 12 12 17.5 6.5 12Z" fill="var(--gold-400)"/></svg>`;
+const logo = () => `<span class="logo">${logoMark()}<span>NEXUS<span style="font-weight:400;opacity:.6"> OS</span></span></span>`;
+
+function deltaEl(text, dir) {
+  return `<span class="delta ${dir}">${dir === 'up' ? '▲' : dir === 'down' ? '▼' : '—'} ${esc(text)}</span>`;
+}
+const srcChips = (l) => l.map((x) => `<span class="chip src">source: ${esc(x)}</span>`).join(' ');
+
+/** A metric tile with its working. Same component as v1 — it is the product's
+ *  central claim and should look identical wherever it appears. */
+function tile(m, keyPrefix, i) {
+  const key = `${keyPrefix}-${i}`;
+  const open = S.open.has(key);
+  return `<div class="card metric">
+    <div class="top"><span class="label">${esc(m.label)}</span>${illus()}</div>
+    <div class="row" style="gap:6px; align-items:flex-end">
+      <span class="val">${esc(m.val)}</span>
+      ${m.unit ? `<span class="unit" style="padding-bottom:3px">${esc(m.unit)}</span>` : ''}
+    </div>
+    ${m.delta ? deltaEl(m.delta, m.dir || 'flat') : ''}
+    ${m.src ? `<div class="row wrap" style="gap:5px">${srcChips(m.src)}</div>` : ''}
+    ${m.trail ? `<button class="why" onclick="tog('${key}')" aria-expanded="${open}">
+      ${open ? '− hide the working' : '+ why this number'}</button>
+      ${open ? `<div class="trail">${m.trail.map(([k, v]) =>
+        `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('')}</div>` : ''}` : ''}
+  </div>`;
+}
+function tog(k) { S.open.has(k) ? S.open.delete(k) : S.open.add(k); render(); }
+
+function sparkline(series, w, h, colour) {
+  w = w || 240; h = h || 44; colour = colour || 'var(--steel-500)';
+  const min = Math.min(...series), max = Math.max(...series), span = max - min || 1;
+  const pts = series.map((v, i) => [
+    (i / (series.length - 1)) * (w - 4) + 2, h - 3 - ((v - min) / span) * (h - 8)
+  ]);
+  const d = pts.map((pt, i) => `${i ? 'L' : 'M'}${pt[0].toFixed(1)} ${pt[1].toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${d} L${w-2} ${h} L2 ${h} Z" fill="${colour}" opacity=".1"/>
+    <path d="${d}" fill="none" stroke="${colour}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="3" fill="${colour}"/>
+  </svg>`;
+}
+
+function donut(pct, size, colour) {
+  size = size || 92; colour = colour || 'var(--steel-500)';
+  const r = size / 2 - 7, c = 2 * Math.PI * r;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--bone-200)" stroke-width="7"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${colour}" stroke-width="7"
+      stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct/100)}"
+      transform="rotate(-90 ${size/2} ${size/2})"/>
+    <text x="50%" y="50%" text-anchor="middle" dy=".35em"
+      style="font-family:var(--font-display); font-size:${size*0.29}px; fill:var(--ink-800)">${pct}</text></svg>`;
+}
+
+/** The permanent answer to "whose product am I looking at?" */
+function scopeStrip() {
+  const p = me();
+  return `<div class="scopeStrip">
+    <span class="lab">You are signed in as</span>
+    <span class="chip ${p.admin ? 'gold' : ''}">${esc(p.role)}</span>
+    <span class="lab">Reaches</span>
+    <span class="chip lock">${esc(SCOPE_NAMES[p.maxScope])}</span>
+    <span class="lab">Departments</span>
+    <span class="chip">${p.crossDept ? 'All seven' : esc(p.deptLabel) + (p.restricted ? ' — own records only' : '')}</span>
+    <span class="sm" style="color:var(--steel-700); margin-left:auto">${esc(p.sees)}</span>
+  </div>`;
+}
+
+/* ===========================================================================
+   3. LANDING PAGE
+   ---------------------------------------------------------------------------
+   The public site, condensed. The moment that matters is the address field:
+   a reduced audit comes back before any account exists, and it states its own
+   denominator rather than presenting a whole-business score built from part of
+   the evidence.
+   =========================================================================== */
+
+function viewLanding() {
+  return `
+  <div class="screen on">
+    <header style="position:sticky; top:var(--banner-h); z-index:80; background:rgba(255,255,255,.9); backdrop-filter:blur(10px); border-bottom:1px solid var(--bone-200)">
+      <div class="shell between" style="height:62px">
+        ${logo()}
+        <nav class="row hide-sm" style="gap:22px">
+          <span class="sm muted">The loop</span><span class="sm muted">Company Brain</span>
+          <span class="sm muted">Your team</span><span class="sm muted">Trust</span>
+        </nav>
+        <div class="row" style="gap:10px">
+          <button class="btn ghost sm" onclick="go('signin')">Sign in</button>
+          <button class="btn sm" onclick="go('signup')">Start free</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="shell" style="padding:52px 0 36px">
+      <div style="max-width:44rem">
+        <span class="chip gold rise">◆ AI Business Operating System</span>
+        <h1 class="huge rise d1" style="margin:18px 0 0">
+          Your AI executive team.<br>
+          <span style="color:var(--ink-400)">Built around your company.</span>
+        </h1>
+        <p class="rise d2" style="margin-top:18px; font-size:17px; color:var(--ink-500); max-width:36rem">
+          Connect your website, documents and tools once. NEXUS learns how your business works,
+          tells you what needs attention, helps you decide &mdash; and does the work.
+        </p>
+        <div class="rise d3" style="margin-top:26px; display:flex; gap:10px; flex-wrap:wrap; max-width:34rem">
+          <input class="input" style="flex:1; min-width:230px" id="previewUrl" value="${esc(CO.domain)}" aria-label="Your website address">
+          <button class="btn" onclick="runPreview()">Analyse my business →</button>
+        </div>
+        <p class="rise d3 hint" style="margin-top:9px">
+          No card, no account. You get a reduced audit before you sign up.
+        </p>
+      </div>
+      <div id="previewOut" style="margin-top:26px"></div>
+    </section>
+
+    <section class="shell" style="padding:16px 0 52px">
+      <div class="eyebrow">Seven directors, one Company Brain</div>
+      <h2 style="font-size:26px; margin:8px 0 18px">Every department gets a director that knows your business.</h2>
+      <div class="grid g4">
+        ${Object.entries(DEPT_SCORES).map(([k, d], i) => `
+          <div class="card rise d${(i % 6) + 1}">
+            <div class="between">
+              <span style="font-size:19px; color:var(--steel-500)">${
+                ({ executive:'◆', marketing:'◈', sales:'◉', finance:'▦', operations:'◇', hr:'◍', strategy:'✦' })[k]}</span>
+              ${illus()}
+            </div>
+            <div style="font-family:var(--font-display); font-size:17px; margin-top:9px">${esc(d.label)}</div>
+            <div class="row" style="gap:8px; margin-top:9px">
+              <div class="bar" style="flex:1"><span style="width:${d.score}%"></span></div>
+              <span class="mono tiny muted">${d.score}</span>
+            </div>
+            <div class="tiny muted" style="margin-top:6px">across ${d.scored} of ${d.total} inputs</div>
+          </div>`).join('')}
+      </div>
+    </section>
+
+    <section style="background:var(--ink-800); color:var(--bone-100); padding:52px 0">
+      <div class="shell">
+        <div class="grid g3" style="gap:26px">
+          ${[
+            ['Why it is different','Never an invented number.','Every figure is fetched or computed, and every one shows its working. Tap any number in the product to see the method, the inputs and the source.'],
+            ['Locked, not zero','Missing data says so.','A category with no source is shown as locked with the exact step that unlocks it — never as a zero, which would read as a real, bad result.'],
+            ['Built for the GCC','OMR, AED, SAR.','Regional business norms, local currency and calendar, with Arabic on the roadmap.']
+          ].map(([eyebrow, head, body]) => `
+            <div>
+              <div class="eyebrow" style="color:var(--gold-400)">${esc(eyebrow)}</div>
+              <h2 style="color:#fff; font-size:24px; margin-top:8px">${esc(head)}</h2>
+              <p class="sm" style="color:var(--ink-200); margin-top:10px">${esc(body)}</p>
+            </div>`).join('')}
+        </div>
+      </div>
+    </section>
+
+    <section class="shell" style="padding:44px 0">
+      <div class="panel">
+        <div class="between wrap" style="margin-bottom:14px">
+          <div>
+            <span class="eyebrow">Have a look inside</span>
+            <h2 style="font-size:22px; margin-top:5px">Eight people. Eight different products.</h2>
+            <p class="sm muted" style="margin-top:6px; max-width:38rem">Skip the sign-up and open the
+            application as one of the team. Each person&rsquo;s department is their whole workspace.</p>
+          </div>
+          <button class="btn" onclick="go('signin')">Sign in as someone →</button>
+        </div>
+        <div class="row wrap" style="gap:7px">
+          ${PEOPLE.map((x) => `<button class="chip" onclick="signIn('${x.id}')"
+            style="cursor:pointer">${esc(x.name.split(' ')[0])} · ${esc(x.deptLabel)}</button>`).join('')}
+        </div>
+      </div>
+    </section>
+
+    <footer class="shell" style="padding:26px 0; display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap">
+      ${logo()}
+      <span class="tiny muted mono">Demo prototype · illustrative data · not the running application</span>
+    </footer>
+  </div>`;
+}
+
+/** The Preview audit. Reduced on purpose, with the locked set named. */
+function runPreview() {
+  const host = $('#previewOut');
+  host.innerHTML = `<div class="panel rise"><div class="row wrap" style="gap:10px">
+    <span class="chip">Reading the site…</span>
+    <span class="tiny muted">This takes a few seconds in the real product.</span></div></div>`;
+
+  setTimeout(() => {
+    const cats = [
+      { c:'Brand', s:55, m:70, checks:9 },
+      { c:'Technical SEO', s:45, m:65, checks:9 },
+      { c:'Performance', s:25, m:45, checks:5 }
+    ];
+    const lockedSet = [
+      ['Marketing','Connect Google Analytics'], ['Sales','Connect your CRM'],
+      ['Finance','Connect your accounting system'], ['Operations','Create your first project'],
+      ['People','Invite your team'], ['Customer experience','Verify your domain'],
+      ['Competitors','Verify your domain to discover competitors']
+    ];
+    host.innerHTML = `
+      <div class="panel rise">
+        <div class="between wrap">
+          <div>
+            <span class="eyebrow">Preview audit</span>
+            <h3 style="font-size:22px; margin-top:5px">${esc(CO.domain)}</h3>
+          </div>
+          <div style="text-align:right">
+            <div class="row" style="gap:8px; justify-content:flex-end">
+              <span class="big">69</span><span class="muted" style="align-self:flex-end">/100</span>
+            </div>
+            <div class="mono tiny muted" style="margin-top:4px; text-transform:uppercase; letter-spacing:.12em">across 3 of 10 categories</div>
+            <div style="margin-top:6px">${illus()}</div>
+          </div>
+        </div>
+
+        <div class="grid g3" style="margin-top:18px">
+          ${cats.map((x) => `
+            <div class="card">
+              <div class="between">
+                <span style="font-family:var(--font-display); font-size:16px">${esc(x.c)}</span>
+                <span class="mono sm">${x.s}<span class="muted">/${x.m}</span></span>
+              </div>
+              <div class="bar" style="margin-top:10px"><span style="width:${(x.s / x.m * 100).toFixed(0)}%"></span></div>
+              <div class="tiny muted" style="margin-top:8px">${x.checks} checks, each with its evidence</div>
+            </div>`).join('')}
+        </div>
+
+        <div style="margin-top:20px">
+          <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.16em">Not scored yet — what each one needs</div>
+          <div class="grid g2" style="margin-top:10px">
+            ${lockedSet.map(([n, u]) => `
+              <div class="card locked" style="padding:12px 14px">
+                <div class="between"><span class="label">${esc(n)}</span><span class="unlock">${esc(u)}</span></div>
+              </div>`).join('')}
+          </div>
+          <p class="hint" style="margin-top:14px; max-width:44rem">
+            This is the reduced audit. Competitor discovery and keyword data are held back until you
+            verify you own this domain &mdash; anyone can type someone else&rsquo;s address.
+          </p>
+          <button class="btn" style="margin-top:16px" onclick="go('signup')">Claim this audit →</button>
+        </div>
+      </div>`;
+  }, 700);
+}
+
+/* ===========================================================================
+   4. SIGN UP
+   =========================================================================== */
+
+function viewSignup() {
+  return `<div class="screen on"><div class="centre"><div class="authcard rise">
+    <div style="text-align:center; margin-bottom:20px">${logo()}</div>
+    <div class="card" style="padding:28px">
+      <h2 style="font-size:22px">Create your workspace</h2>
+      <p class="sm muted" style="margin:6px 0 20px">Your audit for ${esc(CO.domain)} will be attached to it.</p>
+      <div class="field"><label>Full name</label><input class="input" value="Layla Al-Amri"></div>
+      <div class="field"><label>Work email</label><input class="input" value="layla@nakhla-trading.om"></div>
+      <div class="field"><label>Company</label><input class="input" value="${esc(CO.name)}"></div>
+      <div class="field"><label>Password</label><input class="input" type="password" value="demo-password"></div>
+      <button class="btn wide" onclick="go('onboarding')">Create workspace →</button>
+      <p class="hint" style="margin-top:12px">We send a verification link before anything is connected.
+      Email verification is a real step in this product, not a formality.</p>
+      <p class="sm" style="margin-top:16px; text-align:center">
+        Already have an account?
+        <a onclick="go('signin')" style="color:var(--steel-600); cursor:pointer; text-decoration:underline">Sign in</a>
+      </p>
+    </div>
+    <p class="tiny muted mono" style="text-align:center; margin-top:16px">
+      Demo only &mdash; nothing you type is saved or sent.</p>
+  </div></div></div>`;
+}
+
+/* ===========================================================================
+   5. ONBOARDING
+   ---------------------------------------------------------------------------
+   Mirrors the real API's sequence rather than an idealised one: verify email →
+   claim the domain by DNS TXT → answer the profile questions → connect sources →
+   upload documents → invite the team.
+
+   The domain claim is the step worth dwelling on with a client. Until it passes,
+   the workspace is ephemeral and the audit stays reduced, because anyone can type
+   a competitor's address. It is a trust feature, not a hurdle.
+   =========================================================================== */
+
+const ONBOARD = [
+  { key:'verify',  title:'Verify your email',            sub:'We sent a link to layla@nakhla-trading.om' },
+  { key:'domain',  title:'Prove you own the domain',     sub:'One DNS record. This is what unlocks the full audit.' },
+  { key:'profile', title:'Tell NEXUS about the business', sub:'Six questions. These become the first facts in your Company Brain.' },
+  { key:'connect', title:'Connect your tools',           sub:'Each connection unlocks the departments that depend on it.' },
+  { key:'docs',    title:'Add your documents',           sub:'Price lists, catalogues, contracts, plans.' },
+  { key:'team',    title:'Invite your team',             sub:'Role decides which workspace each person gets.' },
+  { key:'done',    title:'Building your Company Brain',  sub:'' }
+];
+
+function stepBar() {
+  return `<div class="steps">${ONBOARD.map((_, i) =>
+    `<span class="s ${i < S.step ? 'done' : i === S.step ? 'now' : ''}"></span>`).join('')}</div>`;
+}
+function onboardNext() {
+  if (S.step < ONBOARD.length - 1) { S.step++; render(); window.scrollTo(0, 0); } else signIn('layla');
+}
+function onboardBack() {
+  if (S.step > 0) { S.step--; render(); window.scrollTo(0, 0); } else go('signup');
+}
+
+function viewOnboarding() {
+  const step = ONBOARD[S.step];
+  const wide = ['profile', 'connect', 'docs', 'team'].includes(step.key);
+  return `<div class="screen on"><div class="centre" style="align-items:start; padding-top:44px">
+    <div class="rise" style="width:100%; max-width:${wide ? '820px' : '460px'}">
+      <div style="text-align:center; margin-bottom:22px">${logo()}</div>
+      <div class="card" style="padding:26px">
+        ${stepBar()}
+        <div class="between wrap" style="margin-bottom:4px">
+          <h2 style="font-size:21px">${esc(step.title)}</h2>
+          <span class="mono tiny muted">Step ${S.step + 1} of ${ONBOARD.length}</span>
+        </div>
+        ${step.sub ? `<p class="sm muted" style="margin-bottom:20px">${esc(step.sub)}</p>` : '<div style="height:12px"></div>'}
+        ${onboardBody(step.key)}
+      </div>
+      <p class="tiny muted mono" style="text-align:center; margin-top:14px">
+        Demo only &mdash; no email is sent, no DNS is checked, nothing is uploaded.</p>
+    </div>
+  </div></div>`;
+}
+
+function onboardBody(key) {
+  const nav = (label, back) => `
+    <div class="row" style="gap:10px; margin-top:22px">
+      ${back === false ? '' : '<button class="btn ghost" onclick="onboardBack()">Back</button>'}
+      <button class="btn" style="flex:1" onclick="onboardNext()">${esc(label)} →</button>
+    </div>`;
+
+  if (key === 'verify') return `
+    <div style="text-align:center; padding:12px 0 4px">
+      <div style="width:56px; height:56px; margin:0 auto 14px; border-radius:50%; background:var(--gold-100); display:grid; place-items:center; font-size:24px">✉</div>
+      <p class="sm muted">Click the link in your inbox to continue. Unverified accounts cannot connect
+      a data source or claim a domain.</p>
+      <div class="chip" style="margin-top:14px">Link expires in 24 hours</div>
+    </div>
+    ${nav('I have verified', false)}`;
+
+  if (key === 'domain') return `
+    <div class="card tint" style="padding:14px; box-shadow:none">
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em">Add this TXT record to ${esc(CO.domain)}</div>
+      <div class="mono sm" style="margin-top:9px; padding:11px; background:#fff; border:1px solid var(--bone-300); border-radius:9px; word-break:break-all">
+        nexus-verify=8f3a91c7d24e6b05a1f8</div>
+      <div class="row wrap" style="gap:7px; margin-top:10px">
+        <span class="chip">Host: @</span><span class="chip">Type: TXT</span><span class="chip">TTL: 3600</span>
+      </div>
+    </div>
+    <div class="brief" style="margin-top:14px">
+      <span class="rail"></span>
+      <div>
+        <div class="sm" style="font-weight:500">Why this step exists</div>
+        <p class="sm muted" style="margin-top:4px">Until the domain is verified, NEXUS will not name your
+        competitors or pull keyword data &mdash; because anyone can type someone else&rsquo;s web address
+        into the audit. Verification is what separates your business from a stranger&rsquo;s.</p>
+      </div>
+    </div>
+    ${nav('Check the record')}`;
+
+  if (key === 'profile') {
+    const q = [
+      ['What does the business sell?', 'input', CO.industry],
+      ['Who is the typical customer?', 'input', 'Contractors and facilities teams in Muscat, Sohar and Salalah'],
+      ['How do customers usually find you?', 'select', ['Word of mouth','Search','Trade shows','Existing contracts']],
+      ['What is the reporting currency?', 'select', ['OMR — Omani rial','AED — UAE dirham','SAR — Saudi riyal']],
+      ['When does your financial year end?', 'select', ['31 December','31 March','30 June']],
+      ['What would make the next quarter a success?', 'textarea', 'Recover on-time dispatch above 95% and win two annual supply contracts.']
+    ];
+    return `
+      <div class="grid g2">
+        ${q.map(([label, kind, val]) => `
+          <div class="field" ${kind === 'textarea' ? 'style="grid-column:1/-1"' : ''}>
+            <label>${esc(label)}</label>
+            ${kind === 'select'
+              ? `<select class="input">${val.map((o) => `<option>${esc(o)}</option>`).join('')}</select>`
+              : kind === 'textarea'
+                ? `<textarea class="input">${esc(val)}</textarea>`
+                : `<input class="input" value="${esc(val)}">`}
+          </div>`).join('')}
+      </div>
+      <p class="hint">These answers are stored as L1 and L2 facts and are cited whenever a recommendation
+      depends on them &mdash; so you can always see why NEXUS said something.</p>
+      ${nav('Save and continue')}`;
+  }
+
+  if (key === 'connect') return `
+    <div class="grid g2">
+      ${D.integrations.map((x) => {
+        const on = x.status === 'connected', err = x.status === 'error';
+        return `<div class="card" style="padding:14px">
+          <div class="between">
+            <span class="sm" style="font-weight:500">${esc(x.name)}</span>
+            <span class="chip ${on ? 'good' : err ? 'warn' : ''}">${on ? '✓ connected' : err ? '! needs attention' : 'available'}</span>
+          </div>
+          <div class="row wrap" style="gap:6px; margin-top:9px">
+            <span class="chip lock">reads at ${esc(x.scope)}</span>
+            ${on ? `<span class="chip">synced ${esc(x.last)}</span>` : ''}
+          </div>
+          ${!on ? '<button class="btn ghost sm" style="margin-top:11px; width:100%">Connect</button>' : ''}
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="hint">A connection only ever reads. NEXUS never writes to your CRM or accounting system
+    without an explicit, confirmed action.</p>
+    ${nav('Continue')}`;
+
+  if (key === 'docs') return `
+    <div class="card tint" style="border-style:dashed; text-align:center; padding:28px; box-shadow:none">
+      <div style="font-size:26px">⇪</div>
+      <div class="sm" style="margin-top:8px; font-weight:500">Drop files here</div>
+      <p class="hint" style="margin-top:4px">PDF, Word, Excel, PowerPoint. A scanned PDF with no text layer
+      will fail visibly rather than be indexed as empty.</p>
+    </div>
+    <div style="margin-top:16px">
+      <div class="between" style="margin-bottom:6px">
+        <span class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em">Indexed so far</span>${illus()}
+      </div>
+      ${D.brain.filter((b) => b.kind === 'Document').map((b) => `
+        <div class="between" style="padding:10px 2px; border-bottom:1px solid var(--bone-100)">
+          <div>
+            <div class="sm">${esc(b.title)}</div>
+            <div class="tiny muted mono">${b.chunks} passages indexed</div>
+          </div>
+          <span class="chip ${b.scope >= 4 ? 'warn' : 'lock'}">${esc(SCOPE_NAMES[b.scope])}</span>
+        </div>`).join('')}
+    </div>
+    <p class="hint">Every document is classified on upload. Anything NEXUS is unsure about is held for your
+    review rather than guessed &mdash; the default is the more restrictive level.</p>
+    ${nav('Continue')}`;
+
+  if (key === 'team') return `
+    <div class="grid g2" style="gap:10px">
+      <div class="field" style="margin:0"><label>Email</label><input class="input" placeholder="name@nakhla-trading.om"></div>
+      <div class="field" style="margin:0"><label>Role</label>
+        <select class="input">${ROLE_REACH.map((r) => `<option>${esc(r[0])}</option>`).join('')}</select>
+      </div>
+    </div>
+    <button class="btn ghost sm" style="margin-top:12px">+ Add another</button>
+    <div style="margin-top:18px">
+      <div class="between" style="margin-bottom:9px">
+        <span class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.14em">What each role reaches</span>
+        <span class="chip good">Real &mdash; from the built model</span>
+      </div>
+      <table>
+        <thead><tr><th>Role</th><th>Max sensitivity</th><th>Departments</th><th>Their workspace</th></tr></thead>
+        <tbody>
+          ${ROLE_REACH.map(([label, scope, depts, ws]) => `<tr>
+            <td class="sm">${esc(label)}</td>
+            <td class="mono tiny">${scope ? esc(SCOPE_NAMES[scope]) : '<span class="muted">Nothing by role</span>'}</td>
+            <td class="tiny muted">${esc(depts)}</td>
+            <td class="tiny muted">${esc(ws)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <p class="hint" style="margin-top:10px">L4 Restricted is deliberately absent from this table. It is not
+      reachable by any role &mdash; not even the Owner&rsquo;s. It is reached only by being named on the item.</p>
+    </div>
+    ${nav('Send invitations')}`;
+
+  /* done */
+  const tasks = [
+    ['Website crawled','47 pages'], ['Documents indexed','584 passages'],
+    ['CRM synced','1,240 records'], ['Accounting synced','18 months of ledger'],
+    ['Department scores computed','7 of 7'], ['Competitors discovered','6 found'],
+    ['First Morning Brief','ready']
+  ];
+  return `
+    <div style="padding:4px 0">
+      ${tasks.map(([t, d]) => `
+        <div class="between" style="padding:9px 2px">
+          <span class="sm"><span style="color:#3E8259; margin-right:8px">✓</span>${esc(t)}</span>
+          <span class="mono tiny muted">${esc(d)}</span>
+        </div>`).join('')}
+    </div>
+    <div class="brief good" style="margin-top:12px">
+      <span class="rail"></span>
+      <div>
+        <div class="sm" style="font-weight:500">Your Company Brain is live</div>
+        <p class="sm muted" style="margin-top:4px">Seven directors are now working from the same set of
+        facts, so they cannot contradict each other.</p>
+      </div>
+    </div>
+    <button class="btn wide" style="margin-top:20px" onclick="signIn('layla')">Open my Chief of Staff →</button>
+    <button class="btn ghost wide" style="margin-top:9px" onclick="go('signin')">Or sign in as someone else</button>`;
+}
+
+/* ===========================================================================
+   6. SIGN IN — choose a person, not a role
+   ---------------------------------------------------------------------------
+   Deliberately the front door of this prototype. A client understands "let me
+   show you what Yousuf sees" far faster than a permissions table, and each card
+   states up front what that person can and cannot reach.
+   =========================================================================== */
+
+function viewSignIn() {
+  return `<div class="screen on">
+    <div class="shell" style="padding:44px 0 64px; max-width:64rem">
+      <div class="rise" style="text-align:center; margin-bottom:8px">${logo()}</div>
+      <h1 class="rise d1" style="text-align:center; font-size:28px; margin-top:14px">Sign in to ${esc(CO.name)}</h1>
+      <p class="rise d1 sm muted" style="text-align:center; margin-top:8px; max-width:34rem; margin-inline:auto">
+        Eight people, eight different products. The department is not a filter on one
+        dashboard &mdash; it <b>is</b> the application each person gets.
+      </p>
+
+      <div class="personaGrid rise d2" style="margin-top:28px">
+        ${PEOPLE.map((p, i) => `
+          <button class="personaCard" onclick="signIn('${p.id}')">
+            <div class="who">
+              <div class="avatar">${esc(p.initials)}</div>
+              <div style="min-width:0">
+                <div class="nm">${esc(p.name)}</div>
+                <div class="ttl">${esc(p.title)}</div>
+              </div>
+            </div>
+            <div class="tags">
+              <span class="chip ${p.admin ? 'gold' : ''}">${esc(p.role)}</span>
+              <span class="chip ${p.crossDept ? 'good' : 'lock'}">${p.crossDept ? 'All departments' : esc(p.deptLabel)}</span>
+              ${p.restricted ? '<span class="chip warn">Own records only</span>' : ''}
+            </div>
+            <div class="sees">${esc(p.sees)}</div>
+          </button>`).join('')}
+      </div>
+
+      <div class="panel rise d3" style="margin-top:26px">
+        <div class="between wrap" style="margin-bottom:10px">
+          <h3 style="font-size:17px">What changes between them</h3>
+          <span class="chip good">Real &mdash; from the built model</span>
+        </div>
+        <table>
+          <thead><tr><th>Person</th><th>Their navigation</th><th>Never sees</th></tr></thead>
+          <tbody>
+            ${PEOPLE.map((p) => `<tr>
+              <td class="sm">${esc(p.name.split(' ')[0])} <span class="tiny muted">· ${esc(p.role)}</span></td>
+              <td class="tiny muted">${p.nav.map((n) => esc(n[1])).join(' · ')}</td>
+              <td class="tiny" style="color:var(--clay-600)">${
+                p.crossDept ? 'L4 items they are not named on'
+                : p.restricted ? 'Any department total, and every other department'
+                : 'Every other department, and all L4 items'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <p class="hint" style="margin-top:12px">L4 Restricted is absent from every row on purpose.
+        No role reaches it &mdash; not even the Owner&rsquo;s. It is reached only by being named on the item.</p>
+      </div>
+
+      <div class="row" style="justify-content:center; gap:10px; margin-top:22px">
+        <button class="btn ghost sm" onclick="go('landing')">← Back to the public site</button>
+        <button class="btn ghost sm" onclick="go('signup')">Start the sign-up flow instead</button>
+      </div>
+      <p class="tiny muted mono" style="text-align:center; margin-top:16px">
+        Demo only &mdash; no password, no session, nothing saved. Scoping here is simulated.
+      </p>
+    </div>
+  </div>`;
+}
+
+function signIn(id) {
+  S.me = PEOPLE.find((p) => p.id === id);
+  S.section = S.me.nav[0][0];
+  S.route = 'app';
+  S.open.clear();
+  render();
+  window.scrollTo(0, 0);
+}
+
+function signOut() { S.me = null; S.section = null; S.route = 'signin'; render(); window.scrollTo(0, 0); }
+
+/** Leave the application entirely and return to the public site. */
+function exitToSite() { S.me = null; S.section = null; go('landing'); }
+
+/* ===========================================================================
+   7. THE WORKSPACE SHELL
+   ---------------------------------------------------------------------------
+   Built from `me().nav`. There is no master list of departments to grey out,
+   because the navigation does not exist independently of the person.
+   =========================================================================== */
+
+function viewApp() {
+  const p = me();
+  return `<div id="appShell" class="on">
+    <aside class="sidebar">
+      <div style="padding:2px 10px 10px">${logo()}</div>
+      <div class="grp">${esc(p.deptLabel)}</div>
+      ${p.nav.map(([k, label, ic]) => `
+        <button class="navitem ${S.section === k ? 'active' : ''}" onclick="goSection('${k}')">
+          <span class="ic">${ic}</span><span>${esc(label)}</span>
+          ${k === 'approvals' ? `<span class="badge">${D.approvals.length}</span>` : ''}
+          ${k === 'decisions' ? `<span class="badge">${D.decisions.length}</span>` : ''}
+          ${k === 'mine' ? `<span class="badge">${D.myTasks.filter((t) => !t.done).length}</span>` : ''}
+        </button>`).join('')}
+
+      <div style="margin-top:auto; padding:14px 10px 4px">
+        <div class="card tint" style="padding:11px; box-shadow:none">
+          <div class="row" style="gap:9px">
+            <div class="avatar">${esc(p.initials)}</div>
+            <div style="min-width:0">
+              <div class="sm" style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${esc(p.name)}</div>
+              <div class="tiny muted">${esc(p.title)}</div>
+            </div>
+          </div>
+          <button class="btn ghost sm" style="width:100%; margin-top:10px" onclick="signOut()">Switch person</button>
+          <button class="navitem" style="margin-top:4px; font-size:12px" onclick="exitToSite()">
+            <span class="ic">↩</span><span>Back to site</span></button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <div style="min-width:0">
+          <div class="sm" style="font-weight:500">${esc(CO.name)}</div>
+          <div class="tiny muted mono">${esc(CO.domain)} · verified</div>
+        </div>
+        <div class="sep"></div>
+        <span class="chip good">✓ 5 sources live</span>
+        <span class="chip warn">! 1 needs attention</span>
+        <div class="row" style="margin-left:auto; gap:10px">
+          <span class="chip lock">${esc(p.deptLabel)} workspace</span>
+          <div class="avatar">${esc(p.initials)}</div>
+        </div>
+      </div>
+      <div class="content">${section()}</div>
+    </div>
+  </div>`;
+}
+
+function goSection(k) { S.section = k; render(); window.scrollTo(0, 0); }
+
+function pagehead(title, sub, right) {
+  return `<div class="pagehead rise">
+    <div>
+      <span class="eyebrow">${esc(me().deptLabel)}</span>
+      <h1 style="font-size:26px; margin-top:5px">${title}</h1>
+      ${sub ? `<p class="sm muted" style="margin-top:4px">${sub}</p>` : ''}
+    </div>
+    ${right || ''}
+  </div>`;
+}
+
+function scoreBlock(deptId) {
+  const d = DEPT_SCORES[deptId];
+  return `<div class="row" style="gap:16px">
+    <div style="text-align:right">
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em">${deptId === 'executive' ? 'Business health' : 'Department score'}</div>
+      <div class="row" style="gap:7px; justify-content:flex-end; margin-top:3px">
+        <span class="big">${d.score}</span><span class="muted" style="align-self:flex-end">/100</span>
+      </div>
+      <div class="tiny muted mono">across ${d.scored} of ${d.total}</div>
+      <div style="margin-top:5px">${illus()}</div>
+    </div>
+    ${donut(d.score, 74, deptId === 'executive' ? 'var(--gold-500)' : 'var(--steel-500)')}
+  </div>`;
+}
+
+/** Every workspace closes with the same honest note. */
+function footNote() {
+  return `<p class="hint" style="margin-top:26px; max-width:46rem">
+    In the real product every figure here is computed from a connected source and can be opened
+    to its raw inputs. In this prototype they are invented for illustration.</p>`;
+}
+
+/* ===========================================================================
+   8. SECTIONS
+   ---------------------------------------------------------------------------
+   One function per section. Note how little they have in common: a pipeline
+   board, an ageing profile and a dispatch lane are not the same widget with
+   different numbers in it. That is the point — each director's workspace is
+   shaped like the job, not like a reporting template.
+   =========================================================================== */
+
+function section() {
+  const k = S.section;
+  const fn = SECTIONS[k];
+  if (!fn) return `<div class="panel">Section not built in this prototype.</div>`;
+  return scopeStrip() + fn();
+}
+
+const SECTIONS = {};
+
+/* ── LAYLA · Owner · Chief of Staff ───────────────────────────────────────── */
+
+SECTIONS.brief = () => `
+  ${pagehead('Good morning, Layla', 'Monday 17 August · everything below traces to a named source', scoreBlock('executive'))}
+  <div class="grid" style="grid-template-columns:1.4fr 1fr">
+    <div class="panel">
+      <div class="between" style="margin-bottom:12px">
+        <div><span class="eyebrow">Morning brief</span>
+          <h3 style="font-size:18px; margin-top:4px">What changed, and what it means</h3></div>
+        ${illus()}
+      </div>
+      ${D.brief.map((b) => `
+        <div class="brief ${b.kind === 'risk' ? 'risk' : b.kind === 'good' ? 'good' : ''}" style="margin-bottom:9px">
+          <span class="rail"></span>
+          <div style="min-width:0">
+            <div class="sm" style="font-weight:500">${esc(b.title)}</div>
+            <p class="sm muted" style="margin-top:4px">${esc(b.means)}</p>
+            <p class="sm" style="margin-top:6px; color:var(--steel-700)"><b>Do this:</b> ${esc(b.action)}</p>
+            <div class="row wrap" style="gap:5px; margin-top:8px">${srcChips(b.src)}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="stack" style="gap:14px">
+      <div class="card">
+        <div class="between"><span class="eyebrow">Health, 12 months</span>${illus()}</div>
+        <div style="font-family:var(--font-display); font-size:22px; margin-top:6px">72</div>
+        <div style="margin-top:6px">${sparkline(D.trend, 260, 54, 'var(--gold-500)')}</div>
+        <div class="tiny muted mono" style="margin-top:5px">Sep 2025 → Aug 2026</div>
+      </div>
+      <div class="card">
+        <div class="between" style="margin-bottom:10px"><span class="eyebrow">From your managers</span>
+          <span class="chip warn">${D.decisions.length}</span></div>
+        ${D.decisions.map((d) => `
+          <div style="padding:9px 0; border-bottom:1px solid var(--bone-100)">
+            <div class="sm" style="font-weight:500">${esc(d.title)}</div>
+            <p class="tiny muted" style="margin-top:3px">${esc(d.why)}</p>
+            <div class="row" style="gap:6px; margin-top:6px">
+              <span class="chip">${esc(d.cost)}</span><span class="chip src">raised by ${esc(d.from)}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.health = () => `
+  ${pagehead('Business health', 'The composite, and the arithmetic behind it', scoreBlock('executive'))}
+  <div class="grid g4">
+    ${[
+      { label:'Business health', val:'72', unit:'/100', delta:'+4 vs last month', dir:'up', src:['7 departments'],
+        trail:[['Method','mean of 7 department scores, equally weighted'],['Inputs','61 · 84 · 77 · 68 · 74 · 59 · 82'],['Coverage','7 of 7 scored']] },
+      { label:'Revenue, month to date', val:'184.6', unit:'K OMR', delta:'+9.2% vs July', dir:'up', src:['Accounting'],
+        trail:[['Method','sum of issued invoices, 1–17 Aug'],['Rows','142 invoices'],['Excludes','credit notes (OMR 2,100)']] },
+      { label:'Cash position', val:'96.4', unit:'K OMR', delta:'−3.1% vs last week', dir:'down', src:['Accounting'],
+        trail:[['Method','sum of cleared bank balances'],['Accounts','2 current, 1 call'],['As at','17 Aug 06:00 GST']] },
+      { label:'Cash runway', val:'7.4', unit:'months', delta:'+0.6', dir:'up', src:['Accounting'],
+        trail:[['Method','cash ÷ mean net burn, 3 months'],['Cash','OMR 96,400'],['Mean burn','OMR 13,030/mo']] }
+    ].map((m, i) => tile(m, 'health', i)).join('')}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Why the composite is shown at all</span>${illus()}</div>
+    <p class="sm muted">All seven departments have at least one connected source, so the mean covers the
+    whole business. If one were unscored, NEXUS would show the six and say so rather than average
+    what it had &mdash; a whole-business number built from part of the evidence is the failure mode
+    this rule exists to prevent.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.depts = () => `
+  ${pagehead(me().crossDept ? 'All departments' : 'Departments', 'Read access. Each manager owns their own workspace.')}
+  <div class="grid g3">
+    ${Object.entries(DEPT_SCORES).filter(([k]) => k !== 'executive').map(([k, d]) => {
+      const owner = PEOPLE.find((x) => x.dept === k && x.role !== 'Contributor');
+      return `<div class="card">
+        <div class="between"><span style="font-family:var(--font-display); font-size:17px">${esc(d.label)}</span>${illus()}</div>
+        <div class="row" style="gap:8px; margin-top:10px">
+          <div class="bar" style="flex:1"><span style="width:${d.score}%"></span></div>
+          <span class="mono sm">${d.score}</span>
+        </div>
+        <div class="tiny muted mono" style="margin-top:5px">across ${d.scored} of ${d.total}</div>
+        ${owner ? `<div class="row" style="gap:8px; margin-top:12px; padding-top:11px; border-top:1px solid var(--bone-100)">
+          <div class="avatar" style="width:24px; height:24px; font-size:10px">${esc(owner.initials)}</div>
+          <div class="tiny muted">${esc(owner.name)} · ${esc(owner.title)}</div>
+        </div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>
+  ${footNote()}`;
+
+SECTIONS.decisions = () => `
+  ${pagehead('Decisions awaiting you', 'Each one names who raised it and what it costs')}
+  ${D.decisions.map((d) => `
+    <div class="card" style="margin-bottom:11px">
+      <div class="between wrap">
+        <div style="min-width:0">
+          <div style="font-family:var(--font-display); font-size:17px">${esc(d.title)}</div>
+          <p class="sm muted" style="margin-top:5px">${esc(d.why)}</p>
+          <div class="row wrap" style="gap:6px; margin-top:9px">
+            <span class="chip">${esc(d.cost)}</span>
+            <span class="chip src">raised by ${esc(d.from)}</span>
+            ${illus()}
+          </div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button class="btn ghost sm">Ask for more</button>
+          <button class="btn sm">Approve</button>
+        </div>
+      </div>
+    </div>`).join('')}
+  ${footNote()}`;
+
+SECTIONS.brain = () => `
+  ${pagehead('Company Brain', `${omr(D.brain.reduce((a, b) => a + b.chunks, 0))} passages across ${D.brain.length} items`)}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">What NEXUS knows about you</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Item</th><th>Kind</th><th>Sensitivity</th><th class="num">Passages</th><th>Updated</th></tr></thead>
+      <tbody>
+        ${D.brain.map((b) => `<tr>
+          <td class="sm">${esc(b.title)}</td>
+          <td class="tiny muted">${esc(b.kind)}</td>
+          <td><span class="chip ${b.scope >= 4 ? 'warn' : b.scope === 3 ? 'gold' : 'lock'}">${esc(SCOPE_NAMES[b.scope])}</span></td>
+          <td class="num">${omr(b.chunks)}</td>
+          <td class="tiny muted">${esc(b.upd)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:12px">Deleting an item removes its passages, embeddings, cached
+    answers and anything derived from it &mdash; not just the row you see here.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.admin = () => `
+  ${pagehead('Admin portal', 'Users, sources and the audit log')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px">
+      <h3 style="font-size:17px">Who is in this workspace</h3>
+      <div class="row" style="gap:9px">${illus()}<button class="btn sm">+ Invite</button></div>
+    </div>
+    <table>
+      <thead><tr><th>Person</th><th>Role</th><th>Workspace they get</th><th>Max sensitivity</th></tr></thead>
+      <tbody>
+        ${PEOPLE.map((x) => `<tr>
+          <td><div class="row" style="gap:9px">
+            <div class="avatar">${esc(x.initials)}</div>
+            <div><div class="sm">${esc(x.name)}</div><div class="tiny muted">${esc(x.title)}</div></div>
+          </div></td>
+          <td><span class="chip ${x.admin ? 'gold' : ''}">${esc(x.role)}</span></td>
+          <td class="tiny muted">${x.crossDept ? 'All seven departments' : esc(x.deptLabel) + (x.restricted ? ' — own records' : '')}</td>
+          <td class="mono tiny">${esc(SCOPE_NAMES[x.maxScope])}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="between" style="margin-bottom:12px">
+      <h3 style="font-size:17px">Audit log</h3>
+      <div class="row" style="gap:8px">${illus()}<span class="chip lock">Owner only</span></div>
+    </div>
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>What</th><th>Object</th><th>Outcome</th></tr></thead>
+      <tbody>
+        ${D.audit.map((a) => `<tr>
+          <td class="mono tiny muted">${esc(a.at)}</td>
+          <td class="sm">${esc(a.who)}</td>
+          <td class="sm">${esc(a.what)}</td>
+          <td class="tiny muted">${esc(a.obj)}</td>
+          <td><span class="chip ${a.ok ? 'good' : 'warn'}">${a.ok ? 'allowed' : 'denied'}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:12px">Refusals are logged as well as successes. A log that records
+    only what worked cannot tell you that someone probed.</p>
+  </div>
+  ${footNote()}`;
+
+/* ── OMAR · Executive · Strategy ──────────────────────────────────────────── */
+
+SECTIONS.opps = () => `
+  ${pagehead('Opportunities', 'Ranked, each with the evidence that produced it', scoreBlock('strategy'))}
+  ${D.opps.map((o) => `
+    <div class="oppCard ${o.conf === 'High' ? 'high' : o.conf === 'Low' ? 'low' : ''}">
+      <div class="between wrap">
+        <span style="font-family:var(--font-display); font-size:17px">${esc(o.title)}</span>
+        <div class="row" style="gap:7px">
+          <span class="chip ${o.conf === 'High' ? 'good' : o.conf === 'Low' ? 'lock' : 'gold'}">confidence: ${esc(o.conf)}</span>
+          ${illus()}
+        </div>
+      </div>
+      <p class="sm muted" style="margin-top:6px">${esc(o.ev)}</p>
+      <div class="chip src" style="margin-top:8px">size: ${esc(o.size)}</div>
+    </div>`).join('')}
+  <p class="hint" style="margin-top:14px">Confidence is stated because some of these rest on inference
+  rather than measurement. An opportunity with no evidence trail is not shown at all.</p>
+  ${footNote()}`;
+
+SECTIONS.competitors = () => `
+  ${pagehead('Competitors', 'Six tracked. Named only because the domain is verified.')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Observed movement</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Competitor</th><th>What changed</th><th>When</th><th>Watching</th></tr></thead>
+      <tbody>
+        ${D.competitors.map((c) => `<tr>
+          <td class="sm">${esc(c.who)}</td>
+          <td class="sm ${c.watch ? '' : 'muted'}">${esc(c.moved)}</td>
+          <td class="tiny muted">${esc(c.when)}</td>
+          <td>${c.watch ? '<span class="chip warn">yes</span>' : '<span class="chip lock">no change</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:12px">Competitors are anonymised in this prototype rather than
+    named, because inventing a real company&rsquo;s pricing move would be exactly the kind of fabricated
+    claim the product refuses to make.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.signals = () => `
+  ${pagehead('Market signals', 'Measured where possible, stated as unmeasured where not')}
+  <div class="grid g4">
+    ${D.signals.map(([label, val, delta, dir], i) => tile({
+      label, val, delta, dir, src:['Search Console'],
+      trail:[['Method','tracked competitor set of 6'],['Window','30 days vs prior 30']]
+    }, 'sig', i)).join('')}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:10px"><span class="eyebrow">Share of search, 12 months</span>${illus()}</div>
+    ${sparkline([13,14,14,15,15,16,16,17,17,18,18,19], 640, 68, 'var(--steel-500)')}
+  </div>
+  ${footNote()}`;
+
+SECTIONS.bets = () => `
+  ${pagehead('Strategic bets', 'Three open. Each names an owner and the evidence behind it.')}
+  ${D.bets.map((b) => `
+    <div class="card" style="margin-bottom:11px">
+      <div class="between wrap">
+        <div style="min-width:0">
+          <div style="font-family:var(--font-display); font-size:17px">${esc(b.bet)}</div>
+          <div class="chip src" style="margin-top:8px">evidence: ${esc(b.evidence)}</div>
+        </div>
+        <div class="row" style="gap:7px">
+          <span class="chip ${b.status === 'Proposed' ? 'gold' : b.status === 'Investigating' ? '' : 'lock'}">${esc(b.status)}</span>
+          <span class="chip src">owner: ${esc(b.owner)}</span>
+          ${illus()}
+        </div>
+      </div>
+    </div>`).join('')}
+  ${footNote()}`;
+
+/* ── HUDA · Marketing ─────────────────────────────────────────────────────── */
+
+SECTIONS.overviewMarketing = () => `
+  ${pagehead('Marketing', 'Last 30 days against the prior 30', scoreBlock('marketing'))}
+  <div class="grid g4">
+    ${[
+      { label:'Website sessions', val:'8,420', delta:'+24.1%', dir:'up', src:['GA4'],
+        trail:[['Method','sessions, 19 Jul – 17 Aug'],['Prior period','6,784'],['Sampling','none']] },
+      { label:'Enquiries', val:'236', delta:'+31 vs prior', dir:'up', src:['GA4'],
+        trail:[['Method','form submissions'],['Forms','contact, quote request']] },
+      { label:'Enquiry conversion', val:'2.8', unit:'%', delta:'+0.4pp', dir:'up', src:['GA4'],
+        trail:[['Method','submissions ÷ sessions'],['Numerator','236'],['Denominator','8,420']] },
+      { label:'Cost per enquiry', val:'11.4', unit:'OMR', delta:'−18.6%', dir:'up', src:['Ads','GA4'],
+        trail:[['Method','paid spend ÷ paid enquiries'],['Spend','OMR 1,254'],['Enquiries','110']] }
+    ].map((m, i) => tile(m, 'mk', i)).join('')}
+    <div class="card locked">
+      <div class="label">Social reach</div>
+      <div class="reason">No social account connected</div>
+      <div class="unlock">→ Connect LinkedIn</div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:10px"><span class="eyebrow">Sessions, 12 weeks</span>${illus()}</div>
+    ${sparkline([5100,5400,5250,5600,5900,6100,6400,6784,7200,7800,8100,8420], 640, 70)}
+  </div>
+  ${footNote()}`;
+
+SECTIONS.channels = () => `
+  ${pagehead('Channels', 'Where the enquiries came from')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">30 days</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Channel</th><th class="num">Sessions</th><th class="num">Enquiries</th><th class="num">Conv.</th><th class="num">Spend</th><th class="num">Cost per enquiry</th></tr></thead>
+      <tbody>
+        ${D.channels.map((c) => `<tr>
+          <td>${esc(c.name)}</td>
+          <td class="num">${omr(c.sessions)}</td>
+          <td class="num">${c.enq}</td>
+          <td class="num">${(c.enq / c.sessions * 100).toFixed(1)}%</td>
+          <td class="num">${c.spend ? 'OMR ' + omr(c.spend) : '<span class="muted">—</span>'}</td>
+          <td class="num">${c.spend ? 'OMR ' + (c.spend / c.enq).toFixed(1) : '<span class="muted">—</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">Conversion and cost per enquiry are computed per row from the
+    columns beside them, so the arithmetic is visible rather than asserted. A dash means there is no
+    spend to divide by &mdash; not zero cost.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.content = () => `
+  ${pagehead('Content & pages', 'Impressions, 30 days vs prior 30')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Top pages</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Page</th><th class="num">Impressions</th><th class="num">Prior</th><th class="num">Change</th><th class="num">Avg position</th></tr></thead>
+      <tbody>
+        ${D.pages.map((x) => {
+          const ch = ((x.imp - x.prev) / x.prev * 100);
+          return `<tr>
+            <td class="mono sm">${esc(x.url)}</td>
+            <td class="num">${omr(x.imp)}</td>
+            <td class="num muted">${omr(x.prev)}</td>
+            <td class="num" style="color:${ch >= 0 ? '#2F6B45' : 'var(--clay-500)'}">${ch >= 0 ? '+' : ''}${ch.toFixed(0)}%</td>
+            <td class="num">${x.pos}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="between" style="margin-bottom:10px"><span class="eyebrow">Gap NEXUS found</span>${illus()}</div>
+    <p class="sm">31% of sessions arrive with Arabic set as the browser language, and every page is
+    English only.</p>
+    <div class="row wrap" style="gap:6px; margin-top:9px">
+      <span class="chip src">source: GA4</span><span class="chip">2,610 of 8,420 sessions</span>
+    </div>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.campaigns = () => `
+  ${pagehead('Campaigns', 'Two live, one in draft')}
+  ${D.campaigns.map((c) => `
+    <div class="card" style="margin-bottom:11px">
+      <div class="between wrap">
+        <div>
+          <div style="font-family:var(--font-display); font-size:17px">${esc(c.name)}</div>
+          <div class="row wrap" style="gap:6px; margin-top:8px">
+            <span class="chip ${c.status === 'live' ? 'good' : 'lock'}">${esc(c.status)}</span>
+            ${c.days ? `<span class="chip">running ${c.days} days</span>` : ''}
+            ${illus()}
+          </div>
+        </div>
+        <div class="row" style="gap:22px">
+          <div style="text-align:right"><div class="tiny muted">Spend</div>
+            <div class="mono sm">${c.spend ? 'OMR ' + omr(c.spend) : '—'}</div></div>
+          <div style="text-align:right"><div class="tiny muted">Enquiries</div>
+            <div class="mono sm">${c.enq || '—'}</div></div>
+          <div style="text-align:right"><div class="tiny muted">Per enquiry</div>
+            <div class="mono sm">${c.enq ? 'OMR ' + (c.spend / c.enq).toFixed(1) : '—'}</div></div>
+        </div>
+      </div>
+    </div>`).join('')}
+  ${footNote()}`;
+
+SECTIONS.enquiries = () => `
+  ${pagehead('Enquiries', 'Handed to Sales — Huda sees that they landed, not what they are worth')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Last 7 days</span>${illus()}</div>
+    <table>
+      <thead><tr><th>When</th><th>Source</th><th>Region</th><th>Passed to</th><th>Status</th></tr></thead>
+      <tbody>
+        ${[['17 Aug','Paid search','Muscat','Sales','Qualified'],
+           ['17 Aug','Organic','Sohar','Sales','New'],
+           ['16 Aug','Organic','Muscat','Sales','Qualified'],
+           ['16 Aug','Referral','Salalah','Sales','New'],
+           ['15 Aug','Paid search','Sohar','Sales','Not a fit']].map((r) => `<tr>
+          <td class="tiny muted">${esc(r[0])}</td><td class="sm">${esc(r[1])}</td>
+          <td class="sm">${esc(r[2])}</td><td class="tiny muted">${esc(r[3])}</td>
+          <td><span class="chip ${r[4] === 'Qualified' ? 'good' : r[4] === 'Not a fit' ? 'lock' : ''}">${esc(r[4])}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">There is no deal value column, and that is deliberate.
+    Marketing needs to know an enquiry converted; the amount is Sales&rsquo; to hold.</p>
+  </div>
+  ${footNote()}`;
+
+/* ── YOUSUF · Sales manager ───────────────────────────────────────────────── */
+
+const STAGES = ['Enquiry', 'Qualified', 'Proposal', 'Negotiation'];
+
+SECTIONS.overviewSales = () => `
+  ${pagehead('Sales', 'The whole pipeline, and the team working it', scoreBlock('sales'))}
+  <div class="grid g4">
+    ${[
+      { label:'Pipeline value', val:'312.8', unit:'K OMR', delta:'+6.4% vs last month', dir:'up', src:['CRM'],
+        trail:[['Method','sum of open deal values'],['Deals','41 open'],['Excludes','Closed Lost (OMR 88K)']] },
+      { label:'Deals gone quiet', val:'3', unit:'11 days+', delta:'OMR 47.2K at risk', dir:'down', src:['CRM'],
+        trail:[['Method','open deals, last activity > 10 days'],['Threshold','your median cycle, 19 days'],['Stage','all three in Proposal']] },
+      { label:'Win rate, 90 days', val:'31', unit:'%', delta:'+2pp', dir:'up', src:['CRM'],
+        trail:[['Method','won ÷ (won + lost), closed in window'],['Won','14'],['Lost','31']] },
+      { label:'Average deal size', val:'7.6', unit:'K OMR', delta:'−4.1%', dir:'down', src:['CRM'],
+        trail:[['Method','mean value of deals won, 90 days'],['Deals','14'],['Median','OMR 6,200']] }
+    ].map((m, i) => tile(m, 'sl', i)).join('')}
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:12px">
+      <div><span class="eyebrow">Needs you today</span>
+        <h3 style="font-size:17px; margin-top:4px">Three deals have gone quiet</h3></div>
+      ${illus()}
+    </div>
+    <table>
+      <thead><tr><th>Deal</th><th>Owner</th><th class="num">Value</th><th class="num">Silent</th><th>Next step</th></tr></thead>
+      <tbody>
+        ${D.deals.filter((d) => d.silent >= 10).map((d) => `<tr>
+          <td class="sm">${esc(d.co)}</td>
+          <td><div class="avatar" style="width:24px; height:24px; font-size:10px">${esc(d.owner)}</div></td>
+          <td class="num">${omr(d.v)}</td>
+          <td class="num" style="color:var(--clay-500)">${d.silent}d</td>
+          <td class="tiny muted">${esc(d.next)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.pipeline = () => `
+  ${pagehead('Pipeline', `${D.deals.length} open deals across four stages`, `<div class="row" style="gap:9px">${illus()}<button class="btn sm">+ New deal</button></div>`)}
+  <div class="board">
+    ${STAGES.map((st) => {
+      const inStage = D.deals.filter((d) => d.stage === st);
+      const total = inStage.reduce((a, b) => a + b.v, 0);
+      return `<div class="col">
+        <div class="between">
+          <h4>${esc(st)}</h4>
+          <span class="mono tiny muted">${inStage.length}</span>
+        </div>
+        <div class="mono tiny" style="color:var(--steel-600); margin-top:3px">OMR ${omr(total)}</div>
+        ${inStage.map((d) => `
+          <div class="dealcard ${d.silent >= 10 ? 'stale' : ''}">
+            <div class="co">${esc(d.co)}</div>
+            <div class="mono tiny muted" style="margin-top:3px">OMR ${omr(d.v)}</div>
+            <div class="row between" style="margin-top:8px">
+              <div class="avatar" style="width:21px; height:21px; font-size:9px">${esc(d.owner)}</div>
+              <span class="mono tiny ${d.silent >= 10 ? '' : 'muted'}" style="${d.silent >= 10 ? 'color:var(--clay-500)' : ''}">${d.silent}d</span>
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">A clay edge means no contact for longer than your own median
+  cycle. The threshold is measured from your history, not a generic 30-day rule.</p>
+  ${footNote()}`;
+
+SECTIONS.accounts = () => `
+  ${pagehead('Accounts', 'Every account in the department')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">All accounts</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Account</th><th>Stage</th><th>Owner</th><th class="num">Open value</th><th class="num">Last contact</th></tr></thead>
+      <tbody>
+        ${D.deals.map((d) => `<tr>
+          <td class="sm">${esc(d.co)}</td>
+          <td class="tiny muted">${esc(d.stage)}</td>
+          <td><div class="avatar" style="width:24px; height:24px; font-size:10px">${esc(d.owner)}</div></td>
+          <td class="num">${omr(d.v)}</td>
+          <td class="num ${d.silent >= 10 ? '' : 'muted'}" style="${d.silent >= 10 ? 'color:var(--clay-500)' : ''}">${d.silent}d ago</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.team = () => `
+  ${pagehead('My team', 'Three people. Quota against won, month to date.')}
+  <div class="grid g3">
+    ${D.salesTeam.map((t) => `
+      <div class="card">
+        <div class="between">
+          <div class="row" style="gap:9px">
+            <div class="avatar">${esc(t.initials)}</div>
+            <div><div class="sm" style="font-weight:500">${esc(t.who)}</div>
+              <div class="tiny muted">${t.deals} open deals</div></div>
+          </div>
+          ${illus()}
+        </div>
+        <div class="row" style="gap:8px; margin-top:14px; align-items:flex-end">
+          <span style="font-family:var(--font-display); font-size:24px">${t.won}</span>
+          <span class="muted sm" style="padding-bottom:3px">/ ${t.quota}K OMR</span>
+        </div>
+        <div class="bar ${t.won >= t.quota ? 'good' : t.won / t.quota > 0.8 ? 'gold' : 'clay'}" style="margin-top:8px">
+          <span style="width:${Math.min(100, t.won / t.quota * 100).toFixed(0)}%"></span>
+        </div>
+        <div class="tiny muted mono" style="margin-top:5px">${(t.won / t.quota * 100).toFixed(0)}% of quota</div>
+      </div>`).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">Yousuf sees his team&rsquo;s figures because he is accountable for
+  them. Mariam, signed in as herself, sees only her own &mdash; switch person to see that.</p>
+  ${footNote()}`;
+
+SECTIONS.forecast = () => `
+  ${pagehead('Forecast', 'Weighted by stage, from your own historical conversion')}
+  <div class="grid g4">
+    ${[
+      { label:'Weighted forecast', val:'98.4', unit:'K OMR', delta:'closing this quarter', dir:'flat', src:['CRM'],
+        trail:[['Method','Σ (deal value × stage conversion)'],['Enquiry','11% · Qualified 24%'],['Proposal','52% · Negotiation 74%']] },
+      { label:'Best case', val:'312.8', unit:'K OMR', delta:'every open deal wins', dir:'flat', src:['CRM'],
+        trail:[['Method','sum of all open deals'],['Note','shown for range, not as a forecast']] },
+      { label:'Committed', val:'52.8', unit:'K OMR', delta:'Negotiation only', dir:'flat', src:['CRM'],
+        trail:[['Method','sum of Negotiation stage'],['Deals','2']] },
+      { label:'Median cycle', val:'19', unit:'days', delta:'Enquiry → Won', dir:'flat', src:['CRM'],
+        trail:[['Method','median across 14 deals won, 90 days'],['Range','8–41 days']] }
+    ].map((m, i) => tile(m, 'fc', i)).join('')}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Stage conversion, from your history</span>${illus()}</div>
+    ${[['Enquiry → Qualified',64],['Qualified → Proposal',54],['Proposal → Negotiation',50],['Negotiation → Won',74]]
+      .map(([label, pct]) => `
+        <div style="margin-bottom:11px">
+          <div class="between" style="margin-bottom:5px"><span class="sm">${esc(label)}</span>
+            <span class="mono tiny muted">${pct}%</span></div>
+          <div class="bar"><span style="width:${pct}%"></span></div>
+        </div>`).join('')}
+    <p class="hint">These rates are measured from your closed deals. A forecast built on industry
+    averages would be a number NEXUS did not earn.</p>
+  </div>
+  ${footNote()}`;
+
+/* ── MARIAM · Contributor · a genuinely smaller product ───────────────────────
+   Not the manager's page with tiles removed. There is no pipeline total to hide,
+   because a pipeline total is not part of this application. That is what
+   `contributor_restricted` means when it is designed rather than enforced.
+   ------------------------------------------------------------------------- */
+
+SECTIONS.mine = () => {
+  const mine = D.deals.filter((d) => d.owner === 'MS');
+  const open = D.myTasks.filter((t) => !t.done);
+  return `
+  ${pagehead('Your day, Mariam', 'Monday 17 August · four things, in order',
+    `<div style="text-align:right">
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em">Your month</div>
+      <div class="row" style="gap:6px; justify-content:flex-end; margin-top:3px">
+        <span class="big">37</span><span class="muted" style="align-self:flex-end">/ 40K OMR</span>
+      </div>
+      <div class="tiny muted mono">93% of your target</div>
+      <div style="margin-top:5px">${illus()}</div>
+    </div>`)}
+
+  <div class="grid" style="grid-template-columns:1.3fr 1fr">
+    <div>
+      <div class="between" style="margin-bottom:11px">
+        <span class="eyebrow">${open.length} left today</span>${illus()}
+      </div>
+      ${D.myTasks.map((t, i) => `
+        <div class="queueRow ${t.done ? 'done' : ''}">
+          <span class="tickbox">✓</span>
+          <div class="grow">
+            <div class="sm" style="font-weight:500">${esc(t.t)}</div>
+            <div class="tiny muted" style="margin-top:2px">${esc(t.why)}</div>
+          </div>
+          <span class="chip">${esc(t.when)}</span>
+        </div>`).join('')}
+      <p class="hint" style="margin-top:10px">Ordered by what NEXUS thinks is most at risk, not by when
+      you added it. The reason is always shown so you can disagree.</p>
+    </div>
+
+    <div class="stack" style="gap:14px">
+      <div class="card">
+        <div class="between" style="margin-bottom:10px"><span class="eyebrow">Your deals</span>${illus()}</div>
+        ${mine.map((d) => `
+          <div class="between" style="padding:8px 0; border-bottom:1px solid var(--bone-100)">
+            <div style="min-width:0">
+              <div class="sm">${esc(d.co)}</div>
+              <div class="tiny muted">${esc(d.stage)}</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono sm">OMR ${omr(d.v)}</div>
+              <div class="tiny ${d.silent >= 10 ? '' : 'muted'}" style="${d.silent >= 10 ? 'color:var(--clay-500)' : ''}">${d.silent}d silent</div>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="card tint" style="border-style:dashed">
+        <div class="sm" style="font-weight:500">Why you cannot see a pipeline total</div>
+        <p class="sm muted" style="margin-top:5px">Department-wide figures belong to Yousuf. Your
+        workspace is built from your own accounts, so there is nothing here to hide from you &mdash;
+        the totals were never part of it.</p>
+        <div class="chip lock" style="margin-top:9px">Contributor · own records</div>
+      </div>
+    </div>
+  </div>
+  ${footNote()}`;
+};
+
+SECTIONS.mydeals = () => {
+  const mine = D.deals.filter((d) => d.owner === 'MS');
+  const total = mine.reduce((a, b) => a + b.v, 0);
+  return `
+  ${pagehead('Your deals', `${mine.length} open · OMR ${omr(total)} that you own`)}
+  <div class="board">
+    ${STAGES.map((st) => {
+      const inStage = mine.filter((d) => d.stage === st);
+      return `<div class="col">
+        <div class="between"><h4>${esc(st)}</h4><span class="mono tiny muted">${inStage.length}</span></div>
+        ${inStage.length ? inStage.map((d) => `
+          <div class="dealcard ${d.silent >= 10 ? 'stale' : ''}">
+            <div class="co">${esc(d.co)}</div>
+            <div class="mono tiny muted" style="margin-top:3px">OMR ${omr(d.v)}</div>
+            <div class="mono tiny" style="margin-top:6px; ${d.silent >= 10 ? 'color:var(--clay-500)' : 'color:var(--ink-300)'}">${d.silent}d silent</div>
+          </div>`).join('')
+          : `<p class="tiny muted" style="margin-top:10px">Nothing of yours here.</p>`}
+      </div>`;
+    }).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">The same board Yousuf uses, containing only your accounts.
+  The OMR ${omr(total)} above is the sum of your own deals &mdash; it is yours to know.</p>
+  ${footNote()}`;
+};
+
+SECTIONS.myaccounts = () => {
+  const mine = D.deals.filter((d) => d.owner === 'MS');
+  return `
+  ${pagehead('Your accounts', `${mine.length} accounts assigned to you`)}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Assigned to you</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Account</th><th>Stage</th><th class="num">Value</th><th class="num">Last contact</th><th>Next step</th></tr></thead>
+      <tbody>
+        ${mine.map((d) => `<tr>
+          <td class="sm">${esc(d.co)}</td>
+          <td class="tiny muted">${esc(d.stage)}</td>
+          <td class="num">${omr(d.v)}</td>
+          <td class="num ${d.silent >= 10 ? '' : 'muted'}" style="${d.silent >= 10 ? 'color:var(--clay-500)' : ''}">${d.silent}d</td>
+          <td class="tiny muted">${esc(d.next)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">Yousuf&rsquo;s Accounts page lists all nine. Yours lists the five
+    you own. Same feature, different scope, and no empty rows in between.</p>
+  </div>
+  ${footNote()}`;
+};
+
+SECTIONS.mytargets = () => {
+  const t = D.myTargets;
+  return `
+  ${pagehead('Your targets', `${esc(t.month)} · measured from closed deals`)}
+  <div class="grid g4">
+    ${[
+      { label:'Won this month', val:String(t.won), unit:'K OMR', delta:`${(t.won / t.quota * 100).toFixed(0)}% of target`, dir:'up', src:['CRM'],
+        trail:[['Method','sum of your deals closed won in August'],['Deals','4'],['Target','OMR 40,000']] },
+      { label:'Still to close', val:String(t.quota - t.won), unit:'K OMR', delta:'14 days left', dir:'flat', src:['CRM'],
+        trail:[['Method','target − won'],['Open pipeline of yours','OMR 68,800']] },
+      { label:'Your open deals', val:String(t.deals), unit:'', delta:'2 gone quiet', dir:'down', src:['CRM'],
+        trail:[['Method','count of your open deals'],['At risk','Al Barka, Muscat Metals']] },
+      { label:'Your median cycle', val:String(t.avgDays), unit:'days', delta:'same as team', dir:'flat', src:['CRM'],
+        trail:[['Method','median across your closed deals, 90 days'],['Deals','9']] }
+    ].map((m, i) => tile(m, 'mt', i)).join('')}
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="between" style="margin-bottom:10px"><span class="eyebrow">Progress to target</span>${illus()}</div>
+    <div class="bar gold" style="height:10px"><span style="width:${(t.won / t.quota * 100).toFixed(0)}%"></span></div>
+    <div class="between" style="margin-top:8px">
+      <span class="mono tiny muted">OMR 0</span>
+      <span class="mono tiny" style="color:var(--gold-600)">OMR ${omr(t.won * 1000)} won</span>
+      <span class="mono tiny muted">OMR ${omr(t.quota * 1000)}</span>
+    </div>
+    <p class="hint" style="margin-top:12px">Your own target and your own progress. No comparison against
+    colleagues appears here &mdash; a leaderboard is a management tool, and this is not a management view.</p>
+  </div>
+  ${footNote()}`;
+};
+
+/* ── FATMA · Finance ──────────────────────────────────────────────────────── */
+
+SECTIONS.overviewFinance = () => `
+  ${pagehead('Finance', 'Month to date, as at 17 August', scoreBlock('finance'))}
+  <div class="grid g4">
+    ${[
+      { label:'Cash position', val:'96.4', unit:'K OMR', delta:'−3.1% vs last week', dir:'down', src:['Accounting'],
+        trail:[['Method','sum of cleared bank balances'],['Accounts','2 current, 1 call'],['As at','17 Aug 06:00 GST']] },
+      { label:'Cash runway', val:'7.4', unit:'months', delta:'+0.6', dir:'up', src:['Accounting'],
+        trail:[['Method','cash ÷ mean net burn, 3 months'],['Cash','OMR 96,400'],['Mean burn','OMR 13,030/mo']] },
+      { label:'Gross margin', val:'34.2', unit:'%', delta:'+1.1pp', dir:'up', src:['Accounting'],
+        trail:[['Method','(revenue − COGS) ÷ revenue, MTD'],['Revenue','OMR 184,600'],['COGS','OMR 121,470']] },
+      { label:'Receivables over 60d', val:'18.9', unit:'K OMR', delta:'−40.4%', dir:'up', src:['Accounting'],
+        trail:[['Method','open invoices due more than 60 days ago'],['Invoices','7'],['Largest','OMR 6,100']] }
+    ].map((m, i) => tile(m, 'fn', i)).join('')}
+    <div class="card locked">
+      <div class="label">Budget vs actual</div>
+      <div class="reason">No budget document in the Brain</div>
+      <div class="unlock">→ Upload this year&rsquo;s budget</div>
+    </div>
+    <div class="card locked">
+      <div class="label">Payroll detail by person</div>
+      <div class="reason">L4 Restricted — reachable only by being named on the item</div>
+      <div class="unlock">Not available by role, including yours</div>
+    </div>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.cash = () => `
+  ${pagehead('Cash & runway', 'Three accounts, one call deposit')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Balances</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Account</th><th>Type</th><th class="num">Balance</th><th>Cleared</th></tr></thead>
+      <tbody>
+        ${[['Bank Muscat — current','Current',48200,'17 Aug'],
+           ['NBO — current','Current',31700,'17 Aug'],
+           ['NBO — call deposit','Call',16500,'16 Aug']].map((r) => `<tr>
+          <td class="sm">${esc(r[0])}</td><td class="tiny muted">${esc(r[1])}</td>
+          <td class="num">${omr(r[2])}</td><td class="tiny muted">${esc(r[3])}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="between" style="margin-bottom:10px"><span class="eyebrow">Cash, 12 months</span>${illus()}</div>
+    ${sparkline([74,71,78,82,79,86,91,88,94,99,102,96], 640, 70, 'var(--steel-500)')}
+    <p class="hint" style="margin-top:9px">Runway divides today&rsquo;s cash by the mean net burn of the last
+    three months. A single unusual month would distort it, so the window is stated alongside.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.receivables = () => `
+  ${pagehead('Receivables', 'Ageing computed from invoice due dates')}
+  <div class="card">
+    <div class="between" style="margin-bottom:14px"><span class="eyebrow">Ageing profile</span>${illus()}</div>
+    <div class="grid g4">
+      ${D.ageing.map(([b, v], i) => `<div>
+        <div class="tiny muted">${esc(b)}</div>
+        <div style="font-family:var(--font-display); font-size:21px; margin-top:3px">${v}<span class="muted" style="font-size:12px; font-family:var(--font-sans)">K</span></div>
+        <div class="bar ${i === 3 ? 'clay' : i === 2 ? 'gold' : 'good'}" style="margin-top:7px">
+          <span style="width:${(v / 62.4 * 100).toFixed(0)}%"></span></div>
+      </div>`).join('')}
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Oldest open invoices</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Customer</th><th class="num">Amount</th><th class="num">Days overdue</th><th>Last chased</th></tr></thead>
+      <tbody>
+        ${[['Sohar Fit-Out',6100,74,'8 Aug'],['Ibri Industrial',4200,68,'11 Aug'],
+           ['Rustaq Facilities',3400,63,'14 Aug'],['Nizwa Builders',2900,61,'not yet']].map((r) => `<tr>
+          <td class="sm">${esc(r[0])}</td><td class="num">${omr(r[1])}</td>
+          <td class="num" style="color:var(--clay-500)">${r[2]}</td>
+          <td class="tiny ${r[3] === 'not yet' ? '' : 'muted'}" style="${r[3] === 'not yet' ? 'color:var(--clay-500)' : ''}">${esc(r[3])}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.payables = () => `
+  ${pagehead('Payables', 'What is due, and when')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Upcoming</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Supplier</th><th class="num">Amount</th><th>Due</th><th></th></tr></thead>
+      <tbody>
+        ${D.payables.map((x) => `<tr>
+          <td class="sm">${esc(x.who)}</td>
+          <td class="num">${omr(x.amt)}</td>
+          <td><span class="chip ${x.due.includes('overdue') ? 'warn' : ''}">${esc(x.due)}</span></td>
+          <td style="text-align:right"><button class="btn ghost sm" style="height:28px; font-size:11.5px">Schedule</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.approvals = () => `
+  ${pagehead('Approvals', `${D.approvals.length} waiting on you`)}
+  ${D.approvals.map((a) => `
+    <div class="queueRow">
+      <div class="grow">
+        <div class="sm" style="font-weight:500">${esc(a.what)}</div>
+        <div class="row wrap" style="gap:6px; margin-top:7px">
+          <span class="chip">OMR ${omr(a.amt)}</span>
+          <span class="chip src">requested by ${esc(a.who)}</span>
+          <span class="chip ${a.age.startsWith('4') ? 'warn' : ''}">waiting ${esc(a.age)}</span>
+          ${illus()}
+        </div>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn ghost sm">Query</button>
+        <button class="btn sm">Approve</button>
+      </div>
+    </div>`).join('')}
+  <p class="hint" style="margin-top:12px">Each request carries who asked and why, so approving does not
+  require a separate conversation to find out what it is for.</p>
+  ${footNote()}`;
+
+/* ── SALIM · Operations ───────────────────────────────────────────────────── */
+
+SECTIONS.overviewOps = () => `
+  ${pagehead('Operations', 'The floor, as at 17 August', scoreBlock('operations'))}
+  <div class="grid g4">
+    ${[
+      { label:'On-time dispatch', val:'88', unit:'%', delta:'−4pp vs July', dir:'down', src:['Ops sheet'],
+        trail:[['Method','shipped by promised date ÷ all shipped'],['On time','264'],['Total','300']] },
+      { label:'Open orders', val:'47', unit:'', delta:'9 past promised date', dir:'down', src:['Ops sheet'],
+        trail:[['Method','count of unfulfilled orders'],['Oldest','14 days past promise']] },
+      { label:'Warehouse utilisation', val:'91', unit:'%', delta:'+7pp', dir:'flat', src:['Ops sheet'],
+        trail:[['Method','occupied pallet positions ÷ capacity'],['Occupied','1,092'],['Capacity','1,200']] },
+      { label:'Stock-outs this month', val:'6', unit:'SKUs', delta:'+2 vs July', dir:'down', src:['Ops sheet'],
+        trail:[['Method','SKUs reaching zero on hand'],['Worst','Brass fittings 1/2" — 9 days out']] }
+    ].map((m, i) => tile(m, 'op', i)).join('')}
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <div class="between" style="margin-bottom:10px"><span class="eyebrow">On-time dispatch, 12 weeks</span>${illus()}</div>
+      ${sparkline([96,95,97,94,95,93,92,90,91,89,88,88], 320, 62, 'var(--clay-500)')}
+      <p class="hint" style="margin-top:9px">The decline begins in week 8, which is when the warehouse
+      supervisor role fell vacant. NEXUS surfaces the coincidence; it does not claim causation.</p>
+    </div>
+    <div class="card">
+      <div class="between" style="margin-bottom:10px"><span class="eyebrow">Bottleneck</span>${illus()}</div>
+      <div style="font-family:var(--font-display); font-size:19px">Picking &amp; packing</div>
+      <p class="sm muted" style="margin-top:6px">Mean 6.2 hours from order to dispatch-ready, against
+      2.1 hours at goods-in and 0.8 at documentation.</p>
+      <div class="row wrap" style="gap:5px; margin-top:10px">
+        <span class="chip src">source: Ops sheet</span><span class="chip">n = 300 orders</span>
+      </div>
+    </div>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.dispatch = () => {
+  const tone = { 'Awaiting pick':'var(--bone-200)', 'Picking':'var(--gold-200)', 'Ready':'#E8F1EA', 'Late':'var(--clay-200)' };
+  const txt  = { 'Awaiting pick':'var(--ink-500)', 'Picking':'var(--gold-600)', 'Ready':'#2F6B45', 'Late':'var(--clay-600)' };
+  return `
+  ${pagehead('Dispatch board', 'Today&rsquo;s floor, by status', `<div class="row" style="gap:9px">${illus()}</div>`)}
+  <div class="lane">
+    ${Object.entries(D.dispatch).map(([lane, orders]) => `
+      <div class="card" style="padding:0; overflow:hidden">
+        <div class="laneHead" style="background:${tone[lane]}; color:${txt[lane]}">
+          <span>${esc(lane)}</span><span>${orders.length}</span>
+        </div>
+        <div>
+          ${orders.map(([so, who, when]) => `
+            <div class="orderRow">
+              <div style="min-width:0">
+                <div class="mono tiny" style="color:var(--ink-400)">${esc(so)}</div>
+                <div class="sm">${esc(who)}</div>
+              </div>
+              <span class="chip ${when.includes('late') ? 'warn' : ''}" style="align-self:center">${esc(when)}</span>
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">Two orders are late and both are named. NEXUS does not report
+  &ldquo;88% on time&rdquo; without also being able to tell you which 12% were not.</p>
+  ${footNote()}`;
+};
+
+SECTIONS.stock = () => `
+  ${pagehead('Stock', 'Against reorder minimums')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Watch list</span>${illus()}</div>
+    <table>
+      <thead><tr><th>SKU</th><th class="num">On hand</th><th class="num">Minimum</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${D.stock.map((x) => `<tr>
+          <td class="sm">${esc(x.sku)}</td>
+          <td class="num">${x.on}</td>
+          <td class="num muted">${x.min}</td>
+          <td><span class="chip ${x.status === 'out' ? 'warn' : x.status === 'low' ? 'gold' : 'good'}">${esc(x.status)}</span></td>
+          <td style="text-align:right">${x.status !== 'ok' ? '<button class="btn ghost sm" style="height:28px; font-size:11.5px">Reorder</button>' : ''}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">Brass fittings have been at zero for 9 days and appear in two
+    open orders. That link is why it is first on the list.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.suppliers = () => `
+  ${pagehead('Suppliers', 'On-time delivery, measured over 12 months')}
+  <div class="grid g3">
+    ${D.suppliers.map((x) => `
+      <div class="card">
+        <div class="between"><span style="font-family:var(--font-display); font-size:16px">${esc(x.who)}</span>${illus()}</div>
+        <div class="row" style="gap:8px; margin-top:14px; align-items:flex-end">
+          <span style="font-family:var(--font-display); font-size:26px">${x.onTime}</span>
+          <span class="muted sm" style="padding-bottom:4px">% on time</span>
+        </div>
+        <div class="bar ${x.onTime >= 90 ? 'good' : x.onTime >= 80 ? 'gold' : 'clay'}" style="margin-top:8px">
+          <span style="width:${x.onTime}%"></span></div>
+        <div class="tiny muted mono" style="margin-top:7px">lead time ${esc(x.lead)}</div>
+      </div>`).join('')}
+  </div>
+  <p class="hint" style="margin-top:14px">Emirates Valves is both the least reliable and the longest lead
+  time, which is the combination that produced this month&rsquo;s stock-out.</p>
+  ${footNote()}`;
+
+/* ── NADIA · People ───────────────────────────────────────────────────────── */
+
+SECTIONS.overviewHr = () => `
+  ${pagehead('People', `${esc(CO.size)} · as at 17 August`, scoreBlock('hr'))}
+  <div class="grid g4">
+    ${[
+      { label:'Headcount', val:'38', unit:'', delta:'+2 this quarter', dir:'up', src:['HRIS'],
+        trail:[['Method','active employment records'],['Full time','34'],['Contract','4']] },
+      { label:'Open roles', val:'3', unit:'', delta:'1 vacant 24 days', dir:'down', src:['HRIS'],
+        trail:[['Method','approved requisitions, unfilled'],['Longest','Warehouse supervisor']] },
+      { label:'Attrition, 12 months', val:'11', unit:'%', delta:'−3pp', dir:'up', src:['HRIS'],
+        trail:[['Method','leavers ÷ mean headcount'],['Leavers','4'],['Mean headcount','36.4']] },
+      { label:'Accrued leave liability', val:'14.2', unit:'K OMR', delta:'+8.1%', dir:'down', src:['HRIS'],
+        trail:[['Method','unused leave days × daily rate'],['Days','412'],['Note','peaks before year end']] }
+    ].map((m, i) => tile(m, 'hr', i)).join('')}
+    <div class="card locked">
+      <div class="label">Engagement</div>
+      <div class="reason">No survey has been run</div>
+      <div class="unlock">→ Run the first pulse survey</div>
+    </div>
+    <div class="card locked">
+      <div class="label">Individual salaries</div>
+      <div class="reason">L4 Restricted — reachable only by being named on the item</div>
+      <div class="unlock">Not available by role, including yours</div>
+    </div>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.hiring = () => `
+  ${pagehead('Hiring', 'Three roles open, 41 candidates in flight')}
+  <div class="card">
+    <div class="between" style="margin-bottom:14px"><span class="eyebrow">Candidate pipeline</span>${illus()}</div>
+    <div class="stageStrip">
+      ${D.hiring.map(([st, n]) => `
+        <div class="st">
+          <div class="tiny muted">${esc(st)}</div>
+          <div class="n">${n}</div>
+          <div class="bar" style="margin-top:7px"><span style="width:${(n / 24 * 100).toFixed(0)}%"></span></div>
+        </div>`).join('')}
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Open roles</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Role</th><th>Department</th><th class="num">Days open</th><th>Furthest stage</th><th>Measured impact</th></tr></thead>
+      <tbody>
+        ${D.roles.map((r) => `<tr>
+          <td class="sm">${esc(r.role)}</td>
+          <td class="tiny muted">${esc(r.dept)}</td>
+          <td class="num" style="${r.days > 20 ? 'color:var(--clay-500)' : ''}">${r.days}</td>
+          <td class="tiny muted">${esc(r.stage)}</td>
+          <td class="tiny">${r.role.startsWith('Warehouse') ? 'On-time dispatch −4pp since vacancy'
+            : r.role.startsWith('Sales') ? '19 unworked Sohar enquiries'
+            : '<span class="muted">No measured impact yet</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">The impact column is filled only where a real measurement
+    moved. &ldquo;No measured impact yet&rdquo; is a valid answer and is preferred to a guess.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.people = () => `
+  ${pagehead('People', 'Thirty-eight records. Salary is L4 and stays L4.')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Team</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Person</th><th>Department</th><th>Started</th><th>Type</th><th>Compensation</th></tr></thead>
+      <tbody>
+        ${PEOPLE.map((x) => `<tr>
+          <td><div class="row" style="gap:9px">
+            <div class="avatar">${esc(x.initials)}</div>
+            <div><div class="sm">${esc(x.name)}</div><div class="tiny muted">${esc(x.title)}</div></div>
+          </div></td>
+          <td class="tiny muted">${esc(x.deptLabel)}</td>
+          <td class="tiny muted">2019–2024</td>
+          <td class="tiny muted">Full time</td>
+          <td><span class="chip lock">🔒 L4</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">Nadia manages People and still cannot open a salary. L4 is
+    reached by being named on the item, and a job title does not name you.</p>
+  </div>
+  ${footNote()}`;
+
+SECTIONS.leave = () => `
+  ${pagehead('Leave', 'Booked and pending, next 30 days')}
+  <div class="card">
+    <div class="between" style="margin-bottom:12px"><span class="eyebrow">Upcoming</span>${illus()}</div>
+    <table>
+      <thead><tr><th>Person</th><th>When</th><th>Type</th><th>Cover</th></tr></thead>
+      <tbody>
+        ${D.leave.map((l) => `<tr>
+          <td class="sm">${esc(l.who)}</td>
+          <td class="sm">${esc(l.when)}</td>
+          <td><span class="chip ${l.kind === 'Sick' ? 'warn' : ''}">${esc(l.kind)}</span></td>
+          <td class="tiny ${l.who.startsWith('Salim') ? '' : 'muted'}" style="${l.who.startsWith('Salim') ? 'color:var(--clay-500)' : ''}">${
+            l.who.startsWith('Salim') ? 'No cover — Operations has a vacancy' : 'Covered'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:10px">Salim&rsquo;s leave overlaps an open supervisor vacancy, which is
+    why it is flagged. The connection comes from the hiring data, not from a rule about managers.</p>
+  </div>
+  ${footNote()}`;
+
+/* Overview is per-department, so alias it once the person is known. */
+const OVERVIEW_BY_DEPT = {
+  marketing: SECTIONS.overviewMarketing,
+  sales: SECTIONS.overviewSales,
+  finance: SECTIONS.overviewFinance,
+  operations: SECTIONS.overviewOps,
+  hr: SECTIONS.overviewHr
+};
+SECTIONS.overview = () => (OVERVIEW_BY_DEPT[me().dept] || (() => `<div class="panel">No overview for this department.</div>`))();
+
+/* ===========================================================================
+   9. ROUTER
+   =========================================================================== */
+
+const VIEWS = {
+  landing:    viewLanding,
+  signup:     viewSignup,
+  onboarding: viewOnboarding,
+  signin:     viewSignIn,
+  app:        viewApp
+};
+
+function render() {
+  /* `app` is the only route that needs somebody signed in. Falling back to the
+     picker rather than erroring means a stale deep link cannot dead-end. */
+  const route = S.route === 'app' && !S.me ? 'signin' : S.route;
+  $('#screens').innerHTML = (VIEWS[route] || viewLanding)();
+
+  document.title = route === 'app' && S.me
+    ? `NEXUS OS — ${S.me.deptLabel} · ${S.me.name.split(' ')[0]} (illustrative data)`
+    : `NEXUS OS — ${route} (illustrative data)`;
+
+  const hash = route === 'app' && S.me ? S.me.id : route;
+  if (location.hash.slice(1) !== hash) history.replaceState(null, '', '#' + hash);
+}
+
+function go(route) {
+  S.route = route;
+  if (route === 'onboarding') S.step = 0;
+  render();
+  window.scrollTo(0, 0);
+}
+
+/* Deep links: `#landing`, `#onboarding`, or a person's id such as `#mariam`. */
+window.addEventListener('hashchange', () => {
+  const h = location.hash.slice(1);
+  const person = PEOPLE.find((x) => x.id === h);
+  if (person && person !== S.me) { signIn(person.id); return; }
+  if (VIEWS[h] && h !== S.route) go(h);
+});
+
+Object.assign(window, {
+  go, signIn, signOut, exitToSite, goSection, tog, render, runPreview,
+  onboardNext, onboardBack, S, PEOPLE, SECTIONS, D, VIEWS
+});
+
+(function boot() {
+  const h = location.hash.slice(1);
+  const person = PEOPLE.find((x) => x.id === h);
+  if (person) { signIn(person.id); return; }
+  if (VIEWS[h]) S.route = h;
+  render();
+})();
+
+</script>
+</body>
+</html>

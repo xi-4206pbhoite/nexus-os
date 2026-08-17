@@ -236,7 +236,11 @@ statement is a round trip to `us-east-2`.
 
 ---
 
-## M9 — Dashboard shell and Marketing
+## M9 — Dashboard shell and all seven directors
+
+**Scope changed by ADR 0010** (resolves D7): every director gets a page, each shipping the widgets
+its available data supports and rendering the rest as named unlocks. Six of the seven have real
+content with nothing connected — only Finance does not, and its answer is still open in D7.
 
 - [ ] 9.1 Global shell: director header · score · data ribbon with freshness · gap banner · period selector · **global completeness meter** (⛔ **D8** — capability count)
 - [ ] 9.1b **Reserve the assistant panel in the shell**, on all seven department dashboards, from M9 —
@@ -245,14 +249,39 @@ statement is a round trip to `us-east-2`.
       dashboards is a rewrite of all of them. Until M12 it renders its own honest empty state naming
       what it will do, rather than being absent
 - [ ] 9.2 All **seven** render states, each with a component test (doc 06 §7.1)
-- [ ] 9.3 Composite score always shows its denominator, **out of six**, never seven (doc 05 §10)
-- [ ] 9.4 Marketing end to end — the doc 05 §3 widgets that work without integrations: 3.4 Growth Plan · 3.5 Calendar · 3.6 Content Studio · 3.8 Brand Intelligence · market half of 3.7 SEO
+- [ ] 9.3 Composite score always shows its denominator, **out of six**, never seven (doc 05 §10).
+      Unchanged by ADR 0010 and worth restating because seven pages make it easy to get wrong:
+      Chief of Staff and Strategy are synthesis layers and are never scored, and Customers is
+      scoreable but lives inside Sales. **Seven pages, six scoreable departments** — always was
+- [ ] 9.4 **Marketing** end to end — the doc 05 §3 widgets that work without integrations: 3.4 Growth Plan · 3.5 Calendar · 3.6 Content Studio · 3.8 Brand Intelligence · market half of 3.7 SEO
+- [ ] 9.4b **Sales** — its generation half, which doc 05 says works with **no CRM connected**:
+      4.5 Lead Intelligence · 4.7 Proposal Studio (needs an uploaded price list, every price cited) ·
+      4.8 outreach drafting. 4.1–4.4 pipeline widgets render Locked until M10
+- [ ] 9.4c **HR / People** — 7.1 directory from the onboarding roster · 7.3 policy library and generator
+      (pure generation) · 7.4 JD generator · 7.5 onboarding checklists. **7.2 utilisation is Locked until
+      M11** — it derives from Ops task assignment, and its denominator is a settings assumption that
+      must be labelled, never presented as measured
+- [ ] 9.4d **Strategy** — 8.1 market position from competitor data, crawl and SEO share. 8.2 portfolio,
+      8.3 expansion and 8.5 bid/no-bid render Locked: they need Finance and Ops live, and doc 05 §8.5
+      says so explicitly
+- [ ] 9.4e **Chief of Staff** — 2.8 Brain status · 2.2 Health Score once **one** department is scoreable ·
+      2.7 department briefings. **2.1 shows a Baseline, not a Morning Brief** (9.6). Must treat
+      *no scoreable department yet* as a first-class state: in week 1 with nothing connected that is
+      the normal case, not an error
+- [ ] 9.4f **Finance** ⛔ **D7 sub-decision still open.** Every doc 05 §5 widget needs the accounting API,
+      which doc 07 §8 excludes. Three options in D7; my recommendation is manual entry visibly labelled
+      self-reported (doc 04 §7 sanctions it, doc 04 §6 rule 4 constrains it). **Do not build until
+      answered** — the choice decides whether this page has inputs at all
 - [ ] 9.5 3.1/3.2/3.3 render **Locked** until GA4 lands in M10 — Marketing is **not scoreable without GA4** (doc 05 §3.1); Brand and SEO audit scores must **not** be merged into a Marketing score to manufacture a number
 - [ ] 9.6 Week 1 shows a **Baseline**, not a Morning Brief (doc 05 §2.1)
 - [ ] 9.7 WCAG 2.1 AA on every shipped screen
 - [ ] 9.8 `MILESTONE-9.md`
 
-**Done when:** every state renders correctly; no widget shows a zero for missing data.
+- [ ] 9.9 **Test: no department page grants authority.** Opening Finance grants nothing — scope is
+      resolved from role and membership as always. Seven pages make the opposite assumption easy,
+      so a Contributor opening each of the seven must see exactly what a Contributor may see
+
+**Done when:** every state renders correctly on all seven pages; no widget shows a zero for missing data.
 **You validate:** disconnect sources one at a time; confirm each tile degrades honestly.
 **Invariants:** I10.
 

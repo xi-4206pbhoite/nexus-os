@@ -72,15 +72,38 @@ Doc 06 §2.4 restricts the Executive surface to Owner and Executive at MVP, whic
 
 **Confirm:** ship the six-director experience for Department Managers, Contributors and Viewers? This is product-visible, so I do not want to assume it.
 
-### D7 — Which departments are actually in MVP? *(shapes M9–M12)*
-Doc 07's milestones build **Marketing** (M9) and **Operations** (M11). Chief of Staff, Sales, Finance, HR and Strategy have no milestone. Combined with doc 07 §8's exclusions, that leaves MVP as: audit + Company Brain + Marketing + Operations + assistant.
+### ~~D7 — Which departments are actually in MVP?~~ · RESOLVED (ADR 0010)
 
-Two consequences worth your explicit sign-off:
+**Your decision: all seven directors get a dashboard.** Recorded in ADR 0010, which also records what it costs.
 
-1. **Finance ships as a fully Locked page.** Accounting is out of scope and doc 05 §5 says Finance is *entirely* gated on that one connection — so it is seven "connect accounting" tiles and no working surface.
-2. **Sales is nearly empty too.** Lead Intelligence (4.5) and Customer health (4.11) are Phase 2 and therefore excluded; Proposal Studio (4.7) has no milestone. With a CRM connected, M10 gives pipeline data but no Sales director page exists to render it.
+The good news, which the original framing of this question got wrong: **six of the seven have real content on day one, with no integrations at all.** Doc 04 §3's truth table and doc 05's widget lists say so directly.
 
-**Is that the intended MVP, or should Sales + Proposal Studio be added as a milestone?**
+| Director | Works with website + documents only |
+|---|---|
+| **Marketing** | Growth Planner, Content Studio, SEO Intelligence, Brand audit, competitor discovery |
+| **Sales** | Lead Intelligence (4.5, *"works with no CRM connected"*), Proposal Studio (4.7, same, needs an uploaded price list), outreach drafting |
+| **HR / People** | Policy library and generator (7.3, pure generation), JD generator, onboarding checklists, team directory from the onboarding roster |
+| **Strategy** | Market position (8.1) from competitor data, crawl and SEO share |
+| **Operations** | Everything, once the customer creates their first project — it is the first-party layer |
+| **Chief of Staff** | Company Brain status (2.8); Health Score as soon as one department is scoreable; **Baseline, not Morning Brief, in week 1** |
+| **Finance** | **Nothing.** See below. |
+
+**Finance is the single genuine exception, and it still needs an answer from you.** Every widget in doc 05 §5 requires the accounting API, which doc 07 §8 excludes from scope. Two partial paths exist:
+
+- **5.2 Revenue trend** can use CRM closed-won as a *weaker proxy*, which doc 05 requires be labelled as such.
+- **5.7 Pricing recommendations** needs a price list and margin data, so it partly works once documents are uploaded.
+
+Three options, and I do not think this one should be defaulted:
+
+1. **Ship Finance as structure plus named unlocks.** Honest, consistent with I10, and the page teaches the customer exactly which connection turns it on. But a director page that does nothing on day one is a weak first impression for the department owners care most about.
+2. **Bring accounting into MVP scope.** Makes Finance real, and unlocks 5.3 margin, 5.4 runway and 5.9 the Simulator. It is a new integration, a new provider decision (Xero? QuickBooks? Zoho? Tally?), and it is the single point of failure doc 05 §10 already flags.
+3. **Allow manual entry, visibly labelled self-reported.** Doc 04 §7 already sanctions exactly this — *"Manual entry: ruled out → allowed at MVP, visibly labelled as self-reported"* — and doc 04 §6 rule 4 requires self-reported figures never be silently mixed with API-sourced ones. This makes Finance usable on day one without a new integration.
+
+**My recommendation: (3) now, (2) later.** Manual entry gets a working Finance page immediately under a rule the documents already established, and does not commit you to an accounting vendor before you know which one your design partners use. The label is doing real work here — a margin the owner typed is a different claim from a margin fetched from Xero, and the product's whole position rests on not blurring that.
+
+**Still open, and now the only part of D7 left: which of the three above?**
+
+---
 
 ### D8 — Capability count: 21 or 24? *(blocks M9)*
 Doc 04 §6 specifies the completeness meter as *"6 of 21 capabilities"*; doc 05 §0 says *"8 of 24"*. Doc 06 §12 records this as needing reconciliation. The meter is in the global shell, so M9 needs the canonical number.

@@ -39,6 +39,9 @@ services:
       - nexus_pgdata:/var/lib/postgresql/data
       # Runs once, on an empty data volume.
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      # The shared bootstrap SQL, mounted rather than copied so local and
+      # production provably run the same file.
+      - ./db:/bootstrap:ro
     healthcheck:
       # `pg_isready` alone reports the server is accepting connections before
       # the init scripts have finished, so readiness is asserted against the

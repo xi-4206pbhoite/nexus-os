@@ -1,5 +1,10 @@
 * text=auto eol=lf
 
+# Shell scripts must be LF even on Windows: CRLF fails at the shebang with
+# 'bad interpreter', and in the Postgres init hook that failure is silent.
+*.sh text eol=lf
+*.sql text eol=lf
+
 *.png binary
 *.jpg binary
 *.jpeg binary

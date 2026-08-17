@@ -124,3 +124,20 @@ function Start-DockerDaemon {
     & wsl.exe -d $script:WslDistro -u root -- bash -lc `
         'docker info >/dev/null 2>&1 || (systemctl start docker 2>/dev/null || service docker start >/dev/null 2>&1); sleep 2' 2>$null | Out-Null
 }
+
+function Write-EnvFile {
+    <#
+      Writes .env as UTF-8 **without** a BOM and with LF endings.
+
+      PowerShell 5.1's `Set-Content -Encoding utf8` emits a BOM and CRLF. Both
+      break tools that read .env from bash: a trailing CR once ended up inside a
+      database password, which then failed every connection. Do not replace this
+      with Set-Content.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Lines
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), $utf8NoBom)
+}

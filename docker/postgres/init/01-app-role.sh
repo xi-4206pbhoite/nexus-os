@@ -1,38 +1,21 @@
 #!/bin/bash
-# Creates the application role. Runs once, on first initialisation of the
-# data volume.
+# Runs the shared bootstrap on first initialisation of the data volume.
 #
-# **This script is the reason Docker does not simply replace db-init.ps1.**
+# This script is deliberately thin. All the SQL lives in `db/bootstrap.sql`,
+# which a managed Postgres runs **by hand** at deployment — there is no
+# `docker-entrypoint-initdb.d` hook on RDS, Cloud SQL, Azure, Supabase or Neon.
 #
-# The official Postgres image creates `POSTGRES_USER` as a **superuser**. A
-# superuser bypasses row-level security unconditionally — so an application
-# connecting as it would sail through every policy in migration 0002, and the
-# entire M1 isolation suite would pass while proving nothing.
-#
-# The app therefore connects as a separate NOSUPERUSER NOBYPASSRLS role, exactly
-# as it does against the native cluster. The superuser exists only to own
-# extensions and to run migrations.
+# Keeping the SQL in one file is the point. The role flags it sets are what make
+# row-level security real, and if local and production set them up separately
+# they could differ while every isolation test still passed.
 set -euo pipefail
 
 : "${NEXUS_APP_DB_PASSWORD:?NEXUS_APP_DB_PASSWORD must be set for the app role}"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-    -- Extensions must be created by a superuser, so they are created here
-    -- rather than by the app role inside a migration.
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-    CREATE EXTENSION IF NOT EXISTS vector;
-
-    -- NOSUPERUSER and NOBYPASSRLS are load-bearing, not defaults.
-    CREATE ROLE nexus_app WITH
-        LOGIN
-        NOSUPERUSER
-        NOCREATEDB
-        NOCREATEROLE
-        NOBYPASSRLS
-        PASSWORD '${NEXUS_APP_DB_PASSWORD}';
-
-    GRANT ALL ON SCHEMA public TO nexus_app;
-    ALTER SCHEMA public OWNER TO nexus_app;
-EOSQL
-
-echo "nexus_app created (NOSUPERUSER, NOBYPASSRLS); pgvector installed"
+# The value is quoted twice on purpose: psql substitutes :app_password
+# literally, so the SQL string quotes must be part of the variable itself.
+psql -v ON_ERROR_STOP=1 \
+     -v app_password="'${NEXUS_APP_DB_PASSWORD}'" \
+     --username "$POSTGRES_USER" \
+     --dbname "$POSTGRES_DB" \
+     -f /bootstrap/bootstrap.sql

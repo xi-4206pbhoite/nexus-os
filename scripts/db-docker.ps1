@@ -60,7 +60,7 @@ switch ($Action) {
         # resetting the volume would break the connection.
         $superPw = Set-EnvValue 'NEXUS_DB_SUPERUSER_PASSWORD' (New-Secret)
         $appPw = Set-EnvValue 'NEXUS_APP_DB_PASSWORD' (New-Secret)
-        Set-Content -Path $envFile -Value $lines -Encoding utf8
+        Write-EnvFile -Path $envFile -Lines $lines
 
         Write-Host '=== Starting the database ===' -ForegroundColor Cyan
         $previous = $ErrorActionPreference
@@ -97,7 +97,7 @@ switch ($Action) {
                 }
             }
         }
-        Set-Content -Path $envFile -Value $lines -Encoding utf8
+        Write-EnvFile -Path $envFile -Lines $lines
         Write-Host '.env points at the container.' -ForegroundColor Green
 
         Write-Host "`n=== Migrations ===" -ForegroundColor Cyan

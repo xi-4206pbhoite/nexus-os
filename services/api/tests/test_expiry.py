@@ -11,35 +11,17 @@ therefore actually happen, not merely be filtered out at read time.
 
 from __future__ import annotations
 
-import os
-import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import Connection, create_engine, text
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from tests.dburl import database_url
 
-
-def _database_url() -> str | None:
-    url = os.environ.get("NEXUS_DATABASE_URL") or ""
-    if not url:
-        env_file = REPO_ROOT / ".env"
-        if env_file.exists():
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                if line.startswith("NEXUS_DATABASE_URL="):
-                    url = line.split("=", 1)[1].strip()
-                    break
-    if not url or "USER:PASSWORD" in url:
-        return None
-    return re.sub(r"^postgresql\+asyncpg://", "postgresql://", url)
-
-
-DB_URL = _database_url()
+DB_URL = database_url()
 requires_db = pytest.mark.skipif(DB_URL is None, reason="No NEXUS_DATABASE_URL")
 
 

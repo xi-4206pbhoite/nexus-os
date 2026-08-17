@@ -53,7 +53,32 @@ The two that shape almost every file:
 For anything touching permissions or grounding, **write the test that proves the
 invariant before the feature it guards** (doc 07 §5.3).
 
-## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the database)
+## Database — Neon is the target (ADR 0008)
+
+```
+Neon serverless Postgres 18.4    pgvector 0.8.6, direct host (not the pooler)
+  app role   nexus_app           NOSUPERUSER NOBYPASSRLS  <- load-bearing for RLS
+  .env holds nexus_app only      neondb_owner creds are not in the repo
+```
+
+**`neondb_owner` has `rolbypassrls = true`.** Connecting as it would leave every
+RLS policy inert while the whole isolation suite kept passing. The app connects
+as `nexus_app`; `db/bootstrap.sql` *verifies* both flags are false and raises if
+not, because Neon rejects `ALTER ROLE … NOSUPERUSER` outright. Tolerate the
+statement, prove the outcome — never assume the ALTER did anything.
+
+`nexus_app` owns every table (that is what makes `FORCE ROW LEVEL SECURITY`
+settable). It does **not** need to own the schema.
+
+TLS spelling is per-driver: `.env` carries asyncpg's `ssl=require`;
+`tests/dburl.py` rewrites it to libpq's `sslmode=require`. Each driver rejects
+the other's spelling. Never add a second `_database_url()` to a test module —
+import `database_url()` from `tests/dburl.py`.
+
+The suite takes **~5 minutes** against Neon versus ~8 seconds locally; every
+statement is a round trip to `us-east-2`. That is expected, not a hang.
+
+## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the offline fallback)
 
 **Docker lives inside WSL2 Ubuntu, not on the Windows PATH** (ADR 0007). Never
 write a bare `docker …` command — route it through `scripts/lib/docker.ps1`:

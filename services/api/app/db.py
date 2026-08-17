@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
@@ -31,13 +32,37 @@ from app.config import get_settings
 @lru_cache
 def get_engine() -> AsyncEngine:
     settings = get_settings()
-    return create_async_engine(
-        settings.require("database_url"),
-        echo=False,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=5,
-    )
+    url = settings.require("database_url")
+
+    kwargs: dict[str, object] = {
+        "echo": False,
+        # Managed Postgres closes idle connections and can cold-start, so a
+        # pooled connection may be dead by the time it is reused.
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 5,
+        # Recycle before a provider's idle timeout rather than after it.
+        "pool_recycle": 300,
+    }
+
+    # A transaction-mode pooler (PgBouncer, and Neon's `-pooler` endpoint) hands
+    # a different server connection to each transaction, so a prepared statement
+    # created on one is missing on the next — asyncpg then fails with
+    # "prepared statement ... does not exist" under concurrency. Disabling both
+    # caches is the documented requirement.
+    #
+    # Our GUC-based scoping is unaffected: `set_config(..., is_local => true)` is
+    # transaction-scoped, so it travels with the transaction rather than the
+    # session. Session-level state would have been silently wrong here.
+    if "-pooler" in url:
+        kwargs["poolclass"] = NullPool  # the pooler is doing the pooling
+        kwargs.pop("pool_size", None)
+        kwargs.pop("max_overflow", None)
+        kwargs.pop("pool_recycle", None)
+        kwargs["connect_args"] = {"statement_cache_size": 0}
+        kwargs["prepared_statement_cache_size"] = 0
+
+    return create_async_engine(url, **kwargs)
 
 
 @lru_cache

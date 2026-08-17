@@ -58,28 +58,63 @@ SELECT format(
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nexus_app')
 \gexec
 
--- Belt and braces, and the part that matters on a managed instance: if the role
--- already existed with the wrong flags — created by hand, perhaps as a
--- superuser — correct it rather than trusting it.
-ALTER ROLE nexus_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+-- Flags that any role with CREATEROLE may set.
+ALTER ROLE nexus_app WITH LOGIN NOCREATEDB NOCREATEROLE;
 ALTER ROLE nexus_app PASSWORD :'app_password';
 
--- ── Schema ownership ─────────────────────────────────────────
--- The app role owns `public` so migrations can create tables and, critically,
--- apply FORCE ROW LEVEL SECURITY — which requires ownership.
+-- SUPERUSER and BYPASSRLS can only be changed by a superuser — and managed
+-- providers do not give you one. Neon refuses even `NOSUPERUSER` with
+-- "permission denied to alter role", which aborted an earlier version of this
+-- script before it reached the grants below.
 --
--- Some managed providers refuse ALTER SCHEMA ... OWNER TO. Where that happens,
--- grant CREATE instead and run migrations as the owning role; the FORCE
--- requirement still has to be satisfied somehow, so verify it afterwards with
--- the query at the bottom of this file.
-GRANT ALL ON SCHEMA public TO nexus_app;
+-- So: try, tolerate the refusal, and then **verify**. Correcting the flags is
+-- optional; confirming them is not.
 DO $$
 BEGIN
-    EXECUTE 'ALTER SCHEMA public OWNER TO nexus_app';
-EXCEPTION WHEN insufficient_privilege THEN
-    RAISE NOTICE 'could not change owner of schema public — grant retained; '
-                 'confirm FORCE ROW LEVEL SECURITY is applied after migrating';
+    EXECUTE 'ALTER ROLE nexus_app WITH NOSUPERUSER NOBYPASSRLS';
+    RAISE NOTICE 'nexus_app flags asserted directly';
+EXCEPTION WHEN insufficient_privilege OR feature_not_supported THEN
+    RAISE NOTICE 'cannot ALTER these flags without a superuser — verifying instead';
 END $$;
+
+-- The verification, and it is fatal. An application role with BYPASSRLS ignores
+-- every policy unconditionally: migrations 0002/0003/0006/0007 would be inert,
+-- and the whole isolation suite would pass while proving nothing.
+--
+-- Neon's own `neondb_owner` has bypassrls = true, which is exactly why the
+-- application must never connect as it. Failing loudly here is the difference
+-- between finding that out now and finding it out from a customer.
+DO $$
+DECLARE
+    is_super boolean;
+    is_bypass boolean;
+BEGIN
+    SELECT rolsuper, rolbypassrls INTO is_super, is_bypass
+      FROM pg_roles WHERE rolname = 'nexus_app';
+
+    IF is_super OR is_bypass THEN
+        RAISE EXCEPTION
+            'nexus_app has super=% bypassrls=% — either bypasses row-level '
+            'security entirely. Recreate the role without them, or use a '
+            'provider that permits ALTER ROLE ... NOBYPASSRLS.',
+            is_super, is_bypass;
+    END IF;
+    RAISE NOTICE 'nexus_app verified: NOSUPERUSER, NOBYPASSRLS';
+END $$;
+
+-- ── Schema access ────────────────────────────────────────────
+-- CREATE and USAGE on `public` is all migrations need.
+--
+-- An earlier comment here claimed the app role must *own* the schema so that
+-- FORCE ROW LEVEL SECURITY could be applied. That was wrong: FORCE requires
+-- **table** ownership, and the table's owner is whoever created it — which is
+-- the role running the migrations. Schema ownership is irrelevant, and on Neon
+-- `public` is owned by `pg_database_owner` and stays that way.
+GRANT USAGE, CREATE ON SCHEMA public TO nexus_app;
+
+-- Anything already in the schema, for a database that predates this script.
+GRANT ALL ON ALL TABLES IN SCHEMA public TO nexus_app;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO nexus_app;
 
 -- ── Verification ─────────────────────────────────────────────
 -- Printed so a deployment log records what was actually achieved rather than

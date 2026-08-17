@@ -206,12 +206,10 @@ def upgrade() -> None:
 
     # Replace the placeholder array column with a real vector column. Done as
     # raw DDL because alembic has no native type for it.
-    op.execute(f"ALTER TABLE chunk DROP COLUMN embedding")
+    op.execute("ALTER TABLE chunk DROP COLUMN embedding")
     op.execute(f"ALTER TABLE chunk ADD COLUMN embedding vector({EMBEDDING_DIM})")
 
-    op.create_check_constraint(
-        "ck_chunk_scope", "chunk", "scope IN ('L1','L2','L3','L4','L5')"
-    )
+    op.create_check_constraint("ck_chunk_scope", "chunk", "scope IN ('L1','L2','L3','L4','L5')")
     op.create_check_constraint(
         "ck_chunk_sensitivity",
         "chunk",
@@ -222,7 +220,9 @@ def upgrade() -> None:
         "chunk",
         "review_state IN ('auto_approved','pending_review','approved','rejected')",
     )
-    op.create_check_constraint("ck_chunk_confidence", "chunk", "confidence >= 0 AND confidence <= 1")
+    op.create_check_constraint(
+        "ck_chunk_confidence", "chunk", "confidence >= 0 AND confidence <= 1"
+    )
     # An L5 chunk with no owner would be visible to nobody — or, worse, to
     # everyone if a predicate treated NULL as a wildcard. I4 default-deny made
     # explicit in the schema.

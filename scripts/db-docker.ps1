@@ -20,15 +20,18 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host 'Docker is not on PATH.' -ForegroundColor Red
-    Write-Host 'Docker Desktop on Windows Home needs WSL2. From an ELEVATED terminal:' -ForegroundColor Yellow
-    Write-Host '  wsl --install'
-    Write-Host '  (restart)'
-    Write-Host '  winget install --id Docker.DockerDesktop'
-    Write-Host 'Until then the native cluster still works: .\scripts\pg-local.ps1 -Action start'
+. (Join-Path $PSScriptRoot 'lib\docker.ps1')
+
+$mode = Get-DockerMode
+if ($mode -eq 'none') {
+    Write-Host 'Docker is not available on Windows or in WSL.' -ForegroundColor Red
+    Write-Host 'Docker Engine in WSL needs no UAC (ADR 0007):' -ForegroundColor Yellow
+    Write-Host '  wsl -d Ubuntu -u root -- apt-get install -y docker.io docker-compose-v2'
+    Write-Host 'The native cluster also still works: .\scripts\pg-local.ps1 -Action start'
     exit 1
 }
+Write-Host "docker: $mode"
+Start-DockerDaemon
 
 Add-Type -AssemblyName System.Web
 function New-Secret { ([System.Web.Security.Membership]::GeneratePassword(32, 0)) -replace '[^A-Za-z0-9]', 'x' }
@@ -62,8 +65,7 @@ switch ($Action) {
         Write-Host '=== Starting the database ===' -ForegroundColor Cyan
         $previous = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        docker compose up -d db 2>&1 | ForEach-Object { "$_" }
-        $exit = $LASTEXITCODE
+        $exit = Invoke-Docker -Arguments 'compose up -d db' -WorkingDirectory $root
         $ErrorActionPreference = $previous
         if ($exit -ne 0) { throw "docker compose failed (exit $exit)" }
 
@@ -73,7 +75,7 @@ switch ($Action) {
         $deadline = (Get-Date).AddMinutes(3)
         do {
             Start-Sleep -Seconds 3
-            $state = (docker inspect --format '{{.State.Health.Status}}' nexus-db 2>$null)
+            $state = Get-DockerContainerHealth
             Write-Host "  $state"
         } while ($state -ne 'healthy' -and (Get-Date) -lt $deadline)
 
@@ -112,16 +114,16 @@ switch ($Action) {
         Write-Host "`nDatabase ready, with pgvector." -ForegroundColor Green
     }
 
-    'down' { docker compose down }
+    'down' { Invoke-Docker -Arguments 'compose down' -WorkingDirectory $root | Out-Null }
 
     'status' {
-        docker compose ps
-        docker inspect --format 'health: {{.State.Health.Status}}' nexus-db 2>$null
+        Invoke-Docker -Arguments 'compose ps' -WorkingDirectory $root | Out-Null
+        Write-Host "health: $(Get-DockerContainerHealth)"
     }
 
     'reset' {
         Write-Host 'This destroys the database volume.' -ForegroundColor Yellow
-        docker compose down -v
+        Invoke-Docker -Arguments 'compose down -v' -WorkingDirectory $root | Out-Null
         Write-Host 'Volume removed. Run -Action up to recreate.' -ForegroundColor Green
     }
 }

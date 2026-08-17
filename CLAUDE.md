@@ -53,7 +53,20 @@ The two that shape almost every file:
 For anything touching permissions or grounding, **write the test that proves the
 invariant before the feature it guards** (doc 07 §5.3).
 
-## Local stack (ADR 0001 — no Docker)
+## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the database)
+
+**Docker lives inside WSL2 Ubuntu, not on the Windows PATH** (ADR 0007). Never
+write a bare `docker …` command — route it through `scripts/lib/docker.ps1`:
+`Invoke-Docker` (prints, returns exit code), `Get-DockerOutput` (returns lines),
+`Get-DockerContainerHealth`. The daemon does not survive a WSL restart;
+`Start-DockerDaemon` handles that.
+
+`winget` is unusable on this machine: Delivery Optimization hangs at 0 bytes
+without erroring (three occurrences). Use a direct download and **verify the
+Authenticode signature before running an installer** — one 629 MB download
+matched Content-Length exactly and still failed with `HashMismatch`.
+
+## Native fallback (ADR 0001)
 
 ```
 PostgreSQL 17.11   D:\PostgreSQL         loopback only, no service, no admin
@@ -68,8 +81,11 @@ embeddings         local multilingual-e5-large, 1024d (ADR 0003)
 on row-level security, which both silently bypass. Connecting as `postgres`
 would make every isolation test pass while proving nothing.
 
-**pgvector is not installed** and is not required until M5 (ADR 0004). It is
-reported at every `/health/ready` call so its absence stays visible.
+**pgvector 0.8.6 is installed** via the `pgvector/pgvector:pg17` container
+(ADR 0006/0007) and reported at every `/health/ready` call. The container's
+`nexus_app` role is `NOSUPERUSER NOBYPASSRLS` — the official image makes
+`POSTGRES_USER` a superuser, which would bypass RLS entirely, so the app never
+connects as it.
 
 ## Commands
 

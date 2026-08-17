@@ -50,9 +50,11 @@ Write-Host "`n=== Infrastructure ===" -ForegroundColor Cyan
 # one is actually answering — a passing check against the wrong database is
 # worse than a failing one.
 $backend = 'none'
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    $health = docker inspect --format '{{.State.Health.Status}}' nexus-db 2>$null
-    if ($health -eq 'healthy') { $backend = 'docker (pgvector image)' }
+. (Join-Path $PSScriptRoot 'lib\docker.ps1')
+if ((Get-DockerMode) -ne 'none') {
+    if ((Get-DockerContainerHealth) -eq 'healthy') {
+        $backend = "docker/$(Get-DockerMode) (pgvector image)"
+    }
 }
 
 $pgReady = 'D:\PostgreSQL\pgsql\bin\pg_isready.exe'

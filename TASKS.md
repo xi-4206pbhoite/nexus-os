@@ -182,7 +182,7 @@ statement is a round trip to `us-east-2`.
 - [x] 5.4 Classify scope + department; persist `classified_by`, `confidence`, `review_state`
 - [x] 5.5 **I4 default-deny** — parse failure, classification failure, or below-threshold confidence → L5 + review queue
 - [ ] 5.6 Embed into pgvector with **all scope fields on the row** (doc 03's schema lacks them — doc 06 §12)
-- [ ] 5.7 **Spike: filtered-ANN recall at expected cardinality.** HNSW + iterative index scan vs partial indexes per scope. M6 depends on the answer
+- [x] 5.7 **Spike: filtered-ANN recall at expected cardinality.** Answered: one HNSW index plus an ordinary predicate, with `hnsw.iterative_scan = relaxed_order`. Partial indexes are not needed. Plain HNSW gives 5% recall at Contributor selectivity and `ef_search` does not fix it (ADR 0012)
 - [x] 5.8 Review queue **API**; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it
 - [x] 5.9 Visible failure states: parse failure, **scanned PDF with no OCR**, size limit — never silent
 - [x] 5.10 Superseded documents **re-run classification**, never inherit the old scope

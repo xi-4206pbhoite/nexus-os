@@ -436,8 +436,11 @@ export const faq = {
 export const finalCta = {
   headline: 'Seven minutes from now, you could be reading an honest audit of your own business.',
   sub: 'Connect your website. NEXUS does the rest.',
-  primary: 'Start the 7-minute audit',
-  secondary: 'Book a walkthrough',
+  primary: 'Create your account',
+  // Was "Book a walkthrough". There is no booking system, and a button that
+  // opens nothing is worse than one fewer button. This points at the audit,
+  // which is real, needs no account, and is the better first step anyway.
+  secondary: 'Run a free audit first',
   reassure: 'No card required for the trial · Cancel any time',
 } as const
 
@@ -455,23 +458,24 @@ export const footer = {
         { label: 'Pricing', href: '#pricing' },
       ],
     },
+    // Only pages that exist are listed. About, Design partners, Careers,
+    // Contact, Security, Privacy and Terms were all `href="#"` — seven controls
+    // that looked like navigation and scrolled to the top.
+    //
+    // Privacy and Terms are the ones worth noting: they are removed rather than
+    // pointed at a placeholder, because a link to a privacy policy that does not
+    // exist implies a document a customer could rely on. They belong back here
+    // the moment the pages are written, and before anyone real signs up.
     {
-      title: 'Company',
+      title: 'Account',
       links: [
-        { label: 'About', href: '#' },
-        { label: 'Design partners', href: '#' },
-        { label: 'Careers', href: '#' },
-        { label: 'Contact', href: '#' },
+        { label: 'Sign in', href: '/login' },
+        { label: 'Create an account', href: '/register' },
       ],
     },
     {
       title: 'Trust',
-      links: [
-        { label: 'How grounding works', href: '#trust' },
-        { label: 'Security', href: '#' },
-        { label: 'Privacy', href: '#' },
-        { label: 'Terms', href: '#' },
-      ],
+      links: [{ label: 'How grounding works', href: '#trust' }],
     },
   ],
   legal: 'Product in active development. Figures shown in product illustrations are illustrative, not measured results.',

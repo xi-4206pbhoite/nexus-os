@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { clientAddress } from '@/lib/client-address'
 
 /**
  * Proxies the Preview audit to the API.
@@ -40,9 +41,21 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Pass the visitor's address so the API's per-IP bucket is meaningful.
-        // The API only trusts this because this proxy is a known hop.
-        'X-Forwarded-For': request.headers.get('x-forwarded-for') ?? '',
+        // The visitor's address, taken from the platform's own header and
+        // NEVER from the request the browser sent.
+        //
+        // This used to forward `request.headers.get('x-forwarded-for')`
+        // verbatim. The API trusts this header from this proxy, so anyone could
+        // send `X-Forwarded-For: 1.2.3.4`, change it per request, and land in a
+        // fresh rate-limit bucket every time — defeating the per-IP limit
+        // completely and letting one machine spend the entire daily crawl
+        // budget for every visitor.
+        //
+        // `request.ip` and `x-real-ip` are set by the serving platform and are
+        // not settable by the client. If neither is present the header is
+        // omitted, and the API falls back to its direct peer — a shared bucket,
+        // which is the safe failure.
+        ...clientAddress(request),
       },
       body: JSON.stringify({ url: url.trim() }),
       signal: controller.signal,

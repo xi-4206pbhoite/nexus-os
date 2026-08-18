@@ -153,13 +153,33 @@ export function PreviewResult({ audit }: { audit: PreviewAudit }) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        {audit.categories.map((category, i) => (
-          <CategoryCard key={category.category} category={category} index={i} />
-        ))}
-      </div>
+      {/* An empty scored set is possible — a page that loads but yields no
+          measurable signal at all. Rendering nothing here would leave a bare
+          "0/100 across 0 of 0" above white space, which reads as a verdict on
+          the business rather than as an absence of evidence. That is the exact
+          failure this component's own rule exists to prevent. */}
+      {audit.categories.length > 0 ? (
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {audit.categories.map((category, i) => (
+            <CategoryCard key={category.category} category={category} index={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-6 rounded-2xl border border-dashed border-bone-300 bg-white/60 px-5 py-6">
+          <p className="text-sm font-medium text-ink-800">
+            We reached the page but could not measure anything on it.
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-600">
+            That usually means the content is rendered by JavaScript after load, or
+            the page is a redirect stub. Nothing here is a judgement about the
+            business &mdash; there was simply no signal to read.
+          </p>
+        </div>
+      )}
 
-      <div className="mt-8">
+      {/* The heading promises a list, so it is rendered only with one. A bare
+          "what each one needs" above nothing is a broken promise. */}
+      <div className={audit.locked.length > 0 ? 'mt-8' : 'hidden'}>
         <h4 className="font-mono text-2xs uppercase tracking-[0.18em] text-ink-400">
           Not scored yet — what each one needs
         </h4>

@@ -116,14 +116,49 @@ connects as it.
 
 ```powershell
 .\scripts\setup.ps1      # one-time: venv, npm, .env
-.\scripts\pg-local.ps1 -Action start|stop|status
-.\scripts\db-init.ps1 -SuperPassword (Get-Content D:\PostgreSQL\superuser.pw)
-.\scripts\ci.ps1         # the gate: ruff, ruff format, mypy --strict, pytest, tsc, lint, build
+.\scripts\api.ps1        # the API; add -Reload to watch services\api\app
+.\scripts\ci.ps1         # the gate: parse, ruff, mypy --strict, pytest, tsc, lint, build
+.\scripts\smoke.ps1      # every endpoint, asserting refusals as well as successes
 .\scripts\verify.ps1     # gate + health probes, for milestone validation
+.\scripts\db-init.ps1 -SuperPassword (Get-Content D:\PostgreSQL\superuser.pw)
 ```
 
-API: `cd services\api; .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000`
 Web: `npm run dev --prefix apps\web`
+
+**Stop the web dev server before running `ci.ps1`.** Both write `apps\web\.next`,
+and a concurrent `next build` fails with `PageNotFoundError: Cannot find module
+for page`. If the dev server itself starts 500ing with `Cannot find module
+'./NNN.js'`, the cache is corrupt: stop it, delete `.next`, restart. The source is
+fine - that is HMR, not a build error.
+
+## The language model is optional (ADR 0011)
+
+**No API key is a supported state, not a degraded one.** The application starts,
+serves everything, and reports `language_model: unconfigured` on `/health/ready`.
+To switch it on: set `NEXUS_ANTHROPIC_API_KEY`, then `pip install -e ".[ai]"` in
+`services\api`.
+
+Two rules the tests enforce:
+
+- **Nothing outside `app/ai/` names the vendor.** `test_ai_boundary.py` asserts it,
+  verified by planting a violating import and watching it fail. Depend on
+  `app.ai.contracts.LlmProvider`.
+- **Nothing invents content.** `UnavailableProvider` refuses when called;
+  `ScriptedProvider` raises on an unscripted skill. There is no demo mode that
+  returns plausible analysis - a fabricated recommendation destroys the product's
+  central claim whether or not it is labelled, because the label stays on the
+  screen and the screenshot does not.
+
+`anthropic_api_key` deliberately bypasses `Settings.require()`. Every other secret
+fails loudly when absent; this one must not.
+
+## Known defects
+
+`AUDIT-FINDINGS.md` records what four audits found and what was done about each.
+Fourteen findings are open and scheduled. The three worth knowing before touching
+auth or deployment: **argon2 blocks the event loop**, **`/auth/login` has no rate
+limit** (both D14), and **`env` defaults to `local`** - so a missing `NEXUS_ENV`
+in production serves `/docs` and sets `secure=False` on both cookies.
 
 ## Content rule
 

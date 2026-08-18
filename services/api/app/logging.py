@@ -26,7 +26,16 @@ user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
 _SECRET_HINTS = (
     "password",
     "secret",
-    "token",
+    # Anchored, not bare "token". The bare form matched `input_tokens` and
+    # `output_tokens` on every `ai.completion` line, redacting the counts that
+    # the per-user token budget (task 8.6) and the drift signal (task 13.4) are
+    # both meant to read. A redaction that eats its own telemetry is worse than
+    # none: it looks like it is working.
+    "_token",
+    "token_",
+    "access_token",
+    "refresh_token",
+    "api_token",
     "authorization",
     "api_key",
     "apikey",

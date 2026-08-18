@@ -183,19 +183,34 @@ def test_logout_clears_the_csrf_cookie_as_well_as_the_session(
     signed-in signal a client can see. One surviving logout leaves every client
     believing a revoked session is still live.
 
-    Runs without a session on purpose: the route deletes both cookies before it
-    touches the database, so this needs no fixture and covers the case where a
-    cookie outlived its session row.
+    Goes through the real double-submit gate — cookie set, matching header sent.
+    An earlier version sent the header with no cookie, which worked only because
+    `require_csrf` returned early on an absent cookie. That fail-open is now a
+    403, so this test would have been asserting against a hole rather than
+    through it.
+
+    No session cookie is needed: the handler skips the database when there is
+    none and still clears both cookies, which is the case where a cookie
+    outlived its session row.
     """
-    response = client_no_auth.post(
-        "/auth/logout", headers={CSRF_HEADER_NAME: "irrelevant-with-no-cookie"}
-    )
+    token = "a-known-csrf-value"
+    client_no_auth.cookies.set(CSRF_COOKIE_NAME, token)
+
+    response = client_no_auth.post("/auth/logout", headers={CSRF_HEADER_NAME: token})
 
     assert response.status_code == 204
 
-    cleared = [h for h in response.headers.get_list("set-cookie")]
-    joined = " ".join(cleared)
+    joined = " ".join(response.headers.get_list("set-cookie"))
     assert "nexus_session=" in joined, "session cookie not cleared"
     assert f"{CSRF_COOKIE_NAME}=" in joined, "CSRF cookie not cleared"
     # Deletion is expressed as an immediate expiry, not an omission.
     assert joined.count("Max-Age=0") >= 2 or joined.count("expires=") >= 2
+
+
+def test_logout_without_a_csrf_cookie_is_refused(client_no_auth: TestClient) -> None:
+    """The companion to the above, and the reason it had to change.
+
+    A caller holding a session but missing its CSRF cookie is the cookie-eviction
+    scenario `app/auth/csrf.py` exists for. It used to be waved through.
+    """
+    assert client_no_auth.post("/auth/logout").status_code == 403

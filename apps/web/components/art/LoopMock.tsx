@@ -184,7 +184,7 @@ function Execute() {
         className="overflow-hidden rounded-2xl border border-bone-200 bg-white shadow-paper"
       >
         <div className="flex items-center justify-between border-b border-bone-200 px-4 py-3">
-          <span className="text-sm font-medium text-ink-800">Proposal — Al Manar Developments</span>
+          <span className="text-sm font-medium text-ink-800">Proposal — client project</span>
           <span className="font-mono text-2xs text-ink-400">DRAFT</span>
         </div>
         <div className="space-y-3 p-4">

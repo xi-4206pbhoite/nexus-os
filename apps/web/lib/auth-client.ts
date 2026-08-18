@@ -1,3 +1,5 @@
+import { messageFrom } from '@/lib/api-error'
+
 /**
  * Browser-side auth calls.
  *
@@ -53,23 +55,6 @@ export class AuthError extends Error {
     super(message)
     this.status = status
   }
-}
-
-/** Pulls a human-readable message out of whatever the API returned. */
-function messageFrom(payload: unknown, fallback: string): string {
-  if (payload && typeof payload === 'object' && 'detail' in payload) {
-    const detail = (payload as { detail: unknown }).detail
-    if (typeof detail === 'string') return detail
-    // FastAPI validation errors arrive as a list of objects. Surface the first
-    // one's message rather than "[object Object]".
-    if (Array.isArray(detail) && detail.length > 0) {
-      const first = detail[0]
-      if (first && typeof first === 'object' && typeof (first as { msg?: unknown }).msg === 'string') {
-        return (first as { msg: string }).msg
-      }
-    }
-  }
-  return fallback
 }
 
 async function post(path: string, body?: unknown): Promise<unknown> {

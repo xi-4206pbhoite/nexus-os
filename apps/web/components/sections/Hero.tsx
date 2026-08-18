@@ -22,7 +22,26 @@ import { usePointerParallax } from '@/lib/hooks'
    framer-motion is still the right tool below the fold, where reveals need
    viewport detection and the bundle has long since arrived. */
 
-/** A product fragment that floats over the illustration — proof, not decoration. */
+/**
+ * The `Illustrative` marker every product mock must carry.
+ *
+ * CLAUDE.md's content rule is not decoration: the product sells on never
+ * inventing a number, and these cards show numbers that were invented for the
+ * page. Same wording as `LoopMock`'s frame so the label reads as one convention
+ * rather than two.
+ *
+ * A footnote at the bottom of the page is not sufficient — these cards are
+ * screenshot-shaped, and the screenshot travels without the footnote.
+ */
+function IllustrativeTag() {
+  return (
+    <span className="ml-auto shrink-0 rounded-md bg-bone-200 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-[0.14em] text-ink-500">
+      Illustrative
+    </span>
+  )
+}
+
+/** A product fragment that floats over the illustration — shape, not real data. */
 function FloatingBrief() {
   return (
     <div
@@ -37,6 +56,7 @@ function FloatingBrief() {
         <span className="font-mono text-2xs uppercase tracking-[0.18em] text-ink-400">
           Morning Brief
         </span>
+        <IllustrativeTag />
       </div>
       <p className="mt-2.5 text-[0.92rem] font-medium leading-snug text-ink-800">
         Pipeline value rose while three deals went quiet for 11 days.
@@ -61,10 +81,13 @@ function FloatingScore() {
       style={{ animationDelay: '1.05s' }}
       className="animate-rise-scale absolute -right-1 bottom-[16%] w-[14.5rem] rounded-2xl border border-bone-300/80 bg-white/90 p-4 shadow-paper-lg backdrop-blur-md sm:-right-6"
     >
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-center gap-2">
         <span className="font-mono text-2xs uppercase tracking-[0.18em] text-ink-400">
           Health Score
         </span>
+        <IllustrativeTag />
+      </div>
+      <div className="mt-1 flex items-baseline justify-end">
         <span className="font-mono text-2xs text-clay-500">+4 wk</span>
       </div>
       <div className="mt-2 flex items-end gap-1.5">

@@ -80,10 +80,10 @@ export function FinalCta() {
             </p>
 
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button href="#" size="lg" icon={<ArrowRight />}>
+              <Button href="/register" size="lg" icon={<ArrowRight />}>
                 {finalCta.primary}
               </Button>
-              <Button href="#" size="lg" variant="secondary">
+              <Button href="#top" size="lg" variant="secondary">
                 {finalCta.secondary}
               </Button>
             </div>

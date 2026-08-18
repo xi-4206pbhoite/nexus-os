@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { ArrowRight } from '@/components/ui/Button'
+import { messageFrom } from '@/lib/api-error'
 import { PreviewResult, type PreviewAudit } from '@/components/preview/PreviewResult'
 
 /**
@@ -70,6 +71,15 @@ export function PreviewForm() {
   const [retryAt, setRetryAt] = useState<number | null>(null)
   const waiting = useCountdown(retryAt)
 
+  // One value drives the single status line below, so "running" and "error"
+  // can never be two elements racing each other through an exit animation.
+  const notice: { kind: 'running' | 'error'; text: string } | null =
+    state.status === 'running'
+      ? { kind: 'running', text: 'Reading your site. This takes a few seconds.' }
+      : state.status === 'error'
+        ? { kind: 'error', text: state.message }
+        : null
+
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (url.trim().length < 4) return
@@ -94,9 +104,14 @@ export function PreviewForm() {
         }
         setState({
           status: 'error',
-          // The API's message is written to be safe to show: it never confirms
+          // Via `messageFrom`, never `payload.detail` directly. The API's
+          // deliberate errors carry a string, but its *validation* errors carry
+          // an array of objects — and rendering one of those as a React child
+          // threw, which with no error boundary took the whole page down.
+          //
+          // The message itself is written to be safe to show: it never confirms
           // internal network shape to whoever supplied the URL.
-          message: payload?.detail ?? 'That address could not be analysed.',
+          message: messageFrom(payload, 'That address could not be analysed.'),
         })
         return
       }
@@ -150,35 +165,40 @@ export function PreviewForm() {
         </button>
       </form>
 
-      <AnimatePresence mode="wait">
-        {running && (
-          <motion.p
-            key="running"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mt-4 flex items-center gap-2 text-sm text-ink-500"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-gold-400 opacity-75 motion-safe:animate-pulse-ring" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-gold-500" />
-            </span>
-            Reading your site. This takes a few seconds.
-          </motion.p>
-        )}
+      {/* One child, keyed by status — not two siblings under `mode="wait"`.
+          `mode="wait"` holds the entering element until the exiting one's
+          animation completes, and under React 18 StrictMode framer-motion can
+          drop that completion callback. The "running" line then never finishes
+          exiting and the error line never mounts, so **every failure was
+          silent**: an SSRF refusal, a rate limit and a timeout all looked
+          identical to nothing happening.
 
-        {state.status === 'error' && (
+          This is the second time this exact pattern has bitten this codebase —
+          the loop panel froze the same way. A keyed single child cannot
+          deadlock, because there is no second element to wait for. */}
+      <AnimatePresence initial={false}>
+        {notice ? (
           <motion.p
-            key="error"
+            key={notice.kind}
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            role="alert"
-            className="mt-4 rounded-xl border border-clay-300 bg-clay-100/60 px-4 py-3 text-sm text-ink-700"
+            role={notice.kind === 'error' ? 'alert' : 'status'}
+            className={
+              notice.kind === 'error'
+                ? 'mt-4 rounded-xl border border-clay-300 bg-clay-100/60 px-4 py-3 text-sm text-ink-700'
+                : 'mt-4 flex items-center gap-2 text-sm text-ink-500'
+            }
           >
-            {state.message}
+            {notice.kind === 'running' ? (
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-gold-400 opacity-75 motion-safe:animate-pulse-ring" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-gold-500" />
+              </span>
+            ) : null}
+            {notice.text}
           </motion.p>
-        )}
+        ) : null}
       </AnimatePresence>
 
       {state.status === 'done' && <PreviewResult audit={state.audit} />}

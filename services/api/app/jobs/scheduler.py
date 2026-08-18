@@ -15,6 +15,8 @@ recorded here so it is a decision rather than an accident.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -23,6 +25,10 @@ from app.jobs.expiry import run_expiry_sweep
 from app.logging import get_logger
 
 log = get_logger(__name__)
+
+FIRST_RUN_DELAY = timedelta(seconds=45)
+"""Long enough for the pool and migrations to settle, short enough that a
+restart is not what stands between expired data and its deletion."""
 
 EXPIRY_INTERVAL_MINUTES = 60
 
@@ -47,6 +53,18 @@ def build_scheduler() -> AsyncIOScheduler:
         coalesce=True,
         # Run shortly after start so a long-lived process is not the only thing
         # standing between expired data and its deletion.
-        next_run_time=None,
+        #
+        # This said `next_run_time=None` for its whole life, which is not "no
+        # opinion" — it is APScheduler's representation of *paused*. `add_job`
+        # only computes a first fire time when the attribute is absent, so the
+        # slot being set to None meant one was never computed and the sweep
+        # never ran, in any deployment. Startup logged `scheduler.started
+        # jobs=['expiry_sweep']` throughout, so nothing looked wrong.
+        #
+        # What that cost: Preview audits of companies who have no account here
+        # were retained past their TTL indefinitely, which `jobs/expiry.py`
+        # calls an obligation to a third party. `rate_limit_counter` grew
+        # without bound on the unauthenticated path.
+        next_run_time=datetime.now(UTC) + FIRST_RUN_DELAY,
     )
     return scheduler

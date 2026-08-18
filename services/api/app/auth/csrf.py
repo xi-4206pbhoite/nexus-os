@@ -36,10 +36,24 @@ async def require_csrf(
     if request.method in SAFE_METHODS:
         return
 
-    # No CSRF cookie means no authenticated session to protect; the session
-    # dependency will reject it on its own terms.
+    # Absent cookie is a rejection, not a pass.
+    #
+    # This used to `return` here, reasoning that no CSRF cookie meant no session
+    # to protect. That inference does not hold: `nexus_session` and `nexus_csrf`
+    # are independent cookies with independent lifetimes, and either can be
+    # missing while the other survives. A page on a sibling subdomain can evict
+    # one by filling the cookie jar — and this module exists precisely for the
+    # cases where `SameSite=Lax` fails, which is the same list of cases.
+    #
+    # Failing open in exactly the scenario the layer was built for defeated it.
+    # A caller with no session gets 401 from the session dependency either way;
+    # a caller with a session and no CSRF cookie now gets 403 rather than a free
+    # pass.
     if nexus_csrf is None:
-        return
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"Missing {CSRF_COOKIE_NAME} cookie. Sign in again.",
+        )
 
     if not csrf_matches(nexus_csrf, x_csrf_token):
         raise HTTPException(

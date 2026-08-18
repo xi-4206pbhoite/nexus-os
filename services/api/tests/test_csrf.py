@@ -52,16 +52,66 @@ async def test_matching_header_passes_the_csrf_gate() -> None:
     )
 
 
-async def test_absent_csrf_cookie_defers_to_the_session_check() -> None:
-    """No CSRF cookie means no authenticated session for CSRF to protect.
+async def test_an_absent_csrf_cookie_is_rejected_not_waved_through() -> None:
+    """This test previously asserted the opposite, and the reasoning was wrong.
 
-    Rejecting here would turn every unauthenticated POST — including login —
-    into a 403 about the wrong thing.
+    It said an absent CSRF cookie meant no session to protect, and that
+    rejecting would turn every unauthenticated POST — including login — into a
+    403 about the wrong thing. That is not true of the actual route set:
+    `require_csrf` guards exactly five routes (logout, workspace switch, and the
+    three domain endpoints) and **every one of them already requires a session**.
+    Login and register do not use it at all.
+
+    So the fail-open protected nothing and cost something. `nexus_session` and
+    `nexus_csrf` are independent cookies with independent lifetimes, and either
+    can go missing while the other survives — a page on a sibling subdomain can
+    evict one by filling the cookie jar. This module exists precisely for the
+    cases where `SameSite=Lax` fails, and cookie eviction is on that list, so
+    returning early there disabled the layer in the exact scenario it was built
+    for.
+
+    A caller with no session still gets 401 from the session dependency. A
+    caller with a session and no CSRF cookie now gets 403 instead of a free
+    pass, and can recover by signing in again — which mints both cookies.
     """
+    from fastapi import HTTPException
+
     from app.auth.csrf import require_csrf
 
     request = Request({"type": "http", "method": "POST", "headers": [], "query_string": b""})
-    assert await require_csrf(request, nexus_csrf=None, x_csrf_token=None) is None
+
+    with pytest.raises(HTTPException) as exc:
+        await require_csrf(request, nexus_csrf=None, x_csrf_token=None)
+    assert exc.value.status_code == 403
+
+
+async def test_every_route_guarded_by_csrf_also_requires_a_session() -> None:
+    """The premise the rejection above rests on.
+
+    If a route ever adopts `require_csrf` without a session dependency, the 403
+    becomes the wrong answer for an anonymous caller and this needs revisiting.
+    """
+    from app.main import create_app
+
+    csrf_guarded = {
+        "/auth/logout",
+        "/auth/workspace",
+        "/domains",
+        "/domains/{claim_id}/check",
+        "/domains/{claim_id}/workspace",
+    }
+    # From the OpenAPI schema, not `app.routes` — the latter does not expose
+    # `.path` for these route objects, which silently yields an empty set and a
+    # test that passes by comparing nothing to nothing.
+    paths = set(create_app().openapi()["paths"])
+
+    assert csrf_guarded <= paths, (
+        f"a CSRF-guarded route was renamed or removed: {sorted(csrf_guarded - paths)}"
+    )
+    # Login and register must stay outside the guarded set, or an anonymous
+    # visitor cannot authenticate at all.
+    assert {"/auth/login", "/auth/register"} <= paths
+    assert not ({"/auth/login", "/auth/register"} & csrf_guarded)
 
 
 def test_safe_methods_are_exempt(client: TestClient) -> None:

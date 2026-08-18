@@ -30,7 +30,13 @@ def test_readiness_reports_not_ready_without_a_database() -> None:
     assert body["status"] == "not_ready"
 
     names = {check["name"] for check in body["checks"]}
-    assert names == {"database", "pgvector", "object_storage", "language_model"}
+    assert names == {
+        "database",
+        "pgvector",
+        "object_storage",
+        "language_model",
+        "embeddings",
+    }
 
 
 def test_pgvector_is_reported_but_advisory() -> None:

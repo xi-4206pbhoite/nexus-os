@@ -152,6 +152,42 @@ Two rules the tests enforce:
 `anthropic_api_key` deliberately bypasses `Settings.require()`. Every other secret
 fails loudly when absent; this one must not.
 
+## Semantic search is optional too (ADR 0003 + the ADR 0011 pattern)
+
+**No embedding model is a supported state.** `fastembed` and the ~2GB
+`multilingual-e5-large` weights are an optional extra. Without them documents
+still upload, parse, classify and reach the review queue; their chunks are stored
+with a NULL embedding, which migration 0007's `ck_chunk_embedding_provenance`
+permits, and `/health/ready` reports `embeddings: unconfigured`. To switch it on:
+`pip install -e ".[embeddings]"` in `servicespi`.
+
+Three rules the tests enforce:
+
+- **Nothing outside `app/embeddings/` names the library.** Depend on
+  `app.embeddings.contracts.Embedder`. `test_embedding_boundary.py` asserts it -
+  and caught a prose mention of the *other* vendor in a docstring, so the same
+  rule applies to comments.
+- **Nothing fabricates a vector.** `DeterministicEmbedder` is hash-derived, is
+  never returned by the registry, and no setting can select it. This is stricter
+  than the LLM rule for a reason: a scripted provider refuses and fails loudly,
+  whereas a fake embedding *ranks*. It produces confident citations beside a real
+  answer with no visible symptom at all.
+- **`embed_documents` and `embed_query` are separate, and not interchangeable.**
+  E5 is trained with `passage:` and `query:` prefixes; omitting or swapping them
+  does not raise, it just retrieves worse - indistinguishable from the product
+  being mediocre.
+
+**Retrieval must set `hnsw.iterative_scan` (ADR 0012).** Measured, not assumed: a
+plain HNSW index with the permission predicate as an ordinary `WHERE` returns
+**5% recall** at the selectivity of a Contributor reading their own rows. Raising
+`ef_search` looks like the fix and is not - it rescues a department-sized filter
+and leaves narrow ones broken. Partial indexes per scope are not needed.
+
+The embedding pass runs **in the API process** on a 5-minute interval, which is
+fine only while the model is absent by default. Once `[embeddings]` is installed
+in production, ~2GB of weights are resident in the process serving requests and
+it belongs in a separate worker.
+
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.

@@ -25,6 +25,13 @@ _PINNED = (
     "NEXUS_DATABASE_URL",
     "NEXUS_SESSION_SECRET",
     "NEXUS_STORAGE_SIGNING_SECRET",
+    # Omitted at first, and it showed: on a machine with a key in `.env` the
+    # readiness probe reported `language_model: ok` during tests, so
+    # `test_readiness_reports_the_language_model_but_never_gates_on_it` had to
+    # accept either state to pass anywhere. That is the machine-state dependence
+    # this fixture exists to remove. It also kept a live key reachable from the
+    # suite, one careless test away from a billable call.
+    "NEXUS_ANTHROPIC_API_KEY",
 )
 
 

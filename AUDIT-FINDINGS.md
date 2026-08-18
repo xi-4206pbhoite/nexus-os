@@ -138,6 +138,38 @@ cards are screenshot-shaped, and the screenshot travels without the footnote.
 
 ---
 
+### The test suite read the developer's API key
+
+`tests/conftest.py` exists to pin the suite to a known-unconfigured baseline, and
+its docstring says why: before it, a real `NEXUS_DATABASE_URL` in `.env` changed
+the suite's *result*, which is worse than a failing test because it passes in CI
+and fails on the machine that wrote it.
+
+`NEXUS_ANTHROPIC_API_KEY` was not in the pinned list. On a machine with a key
+configured, `/health/ready` reported `language_model: ok` during tests, which is
+why `test_readiness_reports_the_language_model_but_never_gates_on_it` had to
+accept `state in {"ok", "unconfigured"}` to pass anywhere - the tolerance was the
+symptom. It also left a live key reachable from the suite, one careless test away
+from a billable call.
+
+Found while adding the embeddings readiness check, because the same probe printed
+the AI provider's status next to it.
+
+### A concurrent session corrupted a spike's measurements
+
+The first run of `scripts/spike_ann_recall.py` produced a plausible recall table
+that measured nothing. Three of the four causes were in the script (isotropic
+vectors, seq scans reported as recall, an unrecorded `ef_search`); the fourth was
+that another session held an `ann_spike` table of its own shape and was creating
+and dropping indexes on it, so ground truth and measurement could come from
+different table contents.
+
+The spike now namespaces its table and indexes per process. The test suite was
+checked and is **not** exposed - every test runs in a transaction that is always
+rolled back, with fresh UUIDs - but ad-hoc scripts doing DDL under fixed names on
+a shared database are. Recorded because the fix is a habit, not a patch: one Neon
+instance serves several sessions.
+
 ## Open - real, and scheduled
 
 | # | Finding | Where | Why not now |

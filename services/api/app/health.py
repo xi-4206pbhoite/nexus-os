@@ -175,6 +175,35 @@ def _check_language_model() -> DependencyCheck:
     )
 
 
+def _check_embeddings() -> DependencyCheck:
+    """Reported, never required — same reasoning as the language model.
+
+    Worth a distinct check rather than folding into `vector`: pgvector being
+    installed and an embedding model being installed are independent, and the
+    difference decides whether uploaded documents are searchable. Without this,
+    "the extension is present" would read as "search works".
+    """
+    from app.embeddings.registry import embedder_status
+
+    try:
+        status = embedder_status()
+    except Exception as exc:  # pragma: no cover - defensive
+        return DependencyCheck(
+            name="embeddings",
+            state="error",
+            detail=type(exc).__name__,
+            required_now=False,
+        )
+
+    state: CheckState = "ok" if status.usable else "unconfigured"
+    return DependencyCheck(
+        name="embeddings",
+        state=state,
+        detail=f"{status.provider}: {status.detail}",
+        required_now=False,
+    )
+
+
 def _check_storage(settings: Settings) -> DependencyCheck:
     if settings.storage_backend == "filesystem":
         try:
@@ -199,7 +228,13 @@ def _check_storage(settings: Settings) -> DependencyCheck:
 async def readiness(response: Response) -> Readiness:
     settings = get_settings()
     database, vector = await _probe_database(settings)
-    checks = [database, vector, _check_storage(settings), _check_language_model()]
+    checks = [
+        database,
+        vector,
+        _check_storage(settings),
+        _check_language_model(),
+        _check_embeddings(),
+    ]
 
     # Advisory checks are reported but do not gate readiness.
     ready = all(c.state == "ok" for c in checks if c.required_now)

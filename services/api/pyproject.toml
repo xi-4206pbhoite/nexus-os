@@ -44,6 +44,18 @@ dependencies = [
 ai = [
   "anthropic>=0.40",
 ]
+# Semantic search is OPTIONAL for the same reason, and more heavily: ADR 0003
+# chose a LOCAL model so document text is never sent anywhere to be embedded,
+# and multilingual-e5-large is a ~2GB download. Install with
+#   pip install -e ".[embeddings]"
+# Until then `app/embeddings/registry.py` returns an embedder reporting
+# `unconfigured`, documents still upload, parse and classify, and their chunks
+# are stored with a NULL embedding — which migration 0007's provenance
+# constraint permits. They are simply not yet searchable, and the product says
+# so rather than ranking them by nothing.
+embeddings = [
+  "fastembed>=0.4",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",

@@ -40,6 +40,12 @@ def test_the_expiry_sweep_is_registered() -> None:
     assert "expiry_sweep" in {job.id for job in build_scheduler().get_jobs()}
 
 
+def test_the_embedding_pass_is_registered() -> None:
+    """Task 5.6. A pass nothing triggers leaves every uploaded document
+    permanently unsearchable, with no error anywhere to say so."""
+    assert "embedding_pass" in {job.id for job in build_scheduler().get_jobs()}
+
+
 def test_the_first_run_is_soon_after_start_not_a_whole_interval_away() -> None:
     """The module promises "shortly after start", and it matters.
 

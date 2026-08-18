@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     embedding_model_id: str = "intfloat/multilingual-e5-large"
     embedding_dim: int = 1024
     model_cache_dir: Path = REPO_ROOT / "models"
+    embeddings_enabled: bool = True
+    """Environment-level off switch, separate from the library being absent.
+
+    Same distinction as `ai_enabled`: "not installed yet" and "deliberately
+    switched off" are different messages to a user. An absent library is never
+    an error — the model is a ~2GB download and running without it is a
+    supported state, in which documents still upload, parse and classify but are
+    not yet searchable."""
 
     # ── Language model (ADR 0011) ─────────────────────────────
     # Deliberately has no usable default and is NOT passed through `require()`.

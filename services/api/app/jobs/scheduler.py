@@ -32,6 +32,12 @@ restart is not what stands between expired data and its deletion."""
 
 EXPIRY_INTERVAL_MINUTES = 60
 
+EMBEDDING_INTERVAL_MINUTES = 5
+"""Short. A document the customer just uploaded should become searchable in
+minutes, not hours - and a pass with nothing to do costs one indexed query."""
+
+EMBEDDING_BATCH = 64
+
 
 async def _expiry_job() -> None:
     try:
@@ -39,6 +45,32 @@ async def _expiry_job() -> None:
             await run_expiry_sweep(db)
     except Exception as exc:
         log.warning("expiry.sweep.failed", error=type(exc).__name__)
+
+
+async def _embedding_job() -> None:
+    """Fill in vectors for chunks uploaded since the last pass (task 5.6).
+
+    Runs in the API process, like the expiry sweep. That is acceptable while the
+    embedder is absent by default: `embed_pending` checks availability before it
+    queries, and the model is imported lazily, so a deployment without the
+    optional dependency pays nothing at all.
+
+    It stops being acceptable the moment `[embeddings]` is installed in
+    production - the weights are ~2GB resident, in the process that serves
+    requests. At that point this belongs in a separate worker. Recorded here
+    rather than in a backlog because the trade-off is invisible from the outside
+    until memory runs out.
+    """
+    from app.documents.embed import embed_pending
+    from app.embeddings.registry import get_embedder
+
+    try:
+        async with _unscoped_session() as db:
+            report = await embed_pending(db, get_embedder(), limit=EMBEDDING_BATCH)
+            if report.embedded:
+                await db.commit()
+    except Exception as exc:
+        log.warning("embeddings.pass.failed", error=type(exc).__name__)
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -65,6 +97,18 @@ def build_scheduler() -> AsyncIOScheduler:
         # were retained past their TTL indefinitely, which `jobs/expiry.py`
         # calls an obligation to a third party. `rate_limit_counter` grew
         # without bound on the unauthenticated path.
+        next_run_time=datetime.now(UTC) + FIRST_RUN_DELAY,
+    )
+    scheduler.add_job(
+        _embedding_job,
+        trigger=IntervalTrigger(minutes=EMBEDDING_INTERVAL_MINUTES),
+        id="embedding_pass",
+        name="Embed newly uploaded document chunks",
+        max_instances=1,
+        coalesce=True,
+        # Explicit for the same reason as above: omitting it would be fine, but
+        # `None` would silently mean paused, and that mistake has already been
+        # made once in this file.
         next_run_time=datetime.now(UTC) + FIRST_RUN_DELAY,
     )
     return scheduler

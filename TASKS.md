@@ -181,7 +181,7 @@ statement is a round trip to `us-east-2`.
 - [x] 5.3 Parse PDF/DOCX/PPTX/XLSX; chunk with **source doc and page retained** (citations depend on it)
 - [x] 5.4 Classify scope + department; persist `classified_by`, `confidence`, `review_state`
 - [x] 5.5 **I4 default-deny** — parse failure, classification failure, or below-threshold confidence → L5 + review queue
-- [ ] 5.6 Embed into pgvector with **all scope fields on the row** (doc 03's schema lacks them — doc 06 §12)
+- [x] 5.6 Embed into pgvector with **all scope fields on the row** (doc 03's schema lacks them — doc 06 §12). The boundary is `app/embeddings/`; the pass is `app/documents/embed.py`, scheduled every 5 minutes. `fastembed` is an **optional** extra — no model installed is a supported state in which documents upload, parse and classify but are not yet searchable, reported at `/health/ready` as `embeddings: unconfigured`. No provider fabricates a vector: there is no demo mode, because a hash-derived embedding ranks confidently and shows no symptom
 - [x] 5.7 **Spike: filtered-ANN recall at expected cardinality.** Answered: one HNSW index plus an ordinary predicate, with `hnsw.iterative_scan = relaxed_order`. Partial indexes are not needed. Plain HNSW gives 5% recall at Contributor selectivity and `ef_search` does not fix it (ADR 0012)
 - [x] 5.8 Review queue **API**; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it
 - [x] 5.9 Visible failure states: parse failure, **scanned PDF with no OCR**, size limit — never silent

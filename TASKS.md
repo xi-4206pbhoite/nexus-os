@@ -167,15 +167,15 @@ statement is a round trip to `us-east-2`.
 
 - [x] 5.0 Migration that **hard-requires** the `vector` extension — this is where absence becomes fatal
 - [x] 5.1 **Test first:** a low-confidence document must land L5 + review queue, never workspace-visible (I4)
-- [ ] 5.2 Upload with **consent capture** including the right-to-use warranty (doc 06 §5)
+- [x] 5.2 Upload with **consent capture** including the right-to-use warranty (doc 06 §5)
 - [x] 5.3 Parse PDF/DOCX/PPTX/XLSX; chunk with **source doc and page retained** (citations depend on it)
 - [x] 5.4 Classify scope + department; persist `classified_by`, `confidence`, `review_state`
 - [x] 5.5 **I4 default-deny** — parse failure, classification failure, or below-threshold confidence → L5 + review queue
 - [ ] 5.6 Embed into pgvector with **all scope fields on the row** (doc 03's schema lacks them — doc 06 §12)
 - [ ] 5.7 **Spike: filtered-ANN recall at expected cardinality.** HNSW + iterative index scan vs partial indexes per scope. M6 depends on the answer
-- [ ] 5.8 Review queue UI; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it
-- [ ] 5.9 Visible failure states: parse failure, **scanned PDF with no OCR**, size limit — never silent
-- [ ] 5.10 Superseded documents **re-run classification**, never inherit the old scope
+- [x] 5.8 Review queue **API**; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it
+- [x] 5.9 Visible failure states: parse failure, **scanned PDF with no OCR**, size limit — never silent
+- [x] 5.10 Superseded documents **re-run classification**, never inherit the old scope
 - [ ] 5.11 `MILESTONE-5.md`
 
 **Done when:** a low-confidence document lands in L5 and the review queue, and nothing is silently visible.

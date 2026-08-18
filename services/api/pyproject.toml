@@ -22,6 +22,10 @@ dependencies = [
   "apscheduler>=3.10",
   # DNS TXT lookups for domain verification; the stdlib resolves addresses only.
   "dnspython>=2.7",
+  # Multipart form parsing. A runtime dependency, not a test one: the document
+  # upload route accepts a file plus a consent field, and FastAPI raises at
+  # import time without it.
+  "python-multipart>=0.0.20",
   # Document parsing (M5). No OCR: a scanned PDF must fail visibly,
   # not be silently indexed as an empty document.
   "pypdf>=5.1",

@@ -186,7 +186,7 @@ statement is a round trip to `us-east-2`.
 - [x] 5.8 Review queue **API**; `sensitivity: personal|restricted` requires human confirmation before anyone else can reach it
 - [x] 5.9 Visible failure states: parse failure, **scanned PDF with no OCR**, size limit — never silent
 - [x] 5.10 Superseded documents **re-run classification**, never inherit the old scope
-- [ ] 5.11 `MILESTONE-5.md`
+- [x] 5.11 `MILESTONE-5.md`
 
 **Done when:** a low-confidence document lands in L5 and the review queue, and nothing is silently visible.
 **You validate:** upload a payroll-like file; confirm it is not workspace-visible until reviewed.

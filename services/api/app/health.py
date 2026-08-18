@@ -144,6 +144,37 @@ async def _probe_database(settings: Settings) -> tuple[DependencyCheck, Dependen
     return database, vector
 
 
+def _check_language_model() -> DependencyCheck:
+    """Reported, never required.
+
+    An absent API key must not make the service `not_ready` — the product is
+    built to run without one, and a readiness probe that failed on it would take
+    the whole application out of a load balancer over an optional capability.
+
+    Same reasoning as pgvector before M5: the state has to be *visible* from the
+    start so nobody discovers it when the first AI feature is switched on.
+    """
+    from app.ai.registry import provider_status
+
+    try:
+        status = provider_status()
+    except Exception as exc:  # pragma: no cover - defensive
+        return DependencyCheck(
+            name="language_model",
+            state="error",
+            detail=type(exc).__name__,
+            required_now=False,
+        )
+
+    state: CheckState = "ok" if status.usable else "unconfigured"
+    return DependencyCheck(
+        name="language_model",
+        state=state,
+        detail=f"{status.provider}: {status.detail}",
+        required_now=False,
+    )
+
+
 def _check_storage(settings: Settings) -> DependencyCheck:
     if settings.storage_backend == "filesystem":
         try:
@@ -152,7 +183,12 @@ def _check_storage(settings: Settings) -> DependencyCheck:
             probe.write_text("ok", encoding="utf-8")
             probe.unlink()
         except OSError as exc:
-            return DependencyCheck(name="object_storage", state="error", detail=str(exc))
+            # Type only, for the same reason the database branch above gives:
+            # `/health/ready` is unauthenticated, and `str(OSError)` renders the
+            # absolute path and errno — "[Errno 13] Permission denied:
+            # '/srv/nexus/.storage/.readiness'" hands an anonymous caller the
+            # deployment layout.
+            return DependencyCheck(name="object_storage", state="error", detail=type(exc).__name__)
         return DependencyCheck(
             name="object_storage", state="ok", detail=f"filesystem:{settings.storage_root.name}"
         )
@@ -163,7 +199,7 @@ def _check_storage(settings: Settings) -> DependencyCheck:
 async def readiness(response: Response) -> Readiness:
     settings = get_settings()
     database, vector = await _probe_database(settings)
-    checks = [database, vector, _check_storage(settings)]
+    checks = [database, vector, _check_storage(settings), _check_language_model()]
 
     # Advisory checks are reported but do not gate readiness.
     ready = all(c.state == "ok" for c in checks if c.required_now)

@@ -60,6 +60,23 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024
     model_cache_dir: Path = REPO_ROOT / "models"
 
+    # ── Language model (ADR 0011) ─────────────────────────────
+    # Deliberately has no usable default and is NOT passed through `require()`.
+    # Every other secret here fails loudly when absent because the application
+    # cannot work without it; this one is different — an empty key is a
+    # supported operating state. `app/ai/registry.py` returns a provider that
+    # reports `unconfigured` and the product runs without AI features.
+    anthropic_api_key: SecretStr = Field(default=SecretStr(""))
+    anthropic_model: str = "claude-sonnet-4-5"
+    ai_enabled: bool = True
+    """Environment-level off switch, separate from the key being absent.
+    Distinguishes "not configured yet" from "deliberately switched off"."""
+
+    disabled_ai_skills: str = ""
+    """Comma-separated skill names — the per-skill kill switch (doc 07 M8 task
+    8.7). Per-skill rather than global so one misbehaving prompt can be stopped
+    without taking down every AI feature in the product."""
+
     # ── Guardrails (doc 06 §8.4) ──────────────────────────────
     tenant_daily_token_budget: int = 2_000_000
     user_daily_token_budget: int = 200_000
@@ -97,8 +114,17 @@ class Settings(BaseSettings):
     def trusted_proxies(self) -> frozenset[str]:
         return frozenset(p.strip() for p in self.trusted_proxy_ips.split(",") if p.strip())
 
+    @property
+    def disabled_ai_skills_set(self) -> frozenset[str]:
+        return frozenset(s.strip() for s in self.disabled_ai_skills.split(",") if s.strip())
+
     def require(self, name: str) -> str:
-        """Fetch a secret, failing loudly if it was never configured."""
+        """Fetch a secret, failing loudly if it was never configured.
+
+        Note `anthropic_api_key` is deliberately never fetched through here. An
+        absent language model is a supported state, not a misconfiguration, and
+        routing it through `require()` would turn "no AI yet" into a crash.
+        """
         value = getattr(self, name)
         raw = value.get_secret_value() if isinstance(value, SecretStr) else value
         if not raw:

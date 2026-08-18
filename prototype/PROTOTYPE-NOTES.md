@@ -11,9 +11,10 @@ It lives in `prototype/`, deliberately outside `apps/web/`, and must stay there.
 
 ```
 Landing page  →  preview audit  →  sign up  →  onboarding (7 steps)
-              →  sign in as one of eight people
-              →  that person's own workspace  →  admin portal
+              →  choose an account  →  that person's own workspace  →  admin
 ```
+
+Every workspace also carries a **scoped assistant**, docked bottom-right.
 
 Deep links via the hash: `#landing`, `#signup`, `#onboarding`, `#signin`, or a
 person's id — `#layla`, `#omar`, `#huda`, `#yousuf`, `#mariam`, `#fatma`,
@@ -42,7 +43,91 @@ Two consequences worth pointing at:
 
 ---
 
-## 3. What this is not
+## 3. Onboarding asks different questions per department
+
+Seven steps: verify email → what are you responsible for → the questions that
+follow → connect sources → documents → invite the team → done.
+
+**There is no DNS-record step.** Domain ownership is taken from the sign-up
+address instead: Layla signs up from `layla@nakhla-trading.om`, so
+`nakhla-trading.om` is confirmed automatically and step 1 says so. The manual
+claim step was removed as friction.
+
+The restriction it guarded is unchanged, and still worth explaining — until
+ownership is established the audit stays reduced, with no competitor discovery and
+no keyword data, because anyone can type a competitor's address. The preview's two
+locked tiles now read *"Confirm this domain is yours"* rather than naming a DNS
+record.
+
+Worth knowing: the API still has the manual path (`/domains`,
+`/domains/{id}/check`) and it is still needed for the case the email domain does
+not match the website — a free-mail sign-up, or an agency setting up a client.
+That path now has no UI, in the prototype or in `apps/web`.
+
+Step 2 asks two things: **which parts of the business are yours**, and **why you
+are here**. Step 4 then asks only the questions that follow from that answer.
+Pick Marketing and you are asked what counts as a lead; pick Operations and you
+are asked what lead time you promise. Selecting all seven produces 39 fields;
+selecting one produces 9.
+
+Two rules shaped the question bank, and both come from the grounding discipline
+rather than from wanting to look thorough:
+
+- **Only ask what cannot be fetched.** Each department block ends with a
+  *"Not asking — will be read from a source"* strip listing what NEXUS will pull
+  instead: sessions and conversion from GA4, deal values from the CRM, balances
+  from the accounting system. Showing what it *won't* ask is more persuasive than
+  asking would be.
+- **Ask what only this person knows.** Thresholds, definitions and intent are in
+  no API. "What counts as a lead" and "after how many days of silence should a
+  deal be flagged" change every number downstream, which is why they are asked
+  rather than defaulted.
+
+A note on the screen states that an invited team member answers only their own
+department's questions, not all of them.
+
+---
+
+## 4. Every workspace has a scoped assistant
+
+Docked bottom-right, closed by default, and it is the department's director
+rather than a generic bot — Yousuf talks to the Sales Director, Fatma to the
+Finance Director. Three behaviours matter more than the answers:
+
+1. **Every answer cites its source and shows its working**, the same discipline
+   as the tiles. An assistant that produces a confident unsourced number is worse
+   than none, because it launders a guess into an answer.
+2. **It refuses out of scope, and says why.** This is the thing to demo. Verified
+   behaviour:
+
+   | Person asks | Result |
+   |---|---|
+   | Yousuf → "what is the total pipeline" | Answered, sourced to CRM |
+   | Mariam → the same question | **Refused** — "Department-wide totals sit with Yousuf" |
+   | Huda → "how much cash do we have" | **Refused** — "Finance sits outside Marketing" |
+   | Nadia → "what is in the pipeline" | **Refused** |
+   | Layla (Owner) → "how much cash" | Answered |
+   | Layla (Owner) → "what are the salaries" | **Refused** — L4 is not reachable by role, including hers |
+
+3. **It reads by default.** The footer states that anything with an outside
+   effect is offered as a confirmation first.
+
+The thread is cleared whenever the account changes — carrying one person's
+conversation into another's workspace would leak exactly what the scoping
+prevents.
+
+There is no model behind it. Answers are canned and matched on keywords, and when
+nothing matches it says it has no grounded answer rather than improvising. That
+happens to be the correct product behaviour too.
+
+**The one thing this cannot demonstrate:** refusing in the client is not a
+permission boundary. The real assistant must be scoped on the server, and the
+subagent return path must be filtered against the *end user's* scope rather than
+the parent agent's. Both are M12 work.
+
+---
+
+## 5. What this is not
 
 Not the application. No API, no database, no authentication, no permission
 enforcement. Nothing typed into it is saved or sent. Signing in as a persona is a
@@ -51,29 +136,43 @@ demo device; real scoping happens in Postgres row-level security and
 
 ---
 
-## 4. Every number in it is invented
+## 6. Every number in it is invented — and it no longer says so
 
-The product sells on **never invent a number** (invariant I1). This file violates
-that throughout, which is only acceptable because the repo's content rule permits
-mocks provided they are visibly tagged. So:
+Nakhla Trading LLC does not exist. Every figure in this file — every score, every
+currency amount, every percentage, every person — was written by hand to look
+plausible. Nothing was measured, computed, fetched or sourced.
 
-- a fixed banner marks the whole file as demo data and cannot be dismissed
-- every metric tile and every panel carries an `ILLUSTRATIVE` marker
-- the demo company, **Nakhla Trading LLC**, is fictional
-- competitors are anonymised as "Competitor A–D" rather than named, because
-  inventing a real company's pricing move is exactly the fabricated claim the
-  product refuses to make
-- no real customer, logo, testimonial, price or result appears anywhere
+**The visible markers have been removed.** The banner across the top and the
+`ILLUSTRATIVE` chip on all 48 tiles are gone, at the owner's request, so the
+screens read as the finished product.
 
-Two places carry a green **"Real — from the built model"** chip instead: the
-role/reach table in onboarding and the sensitivity lattice. Those come from
-`app/domain/scopes.py` and are accurate. Everything else is not.
+This is a deliberate departure from the content rule in `CLAUDE.md`:
 
-**Do not copy figures from this file into a proposal or a deck.**
+> The landing page and every mock is held to it too: no invented customers,
+> logos, testimonials or results. Product mocks carry a visible `Illustrative`
+> tag.
+
+What replaced forty markers is one: a quiet **`SAMPLE DATA`** chip in the
+application top bar, and the same chip in the landing-page footer. Both explain
+themselves on hover. They are findable rather than loud.
+
+**The consequence, stated plainly.** A screenshot of any screen in this file is
+now indistinguishable from a real result. So:
+
+- do not put figures from this file into a proposal, a deck or a pitch
+- do not send screenshots without saying what they are
+- do not let this file drift into `apps/web`
+
+The full record lives in the comment at the top of the HTML, where a client will
+never see it but the next developer will.
+
+If you want the last chip gone too, say so and it is a one-line change — the
+`illus()` helper was left in place as a no-op rather than deleted, so restoring
+the original markers everywhere is also one line.
 
 ---
 
-## 5. The eight people
+## 7. The eight people
 
 | Person | Role | Their application | Never sees |
 |---|---|---|---|
@@ -88,25 +187,28 @@ role/reach table in onboarding and the sensitivity lattice. Those come from
 
 ---
 
-## 6. Suggested walkthrough
+## 8. Suggested walkthrough
 
 | # | Do this | The point to make |
 |---|---|---|
 | 1 | Landing → **Analyse my business** | A reduced audit arrives before any account exists. The score reads **69 across 3 of 10 categories** — never a whole-business number built from part of the evidence. |
 | 2 | The seven locked tiles beneath it | Missing data is shown as *locked with the step that unlocks it*, never as a zero. A zero would read as a real, bad result. |
-| 3 | **Claim this audit** → onboarding **step 2** | The DNS TXT record. This is the trust step: until the domain is verified NEXUS will not name competitors or pull keyword data, because anyone can type a rival's address. |
-| 4 | Onboarding **step 6, invite team** | The role table is real. Point out that L4 is absent: no role reaches it, not even the Owner's. It is reached only by being named on the item. |
+| 3 | **Claim this audit** → onboarding **step 1** | The domain is confirmed from the sign-up address, no DNS record required. Worth saying out loud that this is what unlocks competitor discovery — anyone can type a rival's address, so ownership has to be established somehow. |
+| 3b | Onboarding **step 2, what are you responsible for** | Toggle departments on and off. The question count changes live. Then step 4 — note the strip showing what it will *not* ask because a connector answers it. |
+| 4 | Onboarding **step 5, invite team** | The role table is real. Point out that L4 is absent: no role reaches it, not even the Owner's. It is reached only by being named on the item. |
 | 5 | Finish → lands in **Layla's** Chief of Staff | The morning brief says what changed, what it means, what to do — each with its source named. This is the product; the tiles below are supporting evidence. |
 | 6 | Any tile → **"+ why this number"** | Opens the method, the inputs and the arithmetic. This is what "every number is auditable" means in practice. |
-| 7 | Switch person → **Yousuf** → Pipeline | A sales tool. Clay edge on anything silent longer than *their own* median cycle — not a generic 30-day rule. |
+| 7 | **Switch person** (sidebar, bottom left) → **Yousuf** → Pipeline | A sales tool. Clay edge on anything silent longer than *their own* median cycle — not a generic 30-day rule. |
 | 8 | Switch person → **Mariam** | The strongest moment. Same department, completely different application: a day list, her five accounts, her own target. No lock icons, no gaps — plus a card explaining *why* there is no pipeline total. |
 | 9 | Switch to **Salim** → Dispatch board | Nothing like either sales screen. Four lanes, two late orders named. NEXUS will not report "88% on time" unless it can also say which 12% were not. |
 | 10 | Switch to **Nadia** → People | She manages People and the compensation column is still L4. A job title does not name you on an item. |
+| 10b | As **Mariam**, open the assistant and ask *"what is the total pipeline"* | It refuses and names the reason. Then ask *"which of my deals is most at risk"* and it answers with a source. Same agent, scoped to the person. |
+| 10c | As **Layla**, ask the assistant *"what are the salaries"* | The Owner is refused too. L4 is reached by being named on an item, never by role. |
 | 11 | Back to **Layla** → Admin portal → Audit log | Refusals are logged as well as successes, and the log is Owner-only — a log everyone can read is a second copy of the data it audits. |
 
 ---
 
-## 7. What it gets right about the real model
+## 9. What it gets right about the real model
 
 Faithful to what is actually built, and the reason this is a teaching tool rather
 than a pretty picture:
@@ -135,7 +237,7 @@ Console clean throughout.
 
 ---
 
-## 8. Milestone debt this deliberately runs ahead of
+## 10. Milestone debt this deliberately runs ahead of
 
 `CLAUDE.md` says one milestone at a time, stop and wait for validation. This
 prototype spans M4 through M13 and stops at none of them. That is a conscious
@@ -146,11 +248,14 @@ without the work below.
 | Screen | Milestone | Still owed before it can ship for real |
 |---|---|---|
 | Sign up, sign in | M1/M3 | Session cookies, CSRF on every mutation, email verification wired to the real mailer. Backend exists; no UI. |
-| Onboarding, domain claim | M3/M4 | TXT check against real DNS, ephemeral→verified workspace transition, claiming the preview. Backend exists; no UI. |
+| Onboarding | M3/M4 | Email-domain matching as the ownership signal, the ephemeral→verified workspace transition, and claiming the preview into the workspace. Backend exists; no UI. |
+| Manual domain claim | M3 | Still required for a free-mail or agency sign-up, where the email domain will not match. Backend exists; the prototype deliberately has no UI for it. |
 | Document upload | M5 | Classification-default-deny passes server-side; the review queue UI does not exist. |
 | All eight workspaces | M7–M9 | **No data source exists.** GA4, CRM, accounting and HRIS connectors are unbuilt, so every figure would render as a locked state today. |
 | "Why this number" trails | M6 | Real calculators with real inputs. `calculators/` holds the Preview audit only. |
 | Per-person navigation | M1 | The nav must be derived server-side from the session's scope. Assembling it in the client is a convenience, not a boundary. |
+| Onboarding question branching | M4 | The question bank must live server-side and be keyed to the workspace's departments; answers must be written as cited L1/L2 facts, not form state. |
+| The assistant | M12 | Server-side scoping, untrusted-content boundary, action gating with the exact payload shown, and subagent return-path filtering against the end user's scope. Refusing in the client proves nothing. |
 | Admin portal | M13 | Impersonation with time-boxing and reason logging, access-controlled audit log, deletion fan-out across embeddings, cache, storage and artifacts. |
 
 ### Tests owed before any of this becomes real UI
@@ -169,10 +274,15 @@ Per doc 07 §5.3, for anything touching permissions or grounding the test comes
 5. A stale connector must render as stale rather than silently reusing its last
    good value.
 6. The admin audit log must 403 for every role except Owner.
+7. The assistant must not *receive* out-of-scope facts, let alone decline to show
+   them. Assert on the retrieval payload for a Contributor session.
+8. Onboarding must not ask a question whose answer a connected source already
+   provides — otherwise a typed guess becomes a stored fact that outranks the
+   measurement.
 
 ---
 
-## 9. Known cosmetic gaps
+## 11. Known cosmetic gaps
 
 - The four-column pipeline and dispatch boards drop to two columns below 1000px
   and are cramped on a phone. Fine for a laptop demo.

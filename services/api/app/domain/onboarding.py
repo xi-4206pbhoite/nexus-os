@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.domain.scopes import Department, Scope
+from app.domain.scopes import Department, Role, Scope
 
 
 class Pass(StrEnum):
@@ -49,6 +49,71 @@ class AnswerType(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Choice:
+    """One option on a closed-set question."""
+
+    value: str
+    label: str
+
+
+def _choices(source: type[StrEnum], labels: dict[str, str] | None = None) -> tuple[Choice, ...]:
+    """Options taken from an enum, so the two cannot drift apart.
+
+    `role` and `department` are asked as questions *and* are the vocabulary of
+    the security model. Typing their options out a second time here would create
+    a copy that a later change to `scopes.py` would silently leave stale.
+    """
+    overrides = labels or {}
+    return tuple(
+        Choice(m.value, overrides.get(m.value, m.value.replace("_", " ").title())) for m in source
+    )
+
+
+# Closed sets only. A question whose answers are the customer's own words —
+# their goals, their challenges, the terms they will not use — carries no
+# options and is entered freely; offering a menu there would put our vocabulary
+# in their mouth and then store the result as their stated intent.
+CURRENCIES: tuple[Choice, ...] = tuple(
+    Choice(code, f"{code} — {name}")
+    for code, name in (
+        ("AED", "UAE dirham"),
+        ("AUD", "Australian dollar"),
+        ("CAD", "Canadian dollar"),
+        ("CHF", "Swiss franc"),
+        ("EUR", "Euro"),
+        ("GBP", "Pound sterling"),
+        ("INR", "Indian rupee"),
+        ("JPY", "Japanese yen"),
+        ("SAR", "Saudi riyal"),
+        ("SGD", "Singapore dollar"),
+        ("USD", "US dollar"),
+        ("ZAR", "South African rand"),
+    )
+)
+
+MONTHS: tuple[Choice, ...] = tuple(
+    Choice(str(number), name)
+    for number, name in enumerate(
+        (
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ),
+        start=1,
+    )
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Question:
     key: str
     prompt: str
@@ -61,6 +126,17 @@ class Question:
     why: str = ""
     """Shown to the user. Doc 04 §5 — every question should be justified by
     something they have already seen."""
+    options: tuple[Choice, ...] = ()
+    """The permitted answers, when the set is genuinely closed.
+
+    Empty means free entry, and `USER_LIST` is a third case: its options are the
+    workspace's current members, which are not knowable here — doc 06 §4.10 is
+    the reason, and resolving them per workspace is the route's job.
+    """
+
+    @property
+    def free_entry(self) -> bool:
+        return not self.options and self.answer_type is not AnswerType.USER_LIST
 
 
 CATALOGUE: tuple[Question, ...] = (
@@ -76,6 +152,11 @@ CATALOGUE: tuple[Question, ...] = (
         required=True,
         why="We read it to build your first audit.",
     ),
+    # These two are **stated facts, not grants**. Answering them writes a row in
+    # `onboarding_answer`; it never touches `membership`, which is the only thing
+    # `build_scope` reads and therefore the only thing that authorises anything.
+    # Doc 06 §2.2 — a self-declared role is privilege escalation via dropdown, so
+    # the escalation has to be impossible rather than merely unimplemented.
     Question(
         key="role",
         prompt="What is your role?",
@@ -84,7 +165,11 @@ CATALOGUE: tuple[Question, ...] = (
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
         required=True,
-        why="Your role decides which departments you can see.",
+        why=(
+            "It shapes what your assistant leads with. It does not change what you "
+            "can see — that comes from your membership, not from this answer."
+        ),
+        options=_choices(Role, {"external": "External / Client"}),
     ),
     Question(
         key="department",
@@ -96,6 +181,7 @@ CATALOGUE: tuple[Question, ...] = (
         required=True,
         # Doc 06 §2.3 — derived from role, confirmable, Owner-overridable.
         why="Derived from your role. Correct it if it is wrong.",
+        options=_choices(Department, {"hr": "HR / People"}),
     ),
     Question(
         key="stated_purpose",
@@ -182,6 +268,7 @@ CATALOGUE: tuple[Question, ...] = (
         department=None,
         required=True,
         why="Every figure in the product is shown in it.",
+        options=CURRENCIES,
     ),
     Question(
         key="fiscal_year_start",
@@ -192,6 +279,7 @@ CATALOGUE: tuple[Question, ...] = (
         department=None,
         required=True,
         why="Period comparisons depend on it.",
+        options=MONTHS,
     ),
     # ── After team invitation (doc 06 §4.10) ──────────────────
     Question(

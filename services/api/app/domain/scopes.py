@@ -132,3 +132,30 @@ DEPARTMENT_BY_ROLE: dict[Role, Department | None] = {
 
 def grant_for(role: Role) -> RoleGrant:
     return ROLE_GRANTS[role]
+
+
+def scope_code(scope: Scope) -> str:
+    """`Scope.L3_DEPARTMENT` to the `L3` the CHECK constraints expect.
+
+    Every table that stores a scope constrains it to `('L1',…,'L5')`, so this
+    translation happens on every write path. It lives beside the enum because
+    two independent copies of it would be two places for the spelling to drift.
+    """
+    return scope.name.split("_")[0]
+
+
+SCOPE_BY_CODE: dict[str, Scope] = {scope_code(s): s for s in Scope}
+
+
+def scope_from_code(code: str) -> Scope:
+    """The inverse of `scope_code`, for reading a stored classification back.
+
+    Raises on anything unrecognised rather than returning a default. A row whose
+    scope we cannot name must not be read at a guessed one — the same
+    default-deny reasoning as `scope_for_answer`, applied to retrieval instead
+    of capture.
+    """
+    try:
+        return SCOPE_BY_CODE[code]
+    except KeyError as exc:
+        raise ValueError(f"Unknown scope code: {code!r}") from exc

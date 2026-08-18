@@ -162,6 +162,35 @@ Onboarding today is a **company setup flow, run once by the founder**. Doc 04 §
 
 **My recommendation:** build the founder flow first (task 4.10) and treat member onboarding as a follow-on. Restrict department-scoped questions to the Owner, Executive and that department's Manager, and have Contributors confirm rather than assert. But this is your product call, and answering (1) is what unblocks the design.
 
+### D16 — Who may administer a workspace *(raised by task 4.10; a default is in place)*
+
+Task 4.10 needed an answer to *"who may save an onboarding answer, and who may invite people?"* and **no source document names either**. Doc 06 §2.2 says the inviter sets the role; it never says who is allowed to be an inviter. Doc 04 §5 describes the founder running the flow, which is a description of the common case rather than a rule.
+
+So the code takes the default-deny reading (I4) and **restricts both to Owner and Executive**, expressed once as `may_administer` in `app/domain/invitations.py` — the roles that already hold every department and the executive surface. It is one predicate to widen.
+
+Two things are built alongside it so widening cannot quietly open a hole:
+
+- **No inviter may grant a role above their own.** `outranks` compares `RoleGrant` on every axis rather than on the scope ceiling alone, because a Department Manager and a Contributor share a ceiling and differ only in `contributor_restricted`.
+- **An L3 answer requires reaching that department's aggregate**, decided by `decide_l3_access`. Redundant today, since only Owner and Executive get past the first gate — and it is exactly D15's second open question, so it is written and tested now rather than remembered later.
+
+**What is genuinely open:** should a Department Manager be able to invite a Contributor into their own department? It is a plausible product answer and it is what most teams expect. If yes, `may_administer` widens and the two checks above start doing real work. If it also implies a Manager may answer their own department's L3 questions, that is D15 (1) as well, and the two should be settled together.
+
+**My recommendation:** leave it at Owner and Executive until a design partner asks for more. Delegated invitation is a feature; accidentally delegated *classification* is a boundary, and they widen through the same predicate.
+
+### D17 — Where doc 08 sits in the precedence order *(blocking any further onboarding work)*
+
+`doc/08-Department-Onboarding-Questions-and-Dashboard-Offering.md` appeared while task 4.10 was being built. It specifies an onboarding flow that **differs from the one 4.10 implements**, and CLAUDE.md's precedence rule (07 > 06 > 05 > 04 > 03/01) does not place it — so this is a ruling only you can make, not something to resolve by picking the newer file.
+
+Three differences, in order of how much they cost to change:
+
+1. **The company-wide question set.** Doc 08 §1 asks what the business sells, who the typical customer is, reporting currency, headcount, a single `purpose` choice, and a departments multi-select. The catalogue built from doc 06 §2.5 asks role, department, purpose and URL, then goals, challenges, ideal customer, deal size, budget, brand terms, currency and fiscal year. These overlap but are not the same list.
+2. **Role and department as owner-answered questions.** Doc 08 §1.7 is explicit that role is *"not a question the owner answers about themselves — set when inviting each person."* Doc 06 §2.5 lists both in Pass 1. The invitation half already matches doc 08; the two Pass 1 questions do not, and they are the two the catalogue is careful to mark as stated facts rather than grants.
+3. **Per-department question sets.** Doc 08 §1.6 and §2–8 specify 9 fields per department, up to 39 — which is **D15**, now with a specification behind it. D15's three questions still need answering before it is built, and doc 08 answers one of them: §0 says an invited member answers only their own department's set.
+
+Doc 08 describes itself as extracted from `prototype/nexus-os-prototype.html` and says *"doc 05 remains the target scope and this is the current cut of it"* — which reads as a record of the prototype rather than a specification that outranks doc 06. If that reading is right, nothing changes and doc 08 becomes input to D15. If it is wrong and doc 08 is the intended spec, the catalogue in `app/domain/onboarding.py` is rewritten and the wizard follows it without structural change, because the wizard renders from the catalogue rather than from hand-written forms.
+
+**What I need:** one sentence placing doc 08 in the order. I have not changed anything on the strength of it.
+
 ---
 
 ## 4. Assumptions I have made — object if any is wrong

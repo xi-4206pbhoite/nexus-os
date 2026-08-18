@@ -84,12 +84,35 @@ Asserted three ways: `ScopedSession` carries no persona field, the access rule's
 
 The `invitation` table carries the role and `invited_by_user_id`. Acceptance **copies** the role; it never supplies it. An unrecognised role is refused by a CHECK constraint, because a role with no row in the scope table would fall through every check.
 
+## Task 4.10 — the wizard and the routes
+
+Added after the milestone's first pass, together with two defects it uncovered (see `AUDIT-FINDINGS.md`): no workspace could be created through the API, and no member could see the workspace they belonged to. Both were row-level security refusing writes and reads the application had never actually attempted against Postgres, and until they were fixed nothing built here was reachable.
+
+**`app/routes/setup.py`** — `GET /onboarding/questions`, `POST /onboarding/answers`, `POST|GET /invitations`, `POST /invitations/{id}/revoke`, `POST /invitations/accept`.
+
+Three properties are worth reading the code for:
+
+- **`AnswerIn` has a `key` and a `value` and no third field.** There is no scope to spoof, because the classification is looked up in `scope_for_answer` on the write path. A request cannot store its average deal size as L1 by asking nicely, and a test asserts the module never reads a scope from the payload.
+- **`AcceptIn` has a `token` and nothing else.** Doc 06 §2.2 calls a self-declared role privilege escalation via dropdown; there is no dropdown because there is nowhere to put its value. `invitations.accept()` takes no role parameter either.
+- **Answering is not authorising.** The `role` and `department` questions write rows in `onboarding_answer`. Nothing in the module touches `membership`, which is the only table `build_scope` reads.
+
+**Two migrations, both narrow SELECT policies with the same argument as migration 0003 — they disclose nothing the caller does not already hold:**
+
+- **0008** — a user may see the workspaces they hold a live membership in. Without it, login could not resolve its own memberships.
+- **0009** — an invitation row is visible to a connection that presents its token hash. Acceptance has to read the row to learn the workspace, and cannot know the workspace before reading the row.
+
+**The wizard** (`apps/web/app/onboarding`) follows doc 04 §5's order and renders from the catalogue rather than from hand-written forms, so a question added to `app/domain/onboarding.py` appears without a frontend edit. Every question carries its scope on screen — *Sales only — managers and above* beside the deal size — which is doc 06 §2.5's *"tag them at capture"* made visible to the person it protects.
+
+Verified end to end against Neon, as an Owner and then as a Contributor who joined by invitation. As the Contributor: `can_administer: false`, an empty member roster, both L3 money answers absent while every L1/L2 answer is present, `403` on both writes, `403` on inviting an Owner, and `404` — not `403` — on listing invitations.
+
 ---
 
 ## What does not exist
 
-- **No onboarding UI.** The catalogue, scoping, storage and sequencing are built and tested; the wizard screens are not. This is a deliberate split — the security-relevant half is done and the screens are ordinary form work.
-- **No routes for answers or invitations yet.** The tables, constraints and rules exist; `POST /onboarding/answers` and `POST /invitations` are not written. `deps_scope` is the enforcement layer they will use.
+- **No audit inside the workspace.** Doc 04 §5's stage 1 — the thing that earns the right to ask everything after it — is M7. The wizard says so where the audit belongs and links to the Preview audit, which is the same engine and needs no account. There is deliberately no placeholder score: a made-up number is the one failure the product's central claim exists to prevent, and it would be on the screen either way.
+- **No connections step.** Doc 04 §5 stage 4 is M10.
+- **Invitations are not emailed.** Delivery is not wired up anywhere in the product (carried from M3), so `POST /invitations` returns the accept link and the inviter sends it. That is stated on the screen rather than implied.
+- **Acceptance checks the address, not that it was verified.** It refuses unless the caller is signed in as the invited address; it cannot require `email_verified_at`, because nothing sends a verification email yet and every invitation would be unusable. `app/auth/invitations.py` marks where the check belongs when delivery lands.
 - **`decide_l3_access` is not yet wired into a query.** It is enforced at the API layer as M4 requires, but M6 is where it becomes part of the SQL predicate rather than a check applied to results. Filtering after the fact is correct for a list already scoped by RLS; it is **not** sufficient for aggregates computed in the database, which is why M6 exists.
 - **Registration still doesn't send the verification email** (carried from M3).
 - **The Contributor rule is uniform across departments.** ADR 0005 records that doc 06 §11.5 asks for it to be set per department with a design partner — Operations especially, where a site supervisor may need a colleague's task to do their own.

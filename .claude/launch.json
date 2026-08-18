@@ -4,8 +4,43 @@
     {
       "name": "nexus-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/web"
+      ],
       "port": 3000
+    },
+    {
+      "name": "nexus-api",
+      "runtimeExecutable": "services/api/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--app-dir",
+        "services/api"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "nexus-web-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/web",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3100"
+      ],
+      "port": 3100
     }
   ]
 }

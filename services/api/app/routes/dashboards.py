@@ -1,0 +1,181 @@
+"""The seven director pages, and where a person lands.
+
+Placeholders in the honest sense: the shell, the offering list and every
+capability-to-source mapping are real and come from doc 05, and **no tile
+carries a value**, because none has been computed yet. M8 and M9 fill them in
+through `calculators/`, which is pure.
+
+Two boundaries are enforced here rather than in the UI, and both are doc 06:
+
+- **§2.3** — a caller reaching a department they do not hold gets a 404, via
+  `enforce_department`. Not 403: *"this exists and you may not have it"* is an
+  existence disclosure about how the company is organised.
+- **§2.4** — the Chief of Staff page is Owner and Executive only, so a
+  Department Manager's portal is six directors rather than seven. That cost is
+  acknowledged in the document and is not softened here.
+
+The list endpoint returns only the directors the caller may open. It does not
+return the others marked "locked", and it carries no count of what was removed —
+doc 06 §4.5, the same rule `filter_records` follows.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
+
+from app.deps import CurrentScope
+from app.deps_scope import enforce_department
+from app.domain.dashboards import (
+    BY_DEPARTMENT,
+    DELIVERED,
+    DIRECTORS,
+    Director,
+    Offering,
+    Source,
+    landing_department,
+    state_for,
+    unlock_sentence,
+)
+from app.domain.scopes import Department
+
+router = APIRouter(prefix="/dashboards", tags=["dashboards"])
+
+
+def connected_sources() -> frozenset[Source]:
+    """What this workspace actually has wired up.
+
+    Empty, and honestly so. Document upload exists (M5) but nothing yet reads an
+    indexed document into a dashboard, and no integration exists at all before
+    M10. Returning `{DOCUMENTS}` here because the upload route exists would make
+    every tile that needs documents claim to be one step from working.
+
+    This is the single place that changes as connectors land, and it takes no
+    arguments today for the same reason: a per-workspace answer needs the
+    integration registry that M10 introduces, and inventing a shape for it now
+    would be guessing at the wrong problem.
+    """
+    return frozenset()
+
+
+class OfferingOut(BaseModel):
+    id: str
+    name: str
+    shows: str
+    state: str
+    unlock: str
+    """What this needs, in words. Empty only when nothing is missing."""
+    needs: list[str]
+    phase: int
+    note: str
+
+
+class DirectorOut(BaseModel):
+    department: str
+    title: str
+    remit: str
+    scoreable: bool
+    path: str
+    offerings: list[OfferingOut]
+
+
+class DirectorSummary(BaseModel):
+    department: str
+    title: str
+    remit: str
+    scoreable: bool
+    path: str
+    offering_count: int
+
+
+class DashboardsOut(BaseModel):
+    directors: list[DirectorSummary]
+    landing: str | None
+    """Where to send this caller. `None` when they hold no department — which
+    happens to a Viewer, and is a state to render rather than a redirect."""
+
+    delivered_count: int
+    """How many offerings across the whole product have an implementation. Zero
+    today. Shown so the page cannot imply more than exists."""
+
+
+def _path(department: Department) -> str:
+    return f"/dashboard/{department.value}"
+
+
+def _offering_out(offering: Offering, connected: frozenset[Source]) -> OfferingOut:
+    return OfferingOut(
+        id=offering.id,
+        name=offering.name,
+        shows=offering.shows,
+        state=state_for(offering, connected=connected).value,
+        unlock=unlock_sentence(offering, connected=connected),
+        needs=[source.value for source in offering.needs],
+        phase=offering.phase,
+        note=offering.note,
+    )
+
+
+def _reachable(scope: CurrentScope, director: Director) -> bool:
+    if director.executive_only:
+        return scope.can_see_executive_surface
+    return scope.may_reach_department(director.department)
+
+
+@router.get("", response_model=DashboardsOut)
+async def list_dashboards(scope: CurrentScope) -> DashboardsOut:
+    """The directors this caller may open, and where to land them."""
+    visible = [d for d in DIRECTORS if _reachable(scope, d)]
+
+    landing = landing_department(
+        executive_surface=scope.can_see_executive_surface,
+        departments=scope.departments,
+    )
+
+    return DashboardsOut(
+        directors=[
+            DirectorSummary(
+                department=d.department.value,
+                title=d.title,
+                remit=d.remit,
+                scoreable=d.scoreable,
+                path=_path(d.department),
+                offering_count=len(d.offerings),
+            )
+            for d in visible
+        ],
+        landing=_path(landing) if landing else None,
+        delivered_count=len(DELIVERED),
+    )
+
+
+@router.get("/{department}", response_model=DirectorOut)
+async def director_dashboard(department: Department, scope: CurrentScope) -> DirectorOut:
+    """One director's page.
+
+    `enforce_department` is what refuses a department the caller does not hold,
+    and it 404s. The executive check is separate because it is a different rule
+    with a different answer: the Chief of Staff page is not a department someone
+    might be added to, so naming the requirement is safe and useful.
+    """
+    director = BY_DEPARTMENT.get(department)
+    if director is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+    if director.executive_only and not scope.can_see_executive_surface:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "The Chief of Staff view requires an Owner or Executive role.",
+        )
+
+    enforce_department(scope, director.department)
+
+    connected = connected_sources()
+    return DirectorOut(
+        department=director.department.value,
+        title=director.title,
+        remit=director.remit,
+        scoreable=director.scoreable,
+        path=_path(director.department),
+        offerings=[_offering_out(offering, connected) for offering in director.offerings],
+    )

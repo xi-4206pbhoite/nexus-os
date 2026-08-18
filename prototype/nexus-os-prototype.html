@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NEXUS OS — full prototype (illustrative data)</title>
+<title>NEXUS OS — Nakhla Trading LLC</title>
 <meta name="robots" content="noindex, nofollow" />
 
 <!--
@@ -14,45 +14,40 @@
   One file. The whole journey, in order:
 
       Landing page  →  preview audit  →  sign up  →  onboarding (7 steps)
-                    →  sign in as one of eight people
-                    →  that person's own workspace  →  admin portal
+                    →  choose an account  →  that person's workspace  →  admin
 
-  No build step, no server, no network. Double-click to open. Send the file
-  to share it.
+  No build step, no server, no network. Double-click to open.
 
-  THE IDEA THIS PROTOTYPE EXISTS TO EXPLAIN
+  ---------------------------------------------------------------------------
+  READ THIS BEFORE SHOWING IT TO ANYONE
+  ---------------------------------------------------------------------------
 
-  The dashboard *is* the person. You sign in as somebody and their department is
-  the entire application — their navigation, their layout, their vocabulary. A
-  Sales manager has no Finance entry greyed out in the sidebar, because Finance
-  was never part of their product. Navigation is assembled per user, not
-  filtered per user.
+  THE DATA IS NOT REAL. Nakhla Trading LLC does not exist. Every figure in this
+  file — every score, every currency amount, every percentage, every person —
+  was written by hand to look plausible. Nothing was measured, computed, fetched
+  or sourced.
 
-  Two consequences worth pointing at in a demo:
+  The visible "Illustrative" markers that used to sit on each tile have been
+  removed at the owner's request so the screens read as the finished product.
+  What remains is a single "Sample data" chip in the top bar and one line in the
+  landing footer.
 
-    - Each department workspace is structurally different, not one grid with the
-      labels swapped. Sales gets a pipeline board, Finance gets ageing buckets
-      and an approvals queue, Operations gets a dispatch lane board.
+  This is a deliberate departure from the content rule in CLAUDE.md, which says
+  product mocks must carry a visible Illustrative tag. The reasoning was that
+  forty markers made the prototype look unfinished. The consequence is that a
+  screenshot of any screen here is now indistinguishable from a real result, so:
 
-    - A Contributor gets a genuinely smaller product — "my day, my deals, my
-      targets" — rather than a manager's page with holes cut in it. That is what
-      `contributor_restricted` in scopes.py actually means, and it reads as a
-      deliberate design rather than a punishment.
+    - do not put figures from this file into a proposal, a deck or a pitch
+    - do not send screenshots without saying what they are
+    - do not let this file drift into apps/web
 
   WHAT THIS IS NOT
-  Not the application. No API, no database, no authentication, no enforcement.
-  Nothing typed here is saved or sent. Signing in as a persona is a demo device;
-  real scoping happens in Postgres row-level security and `retrieval/`.
+  Not the application. No API, no database, no authentication, no permission
+  enforcement. Nothing typed here is saved or sent. Choosing an account is a
+  navigation device; real scoping happens in Postgres row-level security and
+  `retrieval/`, none of which is involved here.
 
-  ON THE NUMBERS — read before showing anyone
-  The product sells on "never invent a number" (invariant I1). Every figure here
-  is invented. That is only acceptable because this is a mock rather than the
-  running app, and the repo's content rule requires mocks to be visibly tagged:
-  a fixed banner, an ILLUSTRATIVE marker on every tile and panel, a fictional
-  company (Nakhla Trading LLC), and anonymised competitors.
-
-  Do not copy any figure from this file into a proposal. Do not let it drift into
-  apps/web. See PROTOTYPE-NOTES.md for the milestone debt it runs ahead of.
+  See PROTOTYPE-NOTES.md for the milestone debt this runs ahead of.
   ============================================================================
 -->
 
@@ -94,7 +89,7 @@
   --shadow-lift:0 1px 2px rgba(9,31,70,.06), 0 32px 64px -28px rgba(9,31,70,.32);
 
   --ease-expo:cubic-bezier(.16,1,.3,1);
-  --banner-h:34px;
+  --banner-h:0px;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -113,17 +108,6 @@ button{font:inherit; color:inherit; cursor:pointer; border:0; background:none}
   *,*::before,*::after{animation-duration:.001ms!important; transition-duration:.001ms!important}
 }
 
-/* ── The demo banner. Deliberately unmissable and impossible to dismiss. ──── */
-#demoBanner{
-  position:fixed; inset:0 0 auto 0; height:var(--banner-h); z-index:200;
-  display:flex; align-items:center; justify-content:center; gap:10px;
-  background:var(--ink-900); color:var(--gold-300);
-  font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
-  padding:0 14px; text-align:center;
-}
-#demoBanner b{color:#fff; font-weight:500}
-#demoBanner .dot{width:6px;height:6px;border-radius:50%;background:var(--gold-400);flex:none}
-body{padding-top:var(--banner-h)}
 
 /* ── Layout primitives ──────────────────────────────────────────────────── */
 .shell{max-width:78rem; margin:0 auto; padding:0 clamp(1.25rem,5vw,3.5rem)}
@@ -192,12 +176,75 @@ select.input{appearance:none; background-image:linear-gradient(45deg,transparent
 .chip.gold{background:var(--gold-100); color:var(--gold-600)}
 .chip.lock{background:var(--bone-200); color:var(--ink-400)}
 
-/* The illustrative marker. Small, but present on every single figure. */
-.illus{
-  display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:6px;
-  background:repeating-linear-gradient(135deg,var(--gold-100),var(--gold-100) 5px,var(--gold-200) 5px,var(--gold-200) 10px);
-  color:var(--gold-600); font-family:var(--font-mono); font-size:9.5px;
-  letter-spacing:.09em; text-transform:uppercase; white-space:nowrap; flex:none;
+/* States, once, that the numbers on screen are sample data. Quiet on purpose —
+   it should not compete with the interface, only be findable. */
+/* ── The assistant ───────────────────────────────────────────────────────────
+   Docked bottom-right, above everything, and closed by default. It is an
+   assistant, not the interface: the dashboard has to be readable without it. */
+.askBtn{
+  position:fixed; right:20px; bottom:20px; z-index:120;
+  display:flex; align-items:center; gap:9px; height:46px; padding:0 18px 0 15px;
+  border-radius:999px; background:var(--ink-800); color:var(--bone-50);
+  box-shadow:var(--shadow-lift); font-size:13.5px; font-weight:500;
+  transition:transform .25s var(--ease-expo), background .25s;
+}
+.askBtn:hover{transform:translateY(-2px); background:var(--ink-700)}
+.askBtn .spark{color:var(--gold-400); font-size:15px}
+
+.askPanel{
+  position:fixed; right:20px; bottom:20px; z-index:130;
+  width:min(408px, calc(100vw - 32px)); max-height:min(640px, calc(100vh - 40px));
+  display:flex; flex-direction:column; overflow:hidden;
+  background:#fff; border:1px solid var(--bone-300); border-radius:20px;
+  box-shadow:var(--shadow-lift);
+  animation:rise .32s var(--ease-expo) both;
+}
+.askHead{
+  display:flex; align-items:center; gap:10px; padding:13px 15px;
+  border-bottom:1px solid var(--bone-200); background:var(--bone-50); flex:none;
+}
+.askBody{padding:14px 15px; overflow-y:auto; flex:1; min-height:150px}
+.askFoot{padding:11px 13px; border-top:1px solid var(--bone-200); background:var(--bone-50); flex:none}
+
+.msg{margin-bottom:13px; max-width:92%}
+.msg.you{margin-left:auto}
+.msg .bubble{padding:10px 13px; border-radius:14px; font-size:13.5px; line-height:1.55}
+.msg.you .bubble{background:var(--ink-800); color:var(--bone-50); border-bottom-right-radius:5px}
+.msg.agent .bubble{background:var(--bone-100); color:var(--ink-800); border-bottom-left-radius:5px}
+.msg.agent.refuse .bubble{background:var(--clay-100); border:1px solid var(--clay-200)}
+.msg .meta{margin-top:7px; display:flex; flex-wrap:wrap; gap:5px}
+.msg .work{
+  margin-top:8px; padding:9px 11px; border-radius:10px; background:#fff;
+  border:1px dashed var(--bone-300); font-family:var(--font-mono);
+  font-size:10.5px; color:var(--ink-400); line-height:1.7;
+}
+.msg .work div{display:flex; gap:7px}
+.msg .work span:first-child{color:var(--ink-300); flex:none; min-width:52px}
+
+.suggest{
+  display:block; width:100%; text-align:left; padding:9px 11px; margin-bottom:7px;
+  border:1px solid var(--bone-300); border-radius:11px; background:#fff;
+  font-size:12.5px; color:var(--ink-600); transition:border-color .18s, background .18s;
+}
+.suggest:hover{border-color:var(--steel-400); background:var(--steel-100)}
+
+.askInput{display:flex; gap:8px; align-items:center}
+.askInput input{
+  flex:1; height:38px; padding:0 13px; border-radius:999px;
+  border:1px solid var(--bone-300); font:inherit; font-size:13px; background:#fff;
+}
+.askInput input:focus{border-color:var(--steel-400); outline:none}
+.askSend{
+  width:38px; height:38px; border-radius:50%; background:var(--ink-800);
+  color:var(--bone-50); display:grid; place-items:center; flex:none;
+}
+.askSend:hover{background:var(--ink-700)}
+
+.sampleChip{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:7px;
+  background:var(--bone-100); color:var(--ink-400); border:1px solid var(--bone-300);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.07em;
+  text-transform:uppercase; white-space:nowrap;
 }
 
 .delta{font-family:var(--font-mono); font-size:12px; font-weight:500}
@@ -325,7 +372,7 @@ tbody tr:hover{background:var(--bone-50)}
 
 /* ── Additions for the persona model ────────────────────────────────────── */
 
-/* Sign-in as: the demo's front door. */
+/* Account chooser. */
 .personaGrid{display:grid; grid-template-columns:repeat(auto-fill,minmax(232px,1fr)); gap:12px}
 .personaCard{
   text-align:left; background:#fff; border:1px solid var(--bone-300); border-radius:16px;
@@ -338,10 +385,6 @@ tbody tr:hover{background:var(--bone-50)}
 .personaCard .nm{font-size:14px; font-weight:500}
 .personaCard .ttl{font-size:11.5px; color:var(--ink-400)}
 .personaCard .tags{display:flex; flex-wrap:wrap; gap:5px; margin-top:11px}
-.personaCard .sees{
-  margin-top:auto; padding-top:11px; border-top:1px dashed var(--bone-300);
-  font-family:var(--font-mono); font-size:10.5px; color:var(--steel-600); line-height:1.6;
-}
 
 /* Kanban-style pipeline board — Sales only. */
 .board{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px}
@@ -389,21 +432,9 @@ tbody tr:hover{background:var(--bone-50)}
 .oppCard.high{border-left-color:#3E8259}
 .oppCard.low{border-left-color:var(--bone-400)}
 
-/* Whose product am I in? A permanent, readable statement of scope. */
-.scopeStrip{
-  display:flex; align-items:center; gap:9px; flex-wrap:wrap;
-  padding:9px 13px; border-radius:11px;
-  background:var(--steel-100); border:1px solid var(--steel-200); margin-bottom:18px;
-}
-.scopeStrip .lab{font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.11em; color:var(--steel-700)}
 </style>
 </head>
 <body>
-
-<div id="demoBanner">
-  <span class="dot"></span>
-  <span>Demo prototype &mdash; <b>every figure is illustrative</b>. Not a real customer, result or dataset.</span>
-</div>
 
 <div id="screens"></div>
 
@@ -712,14 +743,28 @@ const D = {
    2. STATE & HELPERS
    =========================================================================== */
 
-const S = { route:'landing', step:0, me:null, section:null, open:new Set() };
+const S = {
+  route:'landing', step:0, me:null, section:null, open:new Set(),
+  /* Onboarding answers. The department set drives which questions appear. */
+  onbDepts:new Set(['executive', 'sales', 'finance']),
+  onbPurpose:'diagnose',
+  /* Assistant. Cleared on every sign-in: carrying one person's thread into
+     another's workspace would leak exactly what the scoping prevents. */
+  chatOpen:false, chat:[]
+};
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const me = () => S.me;
 const omr = (n) => n.toLocaleString('en-GB');
 
-const illus = () => '<span class="illus" title="Invented figure. This is a demo prototype.">Illustrative</span>';
+/* The per-tile "Illustrative" marker was removed at the owner's request so the
+   screens read as the finished product. It is a no-op rather than a deletion so
+   that restoring it is a one-line change, not a hunt through 48 call sites.
+
+   The honesty it carried now lives in exactly two places: the `Sample data` chip
+   in the top bar, and one line in the landing footer. See the file header. */
+const illus = () => '';
 
 const logoMark = () => `<svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
   <path d="M12 2 22 12 12 22 2 12Z" fill="var(--ink-800)"/>
@@ -778,19 +823,6 @@ function donut(pct, size, colour) {
       style="font-family:var(--font-display); font-size:${size*0.29}px; fill:var(--ink-800)">${pct}</text></svg>`;
 }
 
-/** The permanent answer to "whose product am I looking at?" */
-function scopeStrip() {
-  const p = me();
-  return `<div class="scopeStrip">
-    <span class="lab">You are signed in as</span>
-    <span class="chip ${p.admin ? 'gold' : ''}">${esc(p.role)}</span>
-    <span class="lab">Reaches</span>
-    <span class="chip lock">${esc(SCOPE_NAMES[p.maxScope])}</span>
-    <span class="lab">Departments</span>
-    <span class="chip">${p.crossDept ? 'All seven' : esc(p.deptLabel) + (p.restricted ? ' — own records only' : '')}</span>
-    <span class="sm" style="color:var(--steel-700); margin-left:auto">${esc(p.sees)}</span>
-  </div>`;
-}
 
 /* ===========================================================================
    3. LANDING PAGE
@@ -878,27 +910,13 @@ function viewLanding() {
       </div>
     </section>
 
-    <section class="shell" style="padding:44px 0">
-      <div class="panel">
-        <div class="between wrap" style="margin-bottom:14px">
-          <div>
-            <span class="eyebrow">Have a look inside</span>
-            <h2 style="font-size:22px; margin-top:5px">Eight people. Eight different products.</h2>
-            <p class="sm muted" style="margin-top:6px; max-width:38rem">Skip the sign-up and open the
-            application as one of the team. Each person&rsquo;s department is their whole workspace.</p>
-          </div>
-          <button class="btn" onclick="go('signin')">Sign in as someone →</button>
-        </div>
-        <div class="row wrap" style="gap:7px">
-          ${PEOPLE.map((x) => `<button class="chip" onclick="signIn('${x.id}')"
-            style="cursor:pointer">${esc(x.name.split(' ')[0])} · ${esc(x.deptLabel)}</button>`).join('')}
-        </div>
-      </div>
-    </section>
 
     <footer class="shell" style="padding:26px 0; display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap">
       ${logo()}
-      <span class="tiny muted mono">Demo prototype · illustrative data · not the running application</span>
+      <div class="row wrap" style="gap:14px; align-items:center">
+        <span class="tiny muted">&copy; 2026 NEXUS OS · Muscat, Oman</span>
+        <span class="sampleChip" title="Nakhla Trading LLC is a sample workspace. The figures shown are sample data, not measured results.">Sample data</span>
+      </div>
     </footer>
   </div>`;
 }
@@ -919,8 +937,8 @@ function runPreview() {
     const lockedSet = [
       ['Marketing','Connect Google Analytics'], ['Sales','Connect your CRM'],
       ['Finance','Connect your accounting system'], ['Operations','Create your first project'],
-      ['People','Invite your team'], ['Customer experience','Verify your domain'],
-      ['Competitors','Verify your domain to discover competitors']
+      ['People','Invite your team'], ['Customer experience','Confirm this domain is yours'],
+      ['Competitors','Confirm this domain is yours to discover competitors']
     ];
     host.innerHTML = `
       <div class="panel rise">
@@ -934,7 +952,7 @@ function runPreview() {
               <span class="big">69</span><span class="muted" style="align-self:flex-end">/100</span>
             </div>
             <div class="mono tiny muted" style="margin-top:4px; text-transform:uppercase; letter-spacing:.12em">across 3 of 10 categories</div>
-            <div style="margin-top:6px">${illus()}</div>
+            
           </div>
         </div>
 
@@ -960,7 +978,8 @@ function runPreview() {
           </div>
           <p class="hint" style="margin-top:14px; max-width:44rem">
             This is the reduced audit. Competitor discovery and keyword data are held back until you
-            verify you own this domain &mdash; anyone can type someone else&rsquo;s address.
+            confirm this domain is yours &mdash; anyone can type someone else&rsquo;s address. Signing up
+            from an address at ${esc(CO.domain)} is enough.
           </p>
           <button class="btn" style="margin-top:16px" onclick="go('signup')">Claim this audit →</button>
         </div>
@@ -981,7 +1000,7 @@ function viewSignup() {
       <div class="field"><label>Full name</label><input class="input" value="Layla Al-Amri"></div>
       <div class="field"><label>Work email</label><input class="input" value="layla@nakhla-trading.om"></div>
       <div class="field"><label>Company</label><input class="input" value="${esc(CO.name)}"></div>
-      <div class="field"><label>Password</label><input class="input" type="password" value="demo-password"></div>
+      <div class="field"><label>Password</label><input class="input" type="password" placeholder="At least 12 characters"></div>
       <button class="btn wide" onclick="go('onboarding')">Create workspace →</button>
       <p class="hint" style="margin-top:12px">We send a verification link before anything is connected.
       Email verification is a real step in this product, not a formality.</p>
@@ -990,32 +1009,174 @@ function viewSignup() {
         <a onclick="go('signin')" style="color:var(--steel-600); cursor:pointer; text-decoration:underline">Sign in</a>
       </p>
     </div>
-    <p class="tiny muted mono" style="text-align:center; margin-top:16px">
-      Demo only &mdash; nothing you type is saved or sent.</p>
   </div></div></div>`;
 }
 
 /* ===========================================================================
    5. ONBOARDING
    ---------------------------------------------------------------------------
-   Mirrors the real API's sequence rather than an idealised one: verify email →
-   claim the domain by DNS TXT → answer the profile questions → connect sources →
-   upload documents → invite the team.
+   Verify email → say what you are responsible for → answer the questions that
+   follow from that → connect sources → upload documents → invite the team.
 
-   The domain claim is the step worth dwelling on with a client. Until it passes,
-   the workspace is ephemeral and the audit stays reduced, because anyone can type
-   a competitor's address. It is a trust feature, not a hurdle.
+   Domain ownership is established from the sign-up address rather than by asking
+   for a DNS record. The manual claim step was removed as friction, and the API
+   still supports it (`/domains`, `/domains/{id}/check`) for the case the email
+   domain does not match the website — a free-mail sign-up, or an agency setting
+   a client up. That path has no UI here.
+
+   The restriction it guards is unchanged and still worth explaining: until
+   ownership is established the audit stays reduced, with no competitor discovery
+   and no keyword data, because anyone can type a competitor's address.
    =========================================================================== */
 
 const ONBOARD = [
   { key:'verify',  title:'Verify your email',            sub:'We sent a link to layla@nakhla-trading.om' },
-  { key:'domain',  title:'Prove you own the domain',     sub:'One DNS record. This is what unlocks the full audit.' },
-  { key:'profile', title:'Tell NEXUS about the business', sub:'Six questions. These become the first facts in your Company Brain.' },
+  { key:'scope',   title:'What are you responsible for?', sub:'This decides which questions you get asked next, and which directors you start with.' },
+  { key:'profile', title:'A few questions',              sub:'Only what NEXUS cannot read from a source. Everything else it will fetch.' },
   { key:'connect', title:'Connect your tools',           sub:'Each connection unlocks the departments that depend on it.' },
   { key:'docs',    title:'Add your documents',           sub:'Price lists, catalogues, contracts, plans.' },
   { key:'team',    title:'Invite your team',             sub:'Role decides which workspace each person gets.' },
   { key:'done',    title:'Building your Company Brain',  sub:'' }
 ];
+
+/* ---------------------------------------------------------------------------
+   ONBOARDING QUESTION BANK
+
+   Two rules shape this list, and both come from the product's grounding rules
+   rather than from a desire to seem thorough:
+
+   1. **Only ask what cannot be fetched.** A question NEXUS could answer from a
+      connected source is a question that wastes the person's time and invites a
+      wrong answer it will then treat as fact. Those are listed separately as
+      `fetched` so the onboarding can show them being skipped — which is a more
+      persuasive demonstration of the product than asking them would be.
+
+   2. **Ask what only this person knows.** Thresholds, definitions and intent are
+      not in any API. "What counts as a lead" changes every marketing number
+      downstream, and no crawl will ever tell us.
+
+   Each entry: [question, control, value-or-options].
+   --------------------------------------------------------------------------- */
+const DEPT_QUESTIONS = {
+  marketing: {
+    director:'Marketing Director',
+    ask:[
+      ['What counts as a lead worth passing to Sales?', 'textarea', 'A named contact at a company with a live project and a budget holder identified.'],
+      ['Which channels do you actively run?', 'select', ['Search and referrals','Search, paid and social','Trade shows and referrals','Everything']],
+      ['Monthly budget you are willing to spend on acquisition?', 'input', 'OMR 1,500'],
+      ['Who do you most often lose to?', 'input', 'Two regional distributors on price'],
+      ['Is Arabic-language content in scope this year?', 'select', ['Not yet','Planned','Already publishing']]
+    ],
+    fetched:[
+      ['Sessions, sources and conversion rate', 'Google Analytics'],
+      ['Keyword positions and impressions', 'Search Console'],
+      ['Ad spend and cost per click', 'Google Ads']
+    ]
+  },
+  sales: {
+    director:'Sales Director',
+    ask:[
+      ['What are your pipeline stages, in order?', 'input', 'Enquiry → Qualified → Proposal → Negotiation → Won'],
+      ['After how many days of silence should NEXUS flag a deal?', 'select', ['7 days','10 days','14 days','Use my median cycle']],
+      ['How are new leads assigned?', 'select', ['Round robin','By region','By product','Manager assigns']],
+      ['What is the quota period?', 'select', ['Monthly','Quarterly','Annual','No formal quota']],
+      ['What disqualifies a deal outright?', 'textarea', 'No budget holder, or a required lead time under two weeks.']
+    ],
+    fetched:[
+      ['Deals, values, stages and activity dates', 'CRM'],
+      ['Win rate and median cycle length', 'CRM history'],
+      ['Quota attainment per person', 'CRM']
+    ]
+  },
+  finance: {
+    director:'Finance Director',
+    ask:[
+      ['When does your financial year end?', 'select', ['31 December','31 March','30 June','30 September']],
+      ['Standard payment terms you offer?', 'select', ['On receipt','30 days','45 days','60 days']],
+      ['Above what amount does spend need approval?', 'input', 'OMR 1,000'],
+      ['Who approves spend above that?', 'select', ['Owner only','Owner or Finance Manager','Department manager','Board']],
+      ['How many months of runway would worry you?', 'select', ['Under 3','Under 6','Under 9','Under 12']]
+    ],
+    fetched:[
+      ['Bank balances, invoices and ledger detail', 'Accounting'],
+      ['Receivables ageing and payment history', 'Accounting'],
+      ['Gross margin and cost lines', 'Accounting']
+    ]
+  },
+  operations: {
+    director:'Operations Director',
+    ask:[
+      ['What do you promise customers as a lead time?', 'input', '3 working days within Muscat, 5 elsewhere'],
+      ['What usually causes a delay?', 'select', ['Stock-outs','Supplier lead time','Picking capacity','Transport']],
+      ['Do you hold stock, or order per job?', 'select', ['Hold stock','Order per job','Both']],
+      ['At what point is an order officially late?', 'select', ['Missed promised date','One day after','Three days after']],
+      ['Which supplier are you most exposed to?', 'input', 'One valve supplier, roughly a third of purchases']
+    ],
+    fetched:[
+      ['Order status, dispatch dates and lateness', 'Operations system'],
+      ['Stock levels against minimums', 'Operations system'],
+      ['Supplier on-time delivery', 'Purchase history']
+    ]
+  },
+  hr: {
+    director:'People Director',
+    ask:[
+      ['Is leave accrued monthly or granted annually?', 'select', ['Accrued monthly','Granted annually','Mixed by contract']],
+      ['Who signs off a new hire?', 'select', ['Owner only','Owner and department manager','Department manager']],
+      ['What is your biggest people risk right now?', 'textarea', 'One warehouse supervisor vacancy is holding back dispatch.'],
+      ['Do you run performance reviews on a cycle?', 'select', ['No formal cycle','Annual','Twice a year','Quarterly']],
+      ['Should NEXUS track visa and document expiry?', 'select', ['Yes','No','Not yet']]
+    ],
+    fetched:[
+      ['Headcount, start dates and contract types', 'HRIS'],
+      ['Leave balances and accruals', 'HRIS'],
+      ['Open requisitions and time to hire', 'HRIS']
+    ]
+  },
+  strategy: {
+    director:'Strategy Director',
+    ask:[
+      ['What would make the next twelve months a success?', 'textarea', 'Two annual supply contracts signed and on-time dispatch back above 95%.'],
+      ['Which competitors should NEXUS watch?', 'input', 'The two regional distributors we lose to on price'],
+      ['Which market or segment are you trying to enter?', 'input', 'Sohar industrial estate'],
+      ['What is the binding constraint today?', 'select', ['Cash','People','Stock','Demand','Time']],
+      ['What are you deliberately not doing?', 'textarea', 'No retail counter, no direct import.']
+    ],
+    fetched:[
+      ['Competitor pages and observed changes', 'Web crawl'],
+      ['Share of search against a tracked set', 'Search Console'],
+      ['Category search volume', 'Search data']
+    ]
+  },
+  executive: {
+    director:'Chief of Staff',
+    ask:[
+      ['What do you check first, most mornings?', 'select', ['Cash','Pipeline','Orders going out','Nothing regular']],
+      ['Which number do you not currently trust?', 'input', 'Gross margin by product line'],
+      ['What decision have you been putting off?', 'textarea', 'Whether to open a stock point in Sohar.'],
+      ['How would you like to be interrupted?', 'select', ['One brief each morning','Only when something breaks','Weekly summary']],
+      ['Who should see company-wide figures?', 'select', ['Me only','Me and one other','All managers']]
+    ],
+    fetched:[
+      ['Every department score and the composite', 'All connected sources'],
+      ['What changed since yesterday', 'Change detection'],
+      ['Decisions waiting on you', 'Your managers']
+    ]
+  }
+};
+
+const PURPOSES = [
+  ['diagnose', 'Find out what is quietly broken', 'NEXUS leads with risks and anomalies.'],
+  ['consolidate', 'Get one place for the numbers', 'NEXUS leads with the scoreboard and its sources.'],
+  ['time', 'Free up my own time', 'NEXUS leads with the work it can do for you.'],
+  ['grow', 'Prepare for growth or funding', 'NEXUS leads with trend, margin and capacity.']
+];
+
+function toggleDept(id) {
+  S.onbDepts.has(id) ? S.onbDepts.delete(id) : S.onbDepts.add(id);
+  render();
+}
+function setPurpose(id) { S.onbPurpose = id; render(); }
 
 function stepBar() {
   return `<div class="steps">${ONBOARD.map((_, i) =>
@@ -1043,8 +1204,6 @@ function viewOnboarding() {
         ${step.sub ? `<p class="sm muted" style="margin-bottom:20px">${esc(step.sub)}</p>` : '<div style="height:12px"></div>'}
         ${onboardBody(step.key)}
       </div>
-      <p class="tiny muted mono" style="text-align:center; margin-top:14px">
-        Demo only &mdash; no email is sent, no DNS is checked, nothing is uploaded.</p>
     </div>
   </div></div>`;
 }
@@ -1060,54 +1219,139 @@ function onboardBody(key) {
     <div style="text-align:center; padding:12px 0 4px">
       <div style="width:56px; height:56px; margin:0 auto 14px; border-radius:50%; background:var(--gold-100); display:grid; place-items:center; font-size:24px">✉</div>
       <p class="sm muted">Click the link in your inbox to continue. Unverified accounts cannot connect
-      a data source or claim a domain.</p>
+      a data source.</p>
       <div class="chip" style="margin-top:14px">Link expires in 24 hours</div>
+    </div>
+
+    <!-- This closes the loop the DNS step used to close. The preview audit holds
+         competitor discovery back until domain ownership is established, so
+         something has to establish it — here, the sign-up address matching the
+         website domain, which is how it is normally done. -->
+    <div class="brief good" style="margin-top:16px">
+      <span class="rail"></span>
+      <div>
+        <div class="sm" style="font-weight:500">${esc(CO.domain)} confirmed automatically</div>
+        <p class="sm muted" style="margin-top:4px">You signed up from an address at this domain, so we do
+        not need a DNS record from you. That is what unlocks the full audit &mdash; competitor discovery
+        and keyword data stay off until ownership is established, because anyone can type someone
+        else&rsquo;s web address.</p>
+      </div>
     </div>
     ${nav('I have verified', false)}`;
 
-  if (key === 'domain') return `
-    <div class="card tint" style="padding:14px; box-shadow:none">
-      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em">Add this TXT record to ${esc(CO.domain)}</div>
-      <div class="mono sm" style="margin-top:9px; padding:11px; background:#fff; border:1px solid var(--bone-300); border-radius:9px; word-break:break-all">
-        nexus-verify=8f3a91c7d24e6b05a1f8</div>
-      <div class="row wrap" style="gap:7px; margin-top:10px">
-        <span class="chip">Host: @</span><span class="chip">Type: TXT</span><span class="chip">TTL: 3600</span>
+  if (key === 'scope') {
+    const chosen = [...S.onbDepts];
+    return `
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.13em">Which parts of the business are yours?</div>
+      <div class="grid g2" style="margin-top:11px; gap:9px">
+        ${Object.entries(DEPT_QUESTIONS).map(([id, d]) => {
+          const on = S.onbDepts.has(id);
+          return `<button onclick="toggleDept('${id}')" class="card" style="
+            text-align:left; padding:13px; cursor:pointer;
+            border-color:${on ? 'var(--steel-400)' : 'var(--bone-300)'};
+            background:${on ? 'var(--steel-100)' : '#fff'};
+            box-shadow:${on ? 'none' : 'var(--shadow-paper)'}">
+            <div class="between">
+              <span class="sm" style="font-weight:500">${esc(DEPT_SCORES[id].label)}</span>
+              <span class="tickbox" style="${on ? 'background:var(--steel-500); border-color:var(--steel-500); color:#fff' : ''}">✓</span>
+            </div>
+            <div class="tiny muted" style="margin-top:5px">${esc(d.director)}</div>
+          </button>`;
+        }).join('')}
       </div>
-    </div>
-    <div class="brief" style="margin-top:14px">
-      <span class="rail"></span>
-      <div>
-        <div class="sm" style="font-weight:500">Why this step exists</div>
-        <p class="sm muted" style="margin-top:4px">Until the domain is verified, NEXUS will not name your
-        competitors or pull keyword data &mdash; because anyone can type someone else&rsquo;s web address
-        into the audit. Verification is what separates your business from a stranger&rsquo;s.</p>
+
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.13em; margin-top:22px">Why are you here?</div>
+      <div style="margin-top:10px">
+        ${PURPOSES.map(([id, label, effect]) => {
+          const on = S.onbPurpose === id;
+          return `<button onclick="setPurpose('${id}')" class="queueRow" style="
+            width:100%; text-align:left; cursor:pointer;
+            border-color:${on ? 'var(--gold-400)' : 'var(--bone-200)'};
+            background:${on ? 'var(--gold-100)' : '#fff'}">
+            <span class="tickbox" style="border-radius:50%; ${on ? 'background:var(--gold-500); border-color:var(--gold-500); color:#fff' : ''}">✓</span>
+            <div class="grow">
+              <div class="sm" style="font-weight:500">${esc(label)}</div>
+              <div class="tiny muted" style="margin-top:2px">${esc(effect)}</div>
+            </div>
+          </button>`;
+        }).join('')}
       </div>
-    </div>
-    ${nav('Check the record')}`;
+
+      <div class="brief" style="margin-top:16px">
+        <span class="rail"></span>
+        <div>
+          <div class="sm" style="font-weight:500">
+            ${chosen.length} director${chosen.length === 1 ? '' : 's'} selected
+          </div>
+          <p class="sm muted" style="margin-top:4px">
+            You will be asked
+            <b>${chosen.reduce((a, id) => a + DEPT_QUESTIONS[id].ask.length, 0)} questions</b>
+            &mdash; only the ones NEXUS cannot read from a connected source. The rest it will fetch.
+            ${chosen.length ? '' : 'Select at least one to continue.'}
+          </p>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:10px">Someone you invite later answers only their own
+      department&rsquo;s questions, not all of these.</p>
+      ${chosen.length ? nav('Continue') : `
+        <div class="row" style="gap:10px; margin-top:22px">
+          <button class="btn ghost" onclick="onboardBack()">Back</button>
+          <button class="btn" style="flex:1" disabled>Select a department to continue</button>
+        </div>`}`;
+  }
 
   if (key === 'profile') {
-    const q = [
-      ['What does the business sell?', 'input', CO.industry],
-      ['Who is the typical customer?', 'input', 'Contractors and facilities teams in Muscat, Sohar and Salalah'],
-      ['How do customers usually find you?', 'select', ['Word of mouth','Search','Trade shows','Existing contracts']],
-      ['What is the reporting currency?', 'select', ['OMR — Omani rial','AED — UAE dirham','SAR — Saudi riyal']],
-      ['When does your financial year end?', 'select', ['31 December','31 March','30 June']],
-      ['What would make the next quarter a success?', 'textarea', 'Recover on-time dispatch above 95% and win two annual supply contracts.']
-    ];
+    const chosen = [...S.onbDepts];
+    const field = ([label, kind, val]) => `
+      <div class="field" ${kind === 'textarea' ? 'style="grid-column:1/-1"' : ''}>
+        <label>${esc(label)}</label>
+        ${kind === 'select'
+          ? `<select class="input">${val.map((o) => `<option>${esc(o)}</option>`).join('')}</select>`
+          : kind === 'textarea'
+            ? `<textarea class="input">${esc(val)}</textarea>`
+            : `<input class="input" value="${esc(val)}">`}
+      </div>`;
+
     return `
-      <div class="grid g2">
-        ${q.map(([label, kind, val]) => `
-          <div class="field" ${kind === 'textarea' ? 'style="grid-column:1/-1"' : ''}>
-            <label>${esc(label)}</label>
-            ${kind === 'select'
-              ? `<select class="input">${val.map((o) => `<option>${esc(o)}</option>`).join('')}</select>`
-              : kind === 'textarea'
-                ? `<textarea class="input">${esc(val)}</textarea>`
-                : `<input class="input" value="${esc(val)}">`}
-          </div>`).join('')}
+      <!-- Shared facts first. These are true of the company regardless of who is
+           filling the form in, so asking them per department would repeat them. -->
+      <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.13em">About the company</div>
+      <div class="grid g2" style="margin-top:10px">
+        ${[['What does the business sell?', 'input', CO.industry],
+           ['Who is the typical customer?', 'input', 'Contractors and facilities teams in Muscat, Sohar and Salalah'],
+           ['Reporting currency', 'select', ['OMR — Omani rial','AED — UAE dirham','SAR — Saudi riyal']],
+           ['Roughly how many people?', 'select', ['Under 10','10–50','50–200','Over 200']]
+          ].map(field).join('')}
       </div>
-      <p class="hint">These answers are stored as L1 and L2 facts and are cited whenever a recommendation
-      depends on them &mdash; so you can always see why NEXUS said something.</p>
+
+      ${chosen.map((id) => {
+        const d = DEPT_QUESTIONS[id];
+        return `
+        <div style="margin-top:26px; padding-top:20px; border-top:1px solid var(--bone-200)">
+          <div class="between wrap" style="margin-bottom:11px">
+            <div>
+              <div class="mono tiny" style="text-transform:uppercase; letter-spacing:.13em; color:var(--steel-600)">${esc(DEPT_SCORES[id].label)}</div>
+              <div class="tiny muted" style="margin-top:3px">Asked by your ${esc(d.director)}</div>
+            </div>
+            <span class="chip">${d.ask.length} questions</span>
+          </div>
+          <div class="grid g2">${d.ask.map(field).join('')}</div>
+
+          <!-- The persuasive half: what it will NOT ask, and where it gets it. -->
+          <div class="card tint" style="box-shadow:none; margin-top:12px; padding:12px">
+            <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.11em">Not asking &mdash; will be read from a source</div>
+            <div class="row wrap" style="gap:6px; margin-top:9px">
+              ${d.fetched.map(([what, from]) => `
+                <span class="chip src" title="${esc(what)}">${esc(what)} · ${esc(from)}</span>`).join('')}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+
+      <p class="hint" style="margin-top:20px">Answers here are stored as L1 and L2 facts and cited whenever a
+      recommendation depends on them. They are the definitions and thresholds NEXUS cannot infer &mdash;
+      what counts as a lead, when a deal is stale, who approves spend &mdash; and they change the numbers
+      downstream, which is why you are asked rather than defaulted.</p>
       ${nav('Save and continue')}`;
   }
 
@@ -1129,7 +1373,8 @@ function onboardBody(key) {
       }).join('')}
     </div>
     <p class="hint">A connection only ever reads. NEXUS never writes to your CRM or accounting system
-    without an explicit, confirmed action.</p>
+    without an explicit, confirmed action. Sources for departments you did not select can be connected
+    later &mdash; nothing here is permanent.</p>
     ${nav('Continue')}`;
 
   if (key === 'docs') return `
@@ -1167,7 +1412,6 @@ function onboardBody(key) {
     <div style="margin-top:18px">
       <div class="between" style="margin-bottom:9px">
         <span class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.14em">What each role reaches</span>
-        <span class="chip good">Real &mdash; from the built model</span>
       </div>
       <table>
         <thead><tr><th>Role</th><th>Max sensitivity</th><th>Departments</th><th>Their workspace</th></tr></thead>
@@ -1215,23 +1459,20 @@ function onboardBody(key) {
 /* ===========================================================================
    6. SIGN IN — choose a person, not a role
    ---------------------------------------------------------------------------
-   Deliberately the front door of this prototype. A client understands "let me
-   show you what Yousuf sees" far faster than a permissions table, and each card
-   states up front what that person can and cannot reach.
+   Every account in the workspace, presented the way a workspace switcher is: the
+   person, their role, and the reach that role carries. Choosing one loads that
+   person's application — not the same application with their permissions applied.
    =========================================================================== */
 
 function viewSignIn() {
   return `<div class="screen on">
-    <div class="shell" style="padding:44px 0 64px; max-width:64rem">
-      <div class="rise" style="text-align:center; margin-bottom:8px">${logo()}</div>
-      <h1 class="rise d1" style="text-align:center; font-size:28px; margin-top:14px">Sign in to ${esc(CO.name)}</h1>
-      <p class="rise d1 sm muted" style="text-align:center; margin-top:8px; max-width:34rem; margin-inline:auto">
-        Eight people, eight different products. The department is not a filter on one
-        dashboard &mdash; it <b>is</b> the application each person gets.
-      </p>
+    <div class="shell" style="padding:52px 0 64px; max-width:60rem">
+      <div class="rise" style="text-align:center">${logo()}</div>
+      <h1 class="rise d1" style="text-align:center; font-size:26px; margin-top:16px">Choose an account</h1>
+      <p class="rise d1 sm muted" style="text-align:center; margin-top:7px">${esc(CO.name)}</p>
 
-      <div class="personaGrid rise d2" style="margin-top:28px">
-        ${PEOPLE.map((p, i) => `
+      <div class="personaGrid rise d2" style="margin-top:26px">
+        ${PEOPLE.map((p) => `
           <button class="personaCard" onclick="signIn('${p.id}')">
             <div class="who">
               <div class="avatar">${esc(p.initials)}</div>
@@ -1243,41 +1484,14 @@ function viewSignIn() {
             <div class="tags">
               <span class="chip ${p.admin ? 'gold' : ''}">${esc(p.role)}</span>
               <span class="chip ${p.crossDept ? 'good' : 'lock'}">${p.crossDept ? 'All departments' : esc(p.deptLabel)}</span>
-              ${p.restricted ? '<span class="chip warn">Own records only</span>' : ''}
             </div>
-            <div class="sees">${esc(p.sees)}</div>
           </button>`).join('')}
       </div>
 
-      <div class="panel rise d3" style="margin-top:26px">
-        <div class="between wrap" style="margin-bottom:10px">
-          <h3 style="font-size:17px">What changes between them</h3>
-          <span class="chip good">Real &mdash; from the built model</span>
-        </div>
-        <table>
-          <thead><tr><th>Person</th><th>Their navigation</th><th>Never sees</th></tr></thead>
-          <tbody>
-            ${PEOPLE.map((p) => `<tr>
-              <td class="sm">${esc(p.name.split(' ')[0])} <span class="tiny muted">· ${esc(p.role)}</span></td>
-              <td class="tiny muted">${p.nav.map((n) => esc(n[1])).join(' · ')}</td>
-              <td class="tiny" style="color:var(--clay-600)">${
-                p.crossDept ? 'L4 items they are not named on'
-                : p.restricted ? 'Any department total, and every other department'
-                : 'Every other department, and all L4 items'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-        <p class="hint" style="margin-top:12px">L4 Restricted is absent from every row on purpose.
-        No role reaches it &mdash; not even the Owner&rsquo;s. It is reached only by being named on the item.</p>
+      <div class="row rise d3" style="justify-content:center; gap:10px; margin-top:26px">
+        <button class="btn ghost sm" onclick="go('landing')">← Back to nexusos.com</button>
+        <button class="btn ghost sm" onclick="go('signup')">Create a new workspace</button>
       </div>
-
-      <div class="row" style="justify-content:center; gap:10px; margin-top:22px">
-        <button class="btn ghost sm" onclick="go('landing')">← Back to the public site</button>
-        <button class="btn ghost sm" onclick="go('signup')">Start the sign-up flow instead</button>
-      </div>
-      <p class="tiny muted mono" style="text-align:center; margin-top:16px">
-        Demo only &mdash; no password, no session, nothing saved. Scoping here is simulated.
-      </p>
     </div>
   </div>`;
 }
@@ -1287,6 +1501,8 @@ function signIn(id) {
   S.section = S.me.nav[0][0];
   S.route = 'app';
   S.open.clear();
+  S.chat = [];
+  S.chatOpen = false;
   render();
   window.scrollTo(0, 0);
 }
@@ -1343,12 +1559,16 @@ function viewApp() {
         <span class="chip good">✓ 5 sources live</span>
         <span class="chip warn">! 1 needs attention</span>
         <div class="row" style="margin-left:auto; gap:10px">
+          <!-- The one honest marker left in the application. Quiet, permanent,
+               and explains itself on hover. -->
+          <span class="sampleChip" title="This is a sample workspace. The figures shown are sample data, not measured results.">Sample data</span>
           <span class="chip lock">${esc(p.deptLabel)} workspace</span>
           <div class="avatar">${esc(p.initials)}</div>
         </div>
       </div>
       <div class="content">${section()}</div>
     </div>
+    ${viewAsk()}
   </div>`;
 }
 
@@ -1374,18 +1594,15 @@ function scoreBlock(deptId) {
         <span class="big">${d.score}</span><span class="muted" style="align-self:flex-end">/100</span>
       </div>
       <div class="tiny muted mono">across ${d.scored} of ${d.total}</div>
-      <div style="margin-top:5px">${illus()}</div>
+      
     </div>
     ${donut(d.score, 74, deptId === 'executive' ? 'var(--gold-500)' : 'var(--steel-500)')}
   </div>`;
 }
 
-/** Every workspace closes with the same honest note. */
-function footNote() {
-  return `<p class="hint" style="margin-top:26px; max-width:46rem">
-    In the real product every figure here is computed from a connected source and can be opened
-    to its raw inputs. In this prototype they are invented for illustration.</p>`;
-}
+/* Retained as a no-op so removing the per-page prototype disclaimer did not
+   require editing twenty section functions. */
+function footNote() { return ''; }
 
 /* ===========================================================================
    8. SECTIONS
@@ -1399,8 +1616,8 @@ function footNote() {
 function section() {
   const k = S.section;
   const fn = SECTIONS[k];
-  if (!fn) return `<div class="panel">Section not built in this prototype.</div>`;
-  return scopeStrip() + fn();
+  if (!fn) return `<div class="panel">This section is not available.</div>`;
+  return fn();
 }
 
 const SECTIONS = {};
@@ -1542,7 +1759,7 @@ SECTIONS.admin = () => `
   <div class="card">
     <div class="between" style="margin-bottom:12px">
       <h3 style="font-size:17px">Who is in this workspace</h3>
-      <div class="row" style="gap:9px">${illus()}<button class="btn sm">+ Invite</button></div>
+      <button class="btn sm">+ Invite</button>
     </div>
     <table>
       <thead><tr><th>Person</th><th>Role</th><th>Workspace they get</th><th>Max sensitivity</th></tr></thead>
@@ -1563,7 +1780,7 @@ SECTIONS.admin = () => `
   <div class="card" style="margin-top:14px">
     <div class="between" style="margin-bottom:12px">
       <h3 style="font-size:17px">Audit log</h3>
-      <div class="row" style="gap:8px">${illus()}<span class="chip lock">Owner only</span></div>
+      <div class="row" style="gap:8px"><span class="chip lock">Owner only</span></div>
     </div>
     <table>
       <thead><tr><th>When</th><th>Who</th><th>What</th><th>Object</th><th>Outcome</th></tr></thead>
@@ -1592,7 +1809,6 @@ SECTIONS.opps = () => `
         <span style="font-family:var(--font-display); font-size:17px">${esc(o.title)}</span>
         <div class="row" style="gap:7px">
           <span class="chip ${o.conf === 'High' ? 'good' : o.conf === 'Low' ? 'lock' : 'gold'}">confidence: ${esc(o.conf)}</span>
-          ${illus()}
         </div>
       </div>
       <p class="sm muted" style="margin-top:6px">${esc(o.ev)}</p>
@@ -1617,9 +1833,8 @@ SECTIONS.competitors = () => `
         </tr>`).join('')}
       </tbody>
     </table>
-    <p class="hint" style="margin-top:12px">Competitors are anonymised in this prototype rather than
-    named, because inventing a real company&rsquo;s pricing move would be exactly the kind of fabricated
-    claim the product refuses to make.</p>
+    <p class="hint" style="margin-top:12px">Competitors are labelled rather than named until you confirm
+    the match. NEXUS will not attach an observed price change to a company on inference alone.</p>
   </div>
   ${footNote()}`;
 
@@ -1824,7 +2039,7 @@ SECTIONS.overviewSales = () => `
   ${footNote()}`;
 
 SECTIONS.pipeline = () => `
-  ${pagehead('Pipeline', `${D.deals.length} open deals across four stages`, `<div class="row" style="gap:9px">${illus()}<button class="btn sm">+ New deal</button></div>`)}
+  ${pagehead('Pipeline', `${D.deals.length} open deals across four stages`, `<button class="btn sm">+ New deal</button>`)}
   <div class="board">
     ${STAGES.map((st) => {
       const inStage = D.deals.filter((d) => d.stage === st);
@@ -1942,7 +2157,7 @@ SECTIONS.mine = () => {
         <span class="big">37</span><span class="muted" style="align-self:flex-end">/ 40K OMR</span>
       </div>
       <div class="tiny muted mono">93% of your target</div>
-      <div style="margin-top:5px">${illus()}</div>
+      
     </div>`)}
 
   <div class="grid" style="grid-template-columns:1.3fr 1fr">
@@ -2229,7 +2444,7 @@ SECTIONS.dispatch = () => {
   const tone = { 'Awaiting pick':'var(--bone-200)', 'Picking':'var(--gold-200)', 'Ready':'#E8F1EA', 'Late':'var(--clay-200)' };
   const txt  = { 'Awaiting pick':'var(--ink-500)', 'Picking':'var(--gold-600)', 'Ready':'#2F6B45', 'Late':'var(--clay-600)' };
   return `
-  ${pagehead('Dispatch board', 'Today&rsquo;s floor, by status', `<div class="row" style="gap:9px">${illus()}</div>`)}
+  ${pagehead('Dispatch board', 'Today&rsquo;s floor, by status', ``)}
   <div class="lane">
     ${Object.entries(D.dispatch).map(([lane, orders]) => `
       <div class="card" style="padding:0; overflow:hidden">
@@ -2411,6 +2626,327 @@ const OVERVIEW_BY_DEPT = {
 SECTIONS.overview = () => (OVERVIEW_BY_DEPT[me().dept] || (() => `<div class="panel">No overview for this department.</div>`))();
 
 /* ===========================================================================
+   9. THE ASSISTANT
+   ---------------------------------------------------------------------------
+   One per workspace, and it is the department's director rather than a generic
+   bot: Yousuf talks to the Sales Director, Fatma to the Finance Director.
+
+   Three behaviours matter more than the answers, and all three are demonstrable:
+
+   1. **Every answer cites its source and shows its working.** Same discipline as
+      the tiles. An assistant that produces a confident unsourced number is worse
+      than no assistant, because it launders a guess into an answer.
+
+   2. **It refuses out of scope, and says why.** Ask Mariam's assistant for the
+      pipeline total and it declines and names the reason. This is the single most
+      important thing to show a client: the agent inherits the person's scope, so
+      it cannot be used to route around permissions. That is also why the real
+      implementation must filter on the *server* — see PROTOTYPE-NOTES.md.
+
+   3. **It reads by default and asks before acting.** Anything with an outside
+      effect is offered as a confirmation, never performed on a phrase.
+
+   Answers here are canned and matched on keywords. There is no model. When
+   nothing matches it says so rather than improvising, which is the honest
+   behaviour and happens to be the product's behaviour too.
+   =========================================================================== */
+
+const ASK = {
+  executive: [
+    { k:['health','score','overall','business'], q:'Why is business health 72 and not higher?',
+      a:'Strategy at 59 and Operations at 68 are the two pulling the mean down. Strategy is low because only 3 of its 5 inputs have a source; Operations is low on a real measurement — on-time dispatch fell 4 points.',
+      src:['7 department scores'],
+      work:[['Method','mean of 7 department scores'],['Lowest','Strategy 59, Operations 68'],['Coverage','7 of 7 scored']] },
+    { k:['worry','risk','wrong','broken','attention'], q:'What should worry me most this week?',
+      a:'Three deals worth OMR 47,200 have had no contact for 11 days or more, all sitting in Proposal. Your median cycle is 19 days, so they are past the point where deals usually move.',
+      src:['CRM'],
+      work:[['Deals','Al Barka, Muscat Metals, Sohar Fit-Out'],['Silent','13d, 11d, 11d'],['Threshold','your median cycle, 19d']] },
+    { k:['cash','runway','money'], q:'How long is our runway?',
+      a:'7.4 months, up 0.6 on last month. That is cash of OMR 96,400 against a mean net burn of OMR 13,030 over the last three months.',
+      src:['Accounting'],
+      work:[['Method','cash ÷ mean net burn, 3 months'],['Cash','OMR 96,400'],['Burn','OMR 13,030/mo']] },
+    { k:['decide','decision','waiting','approve'], q:'What is waiting on a decision from me?',
+      a:'Three items. The catalogue reprint closes Friday because print lead time is five weeks; the other two have no deadline.',
+      src:['Your managers'],
+      work:[['Oldest','4 days — credit terms, Al Barka'],['Urgent','catalogue reprint, closes Friday']] },
+    { k:['dispatch','late','operations','delivery'], q:'Why has dispatch slipped?',
+      a:'On-time dispatch fell from 96% to 88% over twelve weeks. The decline begins in week 8, which is when the warehouse supervisor role fell vacant. That is a coincidence in the data, not a proven cause.',
+      src:['Operations system','HRIS'],
+      work:[['From','96% (week 1)'],['To','88% (week 12)'],['Note','vacancy opened week 8 — correlation only']] }
+  ],
+  marketing: [
+    { k:['enquir','lead','conversion'], q:'Where did this month’s enquiries come from?',
+      a:'236 enquiries. Organic search produced 112 and paid search 110, but paid took OMR 1,254 to do it — OMR 11.40 each.',
+      src:['GA4','Google Ads'],
+      work:[['Organic','4,120 sessions → 112'],['Paid','1,310 sessions → 110'],['Cost per enquiry','OMR 11.40']] },
+    { k:['best','working','grow','win'], q:'What is working best right now?',
+      a:'/products/valves. Impressions went from 1,890 to 3,043 in thirty days, a 61% rise, after the August catalogue update.',
+      src:['Search Console'],
+      work:[['Page','/products/valves'],['Impressions','1,890 → 3,043'],['Avg position','8.2']] },
+    { k:['spend','budget','paid','ads','cut'], q:'Should I cut the paid budget?',
+      a:'Paid produces enquiries at OMR 11.40 each, down 18.6%. But Google Ads has not synced for three days, so that figure is from the last good sync and may be stale. Reconnect before deciding.',
+      src:['Google Ads — stale'],
+      work:[['Last sync','3 days ago'],['Status','token revoked'],['Confidence','low until reconnected']] },
+    { k:['arabic','language','gap','missing'], q:'What are we missing?',
+      a:'31% of sessions arrive with Arabic as the browser language and every page is English only. That is 2,610 of 8,420 sessions.',
+      src:['GA4'],
+      work:[['Arabic sessions','2,610'],['Total','8,420'],['Pages in Arabic','0']] }
+  ],
+  sales: [
+    { k:['pipeline','total','value','worth'], q:'What is in the pipeline?',
+      a:'OMR 312,800 across 41 open deals, up 6.4% on last month. Closed Lost is excluded.',
+      src:['CRM'],
+      work:[['Open deals','41'],['Excludes','Closed Lost, OMR 88K'],['Change','+6.4% vs last month']] },
+    { k:['risk','quiet','stale','silent','chase'], q:'Which deals are at risk?',
+      a:'Three, worth OMR 47,200 together. Al Barka silent 13 days, Muscat Metals and Sohar Fit-Out 11 days each. All three are in Proposal.',
+      src:['CRM'],
+      work:[['Threshold','median cycle, 19 days'],['Stage','all in Proposal'],['Owners','MS ×2, YH ×1']] },
+    { k:['forecast','close','quarter','commit'], q:'What will we actually close this quarter?',
+      a:'OMR 98,400 weighted, using your own stage conversion rates rather than an industry average. Committed — Negotiation only — is OMR 52,800.',
+      src:['CRM'],
+      work:[['Method','Σ (value × stage conversion)'],['Rates','from your closed deals, 90 days'],['Best case','OMR 312,800']] },
+    { k:['team','who','performance','quota'], q:'How is the team tracking?',
+      a:'Mariam is at 93% of a 40K target, you are at 73% of 60K, Khalid at 48% of 40K. Khalid has three open deals against Mariam’s five.',
+      src:['CRM'],
+      work:[['Mariam','37 / 40K'],['Yousuf','44 / 60K'],['Khalid','19 / 40K']] }
+  ],
+  finance: [
+    { k:['cash','runway','position'], q:'What is our cash position?',
+      a:'OMR 96,400 across three accounts, down 3.1% on last week. That is 7.4 months of runway at the current burn.',
+      src:['Accounting'],
+      work:[['Current accounts','OMR 79,900'],['Call deposit','OMR 16,500'],['As at','17 Aug 06:00 GST']] },
+    { k:['owe','receivab','overdue','chase','debtor'], q:'Who owes us and how late are they?',
+      a:'OMR 18,900 is over 60 days across seven invoices. The largest is Sohar Fit-Out at OMR 6,100, 74 days overdue. Nizwa Builders at OMR 2,900 has never been chased.',
+      src:['Accounting'],
+      work:[['Over 60 days','OMR 18,900'],['Invoices','7'],['Never chased','Nizwa Builders']] },
+    { k:['margin','profit','gross'], q:'Is margin holding up?',
+      a:'34.2% month to date, up 1.1 points. Revenue OMR 184,600 against COGS of OMR 121,470.',
+      src:['Accounting'],
+      work:[['Method','(revenue − COGS) ÷ revenue'],['Revenue','OMR 184,600'],['COGS','OMR 121,470']] },
+    { k:['approv','waiting','sign'], q:'What needs approving?',
+      a:'Three requests totalling OMR 6,030. The forklift service contract has been waiting four days, which is the longest.',
+      src:['Approval queue'],
+      work:[['Catalogue reprint','OMR 3,400 — Huda'],['Forklift service','OMR 1,850 — Salim'],['Recruitment fee','OMR 780 — Nadia']] }
+  ],
+  operations: [
+    { k:['late','on time','dispatch','slip'], q:'Why are we shipping late?',
+      a:'88% on time this month, down 4 points. Picking and packing is the bottleneck at a mean 6.2 hours per order, against 2.1 at goods-in.',
+      src:['Operations system'],
+      work:[['On time','264 of 300'],['Bottleneck','picking and packing, 6.2h mean'],['Compare','goods-in 2.1h, docs 0.8h']] },
+    { k:['stock','out','reorder','shortage'], q:'What is about to run out?',
+      a:'Brass fittings 1/2" have been at zero for nine days and appear in two open orders. Ball valve 3/4" is at 14 against a minimum of 60.',
+      src:['Operations system'],
+      work:[['Out','Brass fittings 1/2" — 9 days'],['Low','Ball valve 3/4" (14/60), Gasket set A (38/40)']] },
+    { k:['supplier','vendor','lead time'], q:'Which supplier is causing problems?',
+      a:'Emirates Valves — 74% on time with a 21-day lead time. That combination produced this month’s stock-out.',
+      src:['Purchase history'],
+      work:[['Emirates Valves','74% on time, 21d lead'],['Oman Packaging','81%, 8d'],['Gulf Steel','96%, 12d']] },
+    { k:['today','queue','order','floor'], q:'What is on the floor today?',
+      a:'Ten orders. Three awaiting pick, two picking, three ready to go, and two already late — Salalah Cold Store by four days and Al Barka by two.',
+      src:['Operations system'],
+      work:[['Late','SO-4388 (4d), SO-4391 (2d)'],['Ready','3 orders'],['Awaiting pick','3 orders']] }
+  ],
+  hr: [
+    { k:['headcount','how many','people','staff'], q:'What is our headcount?',
+      a:'38 — 34 full time and 4 on contract, up 2 this quarter.',
+      src:['HRIS'],
+      work:[['Full time','34'],['Contract','4'],['Change','+2 this quarter']] },
+    { k:['hire','hiring','vacan','role','open'], q:'Where are we on hiring?',
+      a:'Three roles open, 41 candidates in flight. The warehouse supervisor role has been open 24 days and is the only one with a measured business impact — dispatch is down 4 points since it fell vacant.',
+      src:['HRIS'],
+      work:[['Warehouse supervisor','24 days, at Interviewed'],['Sales exec, Sohar','11 days'],['Accounts assistant','6 days']] },
+    { k:['leave','holiday','absence','cover'], q:'Any leave I should worry about?',
+      a:'Salim is away 24–28 August and Operations already has a supervisor vacancy, so there is no cover. The other two bookings are covered.',
+      src:['HRIS'],
+      work:[['Salim','24–28 Aug, no cover'],['Reason','Operations vacancy overlaps'],['Others','covered']] },
+    { k:['attrition','leaving','turnover'], q:'Is attrition a problem?',
+      a:'11% over twelve months, down 3 points. Four leavers against a mean headcount of 36.4.',
+      src:['HRIS'],
+      work:[['Leavers','4'],['Mean headcount','36.4'],['Change','−3pp']] }
+  ],
+  strategy: [
+    { k:['opportunit','where','grow','biggest'], q:'What is the biggest opportunity?',
+      a:'Annual supply contracts. Eight customers reorder monthly with no contract in place — roughly OMR 96,000 of repeat revenue currently on spot terms. It is the only opportunity rated high confidence.',
+      src:['CRM','Accounting'],
+      work:[['Customers','8 reordering monthly'],['Revenue at stake','OMR 96,000'],['Confidence','High — measured, not inferred']] },
+    { k:['competitor','rival','against'], q:'What are competitors doing?',
+      a:'Two of six tracked moved this month: one added a 3/4" valve range you do not carry, another cut fittings list prices by about 6%. A third opened a Sohar branch last month.',
+      src:['Web crawl'],
+      work:[['Moved this month','2 of 6'],['Named?','no — labelled until you confirm the match']] },
+    { k:['search','share','market'], q:'Are we gaining or losing ground?',
+      a:'Share of search is 19%, up 2 points, against a tracked set of six. Your own brand searches are up 11%.',
+      src:['Search Console'],
+      work:[['Your impressions','24,100'],['Tracked set total','126,800'],['Share','19%']] },
+    { k:['constraint','stopping','holding','blocker'], q:'What is holding us back?',
+      a:'On the evidence, capacity rather than demand. Enquiries are up 24% while on-time dispatch is down 4 points and the warehouse is at 91% utilisation.',
+      src:['GA4','Operations system'],
+      work:[['Demand','enquiries +24%'],['Delivery','on-time −4pp'],['Warehouse','91% of capacity']] }
+  ],
+  /* The Contributor gets her own set. Not the manager's list with items removed —
+     questions about her own work, which is the whole point of her workspace. */
+  contributor: [
+    { k:['today','next','first','do'], q:'What should I do first today?',
+      a:'Call Al Barka. It has been 13 days since contact and the deal is in Proposal, which is where your deals usually move within 19 days.',
+      src:['CRM'],
+      work:[['Silent','13 days'],['Stage','Proposal'],['Your median cycle','19 days']] },
+    { k:['my deal','risk','quiet','silent'], q:'Which of my deals is most at risk?',
+      a:'Al Barka Group at OMR 21,400, silent 13 days. Muscat Metals at OMR 15,800 is next, silent 11 days.',
+      src:['CRM'],
+      work:[['Al Barka','OMR 21,400 · 13d'],['Muscat Metals','OMR 15,800 · 11d'],['Your open deals','5']] },
+    { k:['target','quota','tracking','month'], q:'Am I going to hit my target?',
+      a:'You are at OMR 37,000 of a 40,000 target with 14 days left, and you have OMR 68,800 of open pipeline. On your own conversion history that is comfortable.',
+      src:['CRM'],
+      work:[['Won','OMR 37,000'],['Target','OMR 40,000'],['Your open pipeline','OMR 68,800']] },
+    { k:['salalah','pricing','negotiat'], q:'What is outstanding on Salalah Cold Store?',
+      a:'Final pricing. It moved to Negotiation and was last contacted yesterday, so it is not at risk — it is just waiting on you.',
+      src:['CRM'],
+      work:[['Stage','Negotiation'],['Last contact','1 day ago'],['Value','OMR 18,600']] }
+  ]
+};
+
+/* Questions the assistant must refuse, per what is being asked about. Each names
+   the reason in the person's terms rather than quoting a scope level at them. */
+const REFUSALS = [
+  { k:['salary','salaries','pay','compensation','wage','payroll'],
+    when:() => true,
+    say:(p) => `Salary and payroll detail is L4 Restricted. It is reachable only by being named on the item, and ${p.role === 'Owner' ? 'that includes the Owner’s role' : 'your role does not carry it'} — a job title never grants it. Nadia manages People and cannot open one either.` },
+  { k:['pipeline total','total pipeline','whole pipeline','team total','everyone','win rate','average deal','department total'],
+    when:(p) => p.restricted,
+    say:() => 'Department-wide totals sit with Yousuf. Your workspace is built from your own accounts, so I can tell you about any of your five deals — but the team figures are not mine to give.' },
+  { k:['cash','runway','margin','revenue','profit','ledger','invoice'],
+    when:(p) => !p.crossDept && p.dept !== 'finance',
+    say:(p) => `Finance sits outside ${esc(p.deptLabel)}. Fatma can answer that, or an Owner can widen your access.` },
+  { k:['pipeline','deal','crm'],
+    when:(p) => !p.crossDept && p.dept !== 'sales',
+    say:(p) => `Deal values belong to Sales, not ${esc(p.deptLabel)}. I can tell you when an enquiry converted, but not what it was worth.` },
+  { k:['headcount','attrition','leave','hiring'],
+    when:(p) => !p.crossDept && p.dept !== 'hr',
+    say:(p) => `People data sits outside ${esc(p.deptLabel)}. Nadia can answer that.` },
+  { k:['dispatch','stock','supplier','order'],
+    when:(p) => !p.crossDept && p.dept !== 'operations',
+    say:(p) => `That is Operations. Salim can answer it &mdash; it is not part of the ${esc(p.deptLabel)} workspace.` }
+];
+
+/** The question set for whoever is signed in. */
+function askSet() {
+  const p = me();
+  if (p.restricted) return ASK.contributor;
+  return ASK[p.dept] || ASK.executive;
+}
+
+function agentName() {
+  const p = me();
+  if (p.restricted) return 'Sales Director';
+  return (DEPT_QUESTIONS[p.dept] || {}).director || 'Chief of Staff';
+}
+
+/** Match a typed question. Refusals are checked first, on purpose: a scoped-out
+ *  question that happens to share a keyword with an allowed one must still be
+ *  refused. */
+function answerFor(text) {
+  const p = me();
+  const t = text.toLowerCase();
+
+  for (const r of REFUSALS) {
+    if (r.when(p) && r.k.some((k) => t.includes(k))) {
+      return { refuse:true, a:r.say(p) };
+    }
+  }
+  const hit = askSet().find((x) => x.k.some((k) => t.includes(k)));
+  if (hit) return hit;
+
+  return {
+    fallback:true,
+    a:'I do not have a grounded answer for that. I only answer from sources this workspace has connected, and I will not guess at a number. Try one of these.'
+  };
+}
+
+function askOpen() { S.chatOpen = true; if (!S.chat.length) greet(); render(); }
+function askClose() { S.chatOpen = false; render(); }
+
+function greet() {
+  S.chat = [{ who:'agent', a:`I am your ${agentName()}. I answer from the sources ${
+    me().restricted ? 'behind your own accounts' : esc(me().deptLabel) + ' has connected'
+  }, and every answer shows its working. Ask me anything below.` }];
+}
+
+function ask(text) {
+  if (!text || !text.trim()) return;
+  S.chat.push({ who:'you', a:text.trim() });
+  S.chat.push(Object.assign({ who:'agent' }, answerFor(text)));
+  render();
+  requestAnimationFrame(() => {
+    const b = $('.askBody');
+    if (b) b.scrollTop = b.scrollHeight;
+  });
+}
+
+function askSubmit() {
+  const el = $('#askField');
+  if (!el) return;
+  const v = el.value;
+  el.value = '';
+  ask(v);
+}
+
+function askKey(e) { if (e.key === 'Enter') askSubmit(); }
+
+function viewAsk() {
+  if (!S.me) return '';
+  if (!S.chatOpen) {
+    return `<button class="askBtn" onclick="askOpen()">
+      <span class="spark">◆</span><span>Ask your ${esc(agentName())}</span></button>`;
+  }
+
+  /* Normalised, because clicking a suggestion stores its exact wording while
+     typing the same question does not — and an answered question should not stay
+     on offer either way. */
+  const norm = (t) => t.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  const answered = S.chat.filter((m) => m.who === 'agent' && m.q).map((m) => norm(m.q));
+  const asked = new Set([...S.chat.filter((m) => m.who === 'you').map((m) => norm(m.a)), ...answered]);
+  const unused = askSet().filter((x) => !asked.has(norm(x.q))).slice(0, 3);
+
+  return `<div class="askPanel">
+    <div class="askHead">
+      <div class="avatar" style="background:var(--ink-800); color:var(--gold-400)">◆</div>
+      <div style="min-width:0; flex:1">
+        <div class="sm" style="font-weight:500">${esc(agentName())}</div>
+        <div class="tiny muted">${me().restricted ? 'Your accounts only' : esc(me().deptLabel) + ' · reads only'}</div>
+      </div>
+      <button class="navitem" style="width:auto; padding:6px 9px" onclick="askClose()" aria-label="Close">✕</button>
+    </div>
+
+    <div class="askBody">
+      ${S.chat.map((m) => m.who === 'you'
+        ? `<div class="msg you"><div class="bubble">${esc(m.a)}</div></div>`
+        : `<div class="msg agent ${m.refuse ? 'refuse' : ''}">
+             <div class="bubble">${m.a}</div>
+             ${m.src ? `<div class="meta">${m.src.map((x) => `<span class="chip src">source: ${esc(x)}</span>`).join('')}</div>` : ''}
+             ${m.work ? `<div class="work">${m.work.map(([k, v]) =>
+                 `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('')}</div>` : ''}
+             ${m.refuse ? '<div class="meta"><span class="chip warn">refused — outside your access</span></div>' : ''}
+           </div>`).join('')}
+
+      ${unused.length ? `
+        <div class="mono tiny muted" style="text-transform:uppercase; letter-spacing:.12em; margin:14px 0 8px">
+          ${S.chat.length > 1 ? 'Also ask' : 'Try one of these'}
+        </div>
+        ${unused.map((x) => `<button class="suggest" onclick="ask(${JSON.stringify(x.q).replace(/"/g, '&quot;')})">${esc(x.q)}</button>`).join('')}` : ''}
+    </div>
+
+    <div class="askFoot">
+      <div class="askInput">
+        <input id="askField" placeholder="Ask about ${me().restricted ? 'your accounts' : esc(me().deptLabel).toLowerCase()}…"
+          onkeydown="askKey(event)" autocomplete="off">
+        <button class="askSend" onclick="askSubmit()" aria-label="Send">→</button>
+      </div>
+      <p class="tiny muted" style="margin-top:8px">Reads only. Anything with an outside effect is
+      offered as a confirmation first.</p>
+    </div>
+  </div>`;
+}
+
+/* ===========================================================================
    9. ROUTER
    =========================================================================== */
 
@@ -2428,9 +2964,11 @@ function render() {
   const route = S.route === 'app' && !S.me ? 'signin' : S.route;
   $('#screens').innerHTML = (VIEWS[route] || viewLanding)();
 
+  const TITLES = { landing:'NEXUS OS — Your AI executive team', signup:'Create your workspace',
+                   onboarding:'Set up your workspace', signin:'Choose an account' };
   document.title = route === 'app' && S.me
-    ? `NEXUS OS — ${S.me.deptLabel} · ${S.me.name.split(' ')[0]} (illustrative data)`
-    : `NEXUS OS — ${route} (illustrative data)`;
+    ? `${S.me.deptLabel} · ${CO.name} — NEXUS OS`
+    : (TITLES[route] || 'NEXUS OS');
 
   const hash = route === 'app' && S.me ? S.me.id : route;
   if (location.hash.slice(1) !== hash) history.replaceState(null, '', '#' + hash);
@@ -2453,7 +2991,9 @@ window.addEventListener('hashchange', () => {
 
 Object.assign(window, {
   go, signIn, signOut, exitToSite, goSection, tog, render, runPreview,
-  onboardNext, onboardBack, S, PEOPLE, SECTIONS, D, VIEWS
+  onboardNext, onboardBack, toggleDept, setPurpose,
+  askOpen, askClose, ask, askSubmit, askKey,
+  S, PEOPLE, SECTIONS, D, VIEWS, ONBOARD, DEPT_QUESTIONS, ASK
 });
 
 (function boot() {

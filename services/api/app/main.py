@@ -14,9 +14,11 @@ from app.health import router as health_router
 from app.jobs.scheduler import build_scheduler
 from app.logging import configure_logging, get_logger, request_id_var
 from app.routes.auth import router as auth_router
+from app.routes.dashboards import router as dashboards_router
 from app.routes.documents import router as documents_router
 from app.routes.onboarding import router as onboarding_router
 from app.routes.preview import router as preview_router
+from app.routes.setup import router as setup_router
 
 log = get_logger(__name__)
 
@@ -80,6 +82,8 @@ def create_app() -> FastAPI:
     app.include_router(preview_router)
     app.include_router(onboarding_router)
     app.include_router(documents_router)
+    app.include_router(setup_router)
+    app.include_router(dashboards_router)
     return app
 
 

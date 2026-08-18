@@ -117,19 +117,37 @@ export function AccountPanel() {
         <h2 className="font-display text-lg font-medium text-ink-900">Your workspaces</h2>
 
         {hasWorkspace ? (
-          <ul className="mt-3 flex flex-col gap-2">
-            {session.workspaces.map((workspace) => (
-              <li
-                key={workspace.workspace_id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper"
-              >
-                <span className="font-medium text-ink-900">{workspace.name}</span>
-                <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
-                  {workspace.role}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="mt-3 flex flex-col gap-2">
+              {session.workspaces.map((workspace) => (
+                <li
+                  key={workspace.workspace_id}
+                  className="flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper"
+                >
+                  <span className="font-medium text-ink-900">{workspace.name}</span>
+                  <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
+                    {workspace.role}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-4 rounded-2xl border border-ink-100 bg-white px-5 py-5 shadow-paper">
+              <p className="font-display text-lg text-ink-900">Set up your workspace</p>
+              <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-700">
+                Tell NEXUS about your business, and invite the people who work in it.
+                Each answer is stored at its own scope — the deal size as a Sales fact,
+                the marketing budget as a Finance one — and the wizard shows you which
+                before you type it.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button href="/dashboard">Go to your dashboard</Button>
+                <Button href="/onboarding" variant="secondary">
+                  Workspace setup
+                </Button>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="mt-3 rounded-2xl border border-gold-300 bg-gold-100 px-5 py-5">
             <p className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">

@@ -8,6 +8,40 @@ fixed silently and one deferred silently look identical six weeks later.
 
 ## Fixed in this pass
 
+### No workspace could be created, and no member could see one
+
+Two defects on the same path, found while building the onboarding wizard on top
+of it. Either alone would have made every workspace-scoped route in the product
+unreachable. Together they meant M3's success path had never run against a real
+database.
+
+**`create_workspace_for_claim` could not insert a workspace.** `workspace`
+carries `FORCE ROW LEVEL SECURITY` like every other workspace-scoped table, and
+its `WITH CHECK` compares the new row's `workspace_id` against
+`nexus.workspace_id`. The function let the database generate both values - which
+made `workspace_id` a *different* random uuid from `id` - and set the GUC
+afterwards. Postgres refused every insert with `new row violates row-level
+security policy for table "workspace"`. The id is now minted in Python, the GUC
+set before the insert, and `id` and `workspace_id` written equal, which is what
+migration 0002's own comment means by *"`workspace_id` mirrors `id`"*.
+
+**`memberships_for_user` returned nothing for genuine members.** It joins
+`membership` to `workspace` to read the name and tenant, and `workspace` was
+reachable only with the workspace GUC set - which login cannot do, because which
+workspace is precisely what that query is trying to find out. So login reported
+zero workspaces, `current_scope` answered `403 No workspace membership` to
+everyone, and documents, the review queue and the new setup routes were all
+unreachable. Migration **0008** adds a narrow SELECT policy on `workspace` for
+users holding a live membership - the same shape and the same argument as
+migration 0003, which solved this one table too early.
+
+Neither was caught because **every test that needs a workspace inserts one
+itself**, with `id` and `workspace_id` equal and the GUC already set - so the
+suites tested the shape the application was supposed to write rather than the
+shape it did. `tests/test_invitation_flow.py` now drives `memberships_for_user`
+from login's actual position: an identity, and no workspace context.
+
+
 ### The expiry sweep had never run, in any deployment
 
 `app/jobs/scheduler.py` passed `next_run_time=None` to `add_job`. That is not

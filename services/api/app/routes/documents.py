@@ -51,7 +51,7 @@ from app.documents.chunk import Chunk, chunk_document
 from app.documents.classify import Classification, ClassificationInput, classify_chunk
 from app.documents.parse import MAX_FILE_BYTES, ParseOutcome, parse_document
 from app.domain.access import Sensitivity
-from app.domain.scopes import Scope
+from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
 from app.retrieval.scoped import scoped_connection
@@ -325,7 +325,7 @@ async def _record(
                     "ordinal": chunk.ordinal,
                     "content": chunk.text,
                     "tokens": max(1, (chunk.char_end - chunk.char_start) // 4),
-                    "scope": _scope_code(classification.scope),
+                    "scope": scope_code(classification.scope),
                     "department": (
                         [classification.department.value] if classification.department else []
                     ),
@@ -349,11 +349,6 @@ async def _record(
                 ),
                 {"old": str(supersedes_id), "ws": str(scope.workspace_id)},
             )
-
-
-def _scope_code(scope: Scope) -> str:
-    """`Scope.L3_DEPARTMENT` to the `L3` the check constraint expects."""
-    return scope.name.split("_")[0]
 
 
 # ── The review queue (task 5.8) ───────────────────────────────
@@ -484,7 +479,7 @@ async def decide_review(
             ),
             {
                 "state": "approved" if decision.approve else "rejected",
-                "scope": _scope_code(target) if target else None,
+                "scope": scope_code(target) if target else None,
                 "reviewer": str(scope.user_id),
                 "id": str(chunk_id),
             },

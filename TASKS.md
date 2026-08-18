@@ -137,8 +137,18 @@ Decisions applied: **ADR 0001** (native, no Docker) · **ADR 0002** (git local o
 - [x] 4.8 Role → scope enforced at the API layer via `deps_scope`; LOCKED is a 200 rendered state,
       DENY is a 404, and neither leaks a count
 - [x] 4.9 `MILESTONE-4.md`
-- [ ] 4.10 Onboarding wizard UI and the answer/invitation routes — **not built**; the tables, rules and
-      enforcement layer they will use are
+- [x] 4.10 Onboarding wizard UI and the answer/invitation routes — `app/routes/setup.py`, migrations
+      0008 and 0009, and `apps/web/app/onboarding`. Uncovered and fixed two defects that made every
+      workspace-scoped route unreachable: workspace creation was refused by RLS, and
+      `memberships_for_user` returned nothing for genuine members (`AUDIT-FINDINGS.md`).
+      **Who may run it is D16** — Owner and Executive by default-deny, in one widenable predicate
+- [x] 4.10a **Department landing and seven placeholder dashboards** *(pulled forward from M9, at your
+      request)*. `app/domain/dashboards.py` holds all 67 offerings from doc 05 as data, each with the
+      sources it needs; `app/routes/dashboards.py` enforces §2.3 (404 for another department) and §2.4
+      (Chief of Staff is Owner and Executive only); `apps/web/app/dashboard` renders them. **`DELIVERED`
+      is empty, so every tile reads `Not built yet`** rather than `Locked` — the two are different
+      promises and only one is true today. Landing is resolved from `membership`, never from the
+      onboarding answer
 - [ ] 4.11 **Member onboarding, if D15 says yes.** The catalogue today is a *company* setup flow run once
       by the founder; `Question.department` tags **which department owns the answer as an L3 fact**, not
       who is asked. A per-department question set for invited members is a second flow that no source

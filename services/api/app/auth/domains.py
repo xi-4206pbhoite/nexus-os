@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -258,16 +258,37 @@ async def create_workspace_for_claim(
     )
     tenant_id = UUID(str(tenant_row.scalar_one()))
 
+    # The id is minted here rather than by the database, because the GUC has to
+    # be set *before* the INSERT and the INSERT is what would otherwise reveal
+    # the id. `workspace` carries FORCE ROW LEVEL SECURITY like every other
+    # workspace-scoped table, and its WITH CHECK compares the new row's
+    # `workspace_id` against `nexus.workspace_id`; with the GUC unset that
+    # comparison is NULL and Postgres refuses the row.
+    #
+    # This was a real failure, not a hypothetical one: the previous version let
+    # the database generate both values, which made `workspace_id` a *different*
+    # random uuid from `id` and set the GUC afterwards. Every call raised
+    # `new row violates row-level security policy for table "workspace"`, so no
+    # workspace could be created through the API at all. It survived because M3's
+    # tests insert workspaces directly — with `id` and `workspace_id` equal and
+    # the GUC already set, which is what the migration's comment intends by
+    # "`workspace_id` mirrors `id`" and what this now does.
+    workspace_id = uuid4()
+    await db.execute(
+        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
+        {"ws": str(workspace_id)},
+    )
+
     try:
-        ws_row = await db.execute(
+        await db.execute(
             text(
                 "INSERT INTO workspace"
-                " (workspace_id, tenant_id, name, domain, domain_verified_at,"
+                " (id, workspace_id, tenant_id, name, domain, domain_verified_at,"
                 "  verification_method, owner_claim_review, trial_ends_at)"
-                " VALUES (gen_random_uuid(), :t, :n, :d, :v, :m, :review, :trial)"
-                " RETURNING id"
+                " VALUES (:id, :id, :t, :n, :d, :v, :m, :review, :trial)"
             ),
             {
+                "id": str(workspace_id),
                 "t": str(tenant_id),
                 "n": workspace_name,
                 "d": claim.domain,
@@ -288,13 +309,7 @@ async def create_workspace_for_claim(
             "This domain was claimed by another workspace moments ago."
         ) from exc
 
-    workspace_id = UUID(str(ws_row.scalar_one()))
-
     # The creator is Owner and cannot be scoped to one department (doc 06 §2.2).
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(workspace_id)},
-    )
     await db.execute(
         text(
             "INSERT INTO membership (workspace_id, user_id, role, departments)"

@@ -1,0 +1,131 @@
+"""Who may invite whom, and to what.
+
+Doc 06 §2.2: *"Every subsequent user's role is set by the inviter, never
+self-declared at acceptance. Self-declared role is privilege escalation via
+dropdown."* Migration 0006 puts the role on the invitation for that reason, so
+acceptance has nothing to supply. This module is the other half of the same
+rule: an inviter cannot hand out authority they do not hold.
+
+Three checks, and they are separate because they fail for different reasons:
+
+1. **May this caller invite at all?** Workspace administration is Owner and
+   Executive at MVP. No source document names who may invite — see D16 in
+   `DECISIONS-REQUIRED.md` — so this is the default-deny reading (I4) rather
+   than a settled one, and it is one predicate to widen when it is settled.
+2. **Does the invited role exceed the inviter's?** Redundant while (1) admits
+   only the two roles that already hold the maximum grant, and written anyway:
+   widening (1) later must not silently open an escalation path. The comparison
+   is over `ROLE_GRANTS`, so a new role gets the check for free.
+3. **May the inviter reach the departments they are assigning?** A Department
+   Manager who could invite (should D16 go that way) must not be able to seat
+   someone in Finance.
+
+Department assignment itself is derived, not chosen, wherever doc 06 §2.3
+derives it: Owner and Executive are `executive` by the table in `scopes.py`, and
+the roles that table leaves as `None` are the ones the inviter must fill in.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from app.domain.scopes import DEPARTMENT_BY_ROLE, Department, Role, RoleGrant, Scope, grant_for
+from app.domain.session import ScopedSession
+
+
+class InvitationError(Exception):
+    """The invitation as described may not be created."""
+
+
+def may_administer(role: Role) -> bool:
+    """Whether this role may configure the workspace and bring people into it.
+
+    Deliberately expressed against `RoleGrant` rather than as a role list: the
+    property that matters is "sees the whole company", and a role added to
+    `ROLE_GRANTS` with that property should inherit this without an edit here.
+    """
+    grant = grant_for(role)
+    return grant.all_departments and grant.executive_surface
+
+
+def outranks(inviter: RoleGrant, invited: RoleGrant) -> bool:
+    """Whether `inviter`'s authority covers `invited`'s on every axis.
+
+    Not a single ordering, because the grant is not one-dimensional. A
+    Department Manager and a Contributor share a scope ceiling and differ only
+    in `contributor_restricted`, so comparing ceilings alone would let a
+    Contributor invite a Manager.
+    """
+    inviter_ceiling = inviter.max_scope or 0
+    invited_ceiling = invited.max_scope or 0
+
+    return (
+        inviter_ceiling >= invited_ceiling
+        and (inviter.all_departments or not invited.all_departments)
+        and (inviter.executive_surface or not invited.executive_surface)
+        # A restricted caller may only invite an equally restricted one.
+        and (not inviter.contributor_restricted or invited.contributor_restricted)
+    )
+
+
+def departments_for(
+    role: Role, requested: Iterable[Department], *, inviter: ScopedSession
+) -> frozenset[Department]:
+    """The departments to store on the invitation.
+
+    Raises rather than silently correcting. An inviter who names Finance for a
+    role that gets `executive` anyway has misunderstood something, and quietly
+    storing a different answer than they gave is how a permissions surface stops
+    matching what the person who set it believes.
+    """
+    asked = frozenset(requested)
+    derived = DEPARTMENT_BY_ROLE[role]
+
+    if derived is not None:
+        # Doc 06 §2.3 — derived from role. Nothing to choose.
+        if asked and asked != {derived}:
+            raise InvitationError(
+                f"A {role.value} is always in {derived.value}; that is not chosen per person."
+            )
+        return frozenset({derived})
+
+    grant = grant_for(role)
+
+    if grant.max_scope is None or grant.max_scope < Scope.L3_DEPARTMENT:
+        # Viewer and External have no L3 at all, so a department would be a
+        # label with no effect — and a label with no effect is what someone
+        # later mistakes for a boundary.
+        if asked:
+            raise InvitationError(
+                f"A {role.value} has no department access, so no department can be assigned."
+            )
+        return frozenset()
+
+    if len(asked) != 1:
+        raise InvitationError(f"Choose exactly one department for a {role.value}.")
+
+    for department in asked:
+        if not inviter.may_reach_department(department):
+            # Same reasoning as `enforce_department`: naming a department the
+            # inviter cannot reach must not confirm that it has anything in it.
+            raise InvitationError("Not found")
+
+    return asked
+
+
+def check_invitation(
+    inviter: ScopedSession, *, role: Role, departments: Iterable[Department]
+) -> frozenset[Department]:
+    """Every precondition for creating an invitation, in one place.
+
+    Returns the departments to store. Raises `InvitationError` otherwise. The
+    route calls this and nothing else, so there is one function to audit rather
+    than one per check — the same reasoning as `create_workspace_for_claim`.
+    """
+    if not may_administer(inviter.role):
+        raise InvitationError("Inviting people is available to owners and executives.")
+
+    if not outranks(grant_for(inviter.role), grant_for(role)):
+        raise InvitationError(f"You cannot grant a role above your own: {role.value}.")
+
+    return departments_for(role, departments, inviter=inviter)

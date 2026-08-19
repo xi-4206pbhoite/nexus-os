@@ -9,7 +9,7 @@ Doc 07 §5.2 asks each milestone to describe what exists **and what does not**.
 
 ## Acceptance
 
-Doc 07 M0 says *"`docker compose up` gives a running web and API; CI is green."* [ADR 0001](doc/adr/0001-native-stack-no-docker.md) removed Compose, so the amended criterion is:
+Doc 07 M0 says *"`docker compose up` gives a running web and API; CI is green."* [ADR 0001](adr/0001-native-stack-no-docker.md) removed Compose, so the amended criterion is:
 
 > `scripts/setup.ps1` prepares the stack from a clean clone · API and web both start · `/health` returns ok and `/health/ready` reports every dependency honestly · `scripts/ci.ps1` is green.
 
@@ -95,7 +95,7 @@ Landing page still statically prerendered (157 kB first load); `/api/health` is 
 
 ### pgvector is not installed
 
-The stock EnterpriseDB build ships 233 extensions; pgvector is not among them. Per [ADR 0004](doc/adr/0004-pgvector-required-from-m5-not-m0.md) this is **fine until M5** and is reported at every readiness call rather than being silently absent.
+The stock EnterpriseDB build ships 233 extensions; pgvector is not among them. Per [ADR 0004](adr/0004-pgvector-required-from-m5-not-m0.md) this is **fine until M5** and is reported at every readiness call rather than being silently absent.
 
 **It must be resolved before M5 starts.** Three options, none yet chosen:
 

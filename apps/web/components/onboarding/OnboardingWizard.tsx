@@ -2,23 +2,34 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { ConnectStep } from '@/components/onboarding/ConnectStep'
 import { QuestionField } from '@/components/onboarding/QuestionField'
 import { TeamStep } from '@/components/onboarding/TeamStep'
 import { Button } from '@/components/ui/Button'
 import { AuthError } from '@/lib/auth-client'
-import { fetchCatalogue, saveAnswers, type Catalogue, type Question } from '@/lib/onboarding-client'
+import {
+  completeSetup,
+  fetchCatalogue,
+  saveAnswers,
+  type Catalogue,
+  type Completion,
+  type Question,
+} from '@/lib/onboarding-client'
 
 /**
  * The onboarding wizard.
  *
  * The order is doc 04 §5's, which is the whole argument of that document: value
  * first, then questions justified by what was shown, connections and documents
- * next, team last. Two of its stages are not this milestone's to build, and the
- * screen says so rather than staging a version of them —
+ * next, team last.
  *
- * - **the audit** (§5 stage 1) is M7, and the free Preview audit on the landing
- *   page is the same engine running on the outside-in half;
- * - **connections** (§5 stage 4) are M10.
+ * - **the audit** (§5 stage 1) is M7, and is still a named gap here. The free
+ *   Preview audit on the landing page is the same engine running on the
+ *   outside-in half;
+ * - **connections** (§5 stage 4) exist as a step, and connect nothing. M10 is
+ *   unbuilt and both its prerequisites are open decisions, so `ConnectStep`
+ *   shows what each tool would unlock and states plainly that none is attached.
+ *   A Connect button there would be a control that lies.
  *
  * Skipping straight from the basics to the money questions is *worse* than the
  * intended flow, and pretending otherwise with a mock audit would be worse
@@ -38,11 +49,17 @@ type Step = {
   stage?: Question['stage']
 }
 
+const DEPARTMENTS_KEY = 'departments_run'
+/** The one answer that changes which *other* questions exist. */
+
 const STEPS: Step[] = [
   {
     id: 'basics',
     title: 'The basics',
-    blurb: 'Four questions. Everything else waits until there is something to show you.',
+    // Deliberately not a count. It said "Four questions" and went stale the moment
+    // the catalogue grew — a number in prose beside a list rendered from data is a
+    // claim nothing keeps true.
+    blurb: 'Who you are, and enough to run your first audit. Everything else waits.',
     stage: 'pass_1',
   },
   {
@@ -56,6 +73,28 @@ const STEPS: Step[] = [
     blurb:
       'Your site tells us what you sell. It does not tell us what you are trying to do, or what a deal is worth.',
     stage: 'pass_2',
+  },
+  {
+    id: 'departments',
+    title: 'Your departments',
+    // The API decides what appears here, not this component. It serves a
+    // department's questions only when the company selected that department *and*
+    // the caller can reach it (doc 08 §0), so an unselected department is absent
+    // rather than a row of disabled inputs implying something was forgotten.
+    //
+    // Consequence worth knowing: this step is legitimately empty until
+    // `departments_run` is answered in the previous step, which is why it renders
+    // its own empty state rather than assuming it has fields.
+    blurb:
+      'Five questions each, and only for the departments you run. These are the ones no crawl and no connector can answer.',
+    stage: 'department',
+  },
+  {
+    id: 'connect',
+    title: 'Your tools',
+    blurb:
+      'What each connection is worth, and why none of them is attached yet. Telling you the first part is the only honest half of this step.',
+    stage: 'connect',
   },
   {
     id: 'team',
@@ -81,7 +120,7 @@ export function OnboardingWizard() {
   const [draft, setDraft] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [finished, setFinished] = useState(false)
+  const [finished, setFinished] = useState<Completion | null>(null)
 
   useEffect(() => {
     let live = true
@@ -141,8 +180,9 @@ export function OnboardingWizard() {
   if (finished) {
     return (
       <Finished
+        completion={finished}
         onRevisit={() => {
-          setFinished(false)
+          setFinished(null)
           setIndex(0)
         }}
       />
@@ -164,6 +204,22 @@ export function OnboardingWizard() {
       setSaving(true)
       try {
         await saveAnswers(toSave)
+
+        // Selecting departments changes which questions exist.
+        //
+        // The catalogue is fetched once on mount, and the server decides the
+        // department blocks from the *stored* `departments_run`. So without this,
+        // ticking Sales and Operations and pressing continue lands on a departments
+        // step reading "nothing to ask here" — the questions only appear after a
+        // reload, which nobody does mid-form. Found by walking the flow in a browser;
+        // every API-level test passed throughout, because the API was right.
+        //
+        // Re-fetched only when that answer is in the batch: this is a round trip, and
+        // paying it on every step to cover one is the wrong trade.
+        if (toSave.some((answer) => answer.key === DEPARTMENTS_KEY)) {
+          const refreshed = await fetchCatalogue()
+          setState({ status: 'ready', catalogue: refreshed })
+        }
       } catch (caught) {
         setSaveError(
           caught instanceof AuthError ? caught.message : 'Could not save those answers.',
@@ -175,7 +231,24 @@ export function OnboardingWizard() {
     }
 
     if (index === STEPS.length - 1) {
-      setFinished(true)
+      // The last step is where setup actually becomes complete. Until this call the
+      // wizard only set a local flag, so nothing was recorded, no notification went
+      // out, and a reload started the form again.
+      //
+      // A failure here keeps the user on the last step with the reason, rather than
+      // showing a finished screen for something that did not finish. The API refuses
+      // with the list of answers still missing, which is exactly what the user needs
+      // to see.
+      setSaving(true)
+      try {
+        setFinished(await completeSetup())
+      } catch (caught) {
+        setSaveError(
+          caught instanceof AuthError ? caught.message : 'Could not finish setting up.',
+        )
+      } finally {
+        setSaving(false)
+      }
       return
     }
     setIndex(index + 1)
@@ -207,6 +280,8 @@ export function OnboardingWizard() {
 
       {step.id === 'audit' ? <AuditGap /> : null}
       {step.id === 'team' ? <TeamStep /> : null}
+      {step.id === 'connect' ? <ConnectStep /> : null}
+      {step.id === 'departments' && questions.length === 0 ? <NoDepartments /> : null}
 
       {questions.length > 0 ? (
         <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
@@ -304,6 +379,33 @@ function Progress({ index }: { index: number }) {
  * placeholder scoreboard here would be a fabricated number on the screen — the
  * one thing the product sells on never doing.
  */
+/**
+ * The departments step with nothing in it.
+ *
+ * Reachable in two honest ways, and one of them is not an error: a read-only
+ * viewer sees no writable questions, and a department manager sees only their own
+ * department's block — which may not be among the ones the company selected.
+ *
+ * Without this the step rendered a header promising "five questions each" followed
+ * by empty space and a Continue button, which reads as broken. Never a blank (I10),
+ * and that rule applies to a wizard step as much as to a dashboard tile.
+ */
+function NoDepartments() {
+  return (
+    <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
+      <p className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-500">
+        Nothing to ask here
+      </p>
+      <p className="mt-2 max-w-prose text-[0.95rem] leading-relaxed text-ink-700">
+        These questions follow the departments your company runs. Either none are
+        selected yet — go back a step to choose them — or the ones selected belong to
+        a department you do not hold, in which case somebody in that department
+        answers them rather than you.
+      </p>
+    </div>
+  )
+}
+
 function AuditGap() {
   return (
     <div className="rounded-2xl border border-gold-300 bg-gold-100 px-5 py-5">
@@ -332,7 +434,20 @@ function AuditGap() {
   )
 }
 
-function Finished({ onRevisit }: { onRevisit: () => void }) {
+function Finished({
+  completion,
+  onRevisit,
+}: {
+  completion: Completion
+  onRevisit: () => void
+}) {
+  // Resolved from membership by the API, never from the `department` answer — a
+  // stated role is a fact about the person and membership is what authorises, so
+  // landing on the answer would 404 for anyone whose two disagree.
+  const href = completion.landing_department
+    ? `/dashboard/${completion.landing_department}`
+    : '/dashboard'
+
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
@@ -352,8 +467,19 @@ function Finished({ onRevisit }: { onRevisit: () => void }) {
         </p>
       </div>
 
+      {completion.email_detail ? (
+        <div className="rounded-xl border border-gold-300 bg-gold-100 px-4 py-3">
+          <p className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">
+            No email sent
+          </p>
+          {/* Said plainly rather than swallowed: a notification that silently did not
+              arrive is the kind of thing people discover a week later. */}
+          <p className="mt-2 text-sm leading-relaxed text-ink-700">{completion.email_detail}</p>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-4">
-        <Button href="/dashboard" size="lg">
+        <Button href={href} size="lg">
           Go to your dashboard
         </Button>
         <Button type="button" onClick={onRevisit} variant="secondary" size="lg">

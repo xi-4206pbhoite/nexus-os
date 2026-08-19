@@ -82,8 +82,16 @@ async function post(path: string, body?: unknown): Promise<unknown> {
   return payload
 }
 
-export async function register(email: string, password: string): Promise<void> {
-  await post('/api/auth/register', { email, password })
+/**
+ * Create an account and land signed in.
+ *
+ * Returns the same `SessionState` login does, because the API now issues a
+ * session at registration — there is no email to verify and no second round trip.
+ * A taken address with the wrong password comes back 401 with login's wording, so
+ * this call fails exactly as a sign-in would.
+ */
+export async function register(email: string, password: string): Promise<SessionState> {
+  return (await post('/api/auth/register', { email, password })) as SessionState
 }
 
 export async function login(email: string, password: string): Promise<SessionState> {

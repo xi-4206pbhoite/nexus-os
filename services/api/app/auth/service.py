@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import (
@@ -75,6 +76,30 @@ async def register_user(
         {"email": normalised, "hash": password_hash, "name": display_name},
     )
     return UUID(str(row.scalar_one()))
+
+
+async def set_password(db: AsyncSession, *, email: str, password: str) -> bool:
+    """Overwrite an account's password. `False` when no such account exists.
+
+    Exists for the local-only reset in `routes/auth.py`, and only that. There is
+    no production password-reset flow yet, which is a real gap: because
+    registration deliberately cannot say whether an address is already taken,
+    re-registering with a different password silently changes nothing and the
+    original password still stands. Before this function there was no way out of
+    that at all — the account was simply unreachable.
+
+    Deliberately not a "reset" in the product sense: no token, no expiry, no proof
+    the caller owns the address. That is exactly why its route refuses to exist
+    outside local and CI, and why a real flow is still owed.
+    """
+    normalised = email.strip().lower()
+    # `CursorResult` for `rowcount`, matching how `routes/documents.py` reads the
+    # affected-row count off an UPDATE.
+    result: CursorResult[Any] = await db.execute(  # type: ignore[assignment]
+        text("UPDATE app_user SET password_hash = :hash WHERE lower(email) = :email"),
+        {"hash": hash_password(password), "email": normalised},
+    )
+    return bool(result.rowcount)
 
 
 # ── Login ─────────────────────────────────────────────────────

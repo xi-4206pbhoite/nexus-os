@@ -17,7 +17,7 @@ import { AuthError, csrfToken } from '@/lib/auth-client'
 
 export type Choice = { value: string; label: string }
 
-export type Stage = 'pass_1' | 'pass_2' | 'post_invite'
+export type Stage = 'pass_1' | 'pass_2' | 'department' | 'connect' | 'post_invite'
 
 export type AnswerType =
   | 'text'
@@ -37,6 +37,14 @@ export type Question = {
   /** `L1`…`L5`. Where this answer will be stored, shown to the person giving it. */
   scope: string
   department: string | null
+  /**
+   * Which department's block this question belongs to, or null for company-wide.
+   *
+   * Not the same as `department`, which is the scope classification. A question can
+   * be asked of Sales and still be classified L2 — the pipeline stages are, because
+   * they are structural rather than sensitive.
+   */
+  asked_of: string | null
   required: boolean
   why: string
   options: Choice[]
@@ -102,6 +110,26 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   return payload
 }
 
+export type Connection = {
+  source: string
+  label: string
+  /** Always false. There is no connector — see the connections endpoint. */
+  connected: boolean
+  /** How many capabilities this would unlock, counted from the offering data. */
+  unlocks: number
+  departments: string[]
+  detail: string
+}
+
+export type Connections = {
+  connections: Connection[]
+  connected_count: number
+}
+
+export async function fetchConnections(): Promise<Connections> {
+  return (await call('/api/onboarding/connections')) as Connections
+}
+
 export async function fetchCatalogue(): Promise<Catalogue> {
   return (await call('/api/onboarding/questions')) as Catalogue
 }
@@ -113,6 +141,24 @@ export async function saveAnswers(
     method: 'POST',
     body: JSON.stringify({ answers }),
   })) as { saved: string[] }
+}
+
+export type Completion = {
+  completed_at: string
+  landing_department: string | null
+  email_sent: boolean
+  email_detail: string
+  already_complete: boolean
+}
+
+/**
+ * Mark setup finished.
+ *
+ * Idempotent on the server — a second call reports `already_complete` and sends no
+ * second notification — so a double-click or a retry after a slow response is safe.
+ */
+export async function completeSetup(): Promise<Completion> {
+  return (await call('/api/onboarding/complete', { method: 'POST' })) as Completion
 }
 
 export async function fetchInvitations(): Promise<Invitation[]> {

@@ -1,18 +1,16 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Field } from '@/components/auth/Field'
 import { ArrowRight, Button } from '@/components/ui/Button'
 import { AuthError, MIN_PASSWORD_LENGTH, register } from '@/lib/auth-client'
 
-type State =
-  | { status: 'idle' }
-  | { status: 'submitting' }
-  | { status: 'submitted' }
-  | { status: 'error'; message: string }
+type State = { status: 'idle' } | { status: 'submitting' } | { status: 'error'; message: string }
 
 export function RegisterForm() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [state, setState] = useState<State>({ status: 'idle' })
@@ -20,6 +18,13 @@ export function RegisterForm() {
   const busy = state.status === 'submitting'
   const tooShort = password !== '' && password.length < MIN_PASSWORD_LENGTH
 
+  // There is no interstitial any more. Registration returns a session, so the
+  // only honest next screen is the flow itself.
+  //
+  // What used to be here was a "Check your email" panel plus a second panel
+  // admitting no email is sent — two screens of explanation standing between the
+  // user and a product they had just signed up for. Both are now false: the API
+  // signs them in.
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (busy || tooShort) return
@@ -27,50 +32,19 @@ export function RegisterForm() {
     setState({ status: 'submitting' })
     try {
       await register(email.trim(), password)
-      setState({ status: 'submitted' })
-      setPassword('')
+      // Replace rather than push: the sign-up form should not sit in history
+      // behind an authenticated page.
+      router.replace('/onboarding')
     } catch (error) {
       const message =
         error instanceof AuthError
           ? error.message
           : 'Could not reach the account service. Is the API running?'
       setState({ status: 'error', message })
+      // Only the password. A 401 here means the address is already registered
+      // under a different one, and retyping a correct email is pure friction.
+      setPassword('')
     }
-  }
-
-  // The API answers identically whether or not the address was already taken —
-  // a distinct "already registered" reply would confirm which addresses hold
-  // accounts here. So this screen cannot say "account created", because it does
-  // not know that, and must not imply it.
-  if (state.status === 'submitted') {
-    return (
-      <div className="flex flex-col gap-5">
-        <div className="rounded-xl border border-steel-300 bg-steel-100 px-4 py-4">
-          <p className="font-display text-lg text-ink-900">Check your email</p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-700">
-            If <span className="font-medium">{email.trim()}</span> is not already
-            registered, an account now exists for it. We deliberately give the same
-            answer either way, so this page cannot be used to discover who has an
-            account here.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-gold-300 bg-gold-100 px-4 py-4">
-          <p className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">
-            Not yet built
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-ink-700">
-            <span className="font-medium">No email is actually sent yet.</span> Delivery
-            is not wired up, so there is nothing to click. You can sign in with the
-            password you just chose — email verification is not required to do so.
-          </p>
-        </div>
-
-        <Button href="/login" size="lg" icon={<ArrowRight />} className="w-full">
-          Continue to sign in
-        </Button>
-      </div>
-    )
   }
 
   return (
@@ -91,7 +65,7 @@ export function RegisterForm() {
         onChange={setEmail}
         autoComplete="email"
         placeholder="you@yourcompany.om"
-        hint="Use an address on your company's domain — it is how you will claim the domain later."
+        hint="Use an address on your company's domain — your workspace is named from it, and it is how you will verify the domain later."
         disabled={busy}
       />
 

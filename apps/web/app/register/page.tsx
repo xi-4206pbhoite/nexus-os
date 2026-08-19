@@ -12,7 +12,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       title="Create your account"
-      intro="One account per person. You will claim your company's domain next, and that is what creates the workspace."
+      intro="One account per person. Your workspace is created as you sign up, named from your email domain — you can rename it, and verify the domain later."
       footer={
         <p>
           Want to see what it finds first?{' '}

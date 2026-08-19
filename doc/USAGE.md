@@ -296,6 +296,9 @@ Substantial work with no HTTP surface yet. The tests are the documentation.
 | Scope-keyed cache keys (I5) | `test_scope_cache_key.py` |
 | SSRF corpus — 89 cases | `test_ssrf_guard.py` |
 | Audit scoring, no model anywhere | `test_audit_calculators.py` |
+| The embedding boundary, and the refusal to fabricate a vector | `test_embedding_boundary.py` |
+| What `indexed` is allowed to mean (task 5.6) | `test_document_indexing.py` |
+| Vectors reaching real Postgres, and I3's predicate + ANN in one query | `test_chunk_embedding_roundtrip.py` |
 
 The isolation suite is the one to read if you read one. It runs as the real
 application role against the real database and tries to leak across tenants in
@@ -318,9 +321,43 @@ Stated plainly so you do not go looking:
   capability that is not built
 - Arabic (ADR 0003 chose a multilingual embedding model for it; nothing consumes
   that yet)
+- Any document *screen*. Upload, the review queue and indexing are API-only
+- Search. Chunks now carry vectors (task 5.6) but nothing queries them until M6
 - Billing, ownership transfer, scheduled domain re-verification
 
 The mocks on the landing page carry a visible `Illustrative` tag for this reason.
+
+---
+
+## 6a. Embeddings are off by default, and that is a real state
+
+`NEXUS_EMBEDDING_BACKEND` defaults to `none`, so an uploaded document comes back
+`status: parsed`, `searchable: false`, with a message saying it is stored and
+reviewable but not searchable. That is the truth, not a bug — and before task 5.6
+the route claimed `indexed` regardless, which was a promise nothing kept.
+
+To switch it on, add this line to `.env`:
+
+```
+NEXUS_EMBEDDING_BACKEND=fastembed
+```
+
+then, in `services\api`:
+
+```powershell
+.\.venv\Scripts\pip.exe install -e ".[embeddings]"
+```
+
+The first upload downloads ~1.1 GB of model weights to `models\` and will feel
+like a hang. `/health/ready` reports `embeddings` either way.
+
+Two things worth knowing:
+
+- **`chunks_embedded` and `chunks_indexed` are different numbers.** A vector is not
+  a permission. Every chunk withholds to L5 today, so a fully embedded document
+  reports `chunks_embedded: 41` and `chunks_indexed: 0`.
+- **`deterministic` is not a shortcut.** It is a test double that returns
+  well-formed vectors with no meaning, and it is refused outside `local` and `ci`.
 
 ---
 

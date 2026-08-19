@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.domain.dashboards import CONNECTABLE
 from app.domain.scopes import Department, Role, Scope
 
 
@@ -33,6 +34,13 @@ class Pass(StrEnum):
 
     ONE = "pass_1"
     TWO = "pass_2"
+    # Doc 08 §2-§7. Only the departments the company says it runs, and only the
+    # ones this caller may reach — see `Question.asked_of`.
+    DEPARTMENT = "department"
+    # Doc 04 §5 stage 4. Nothing is connected by answering: no connector exists
+    # (M10), so this records which tools the customer *has*, and the dashboards go
+    # on saying Locked until one is actually wired up.
+    CONNECT = "connect"
     # After team invitation, per doc 06 §4.10.
     POST_INVITE = "post_invite"
 
@@ -76,6 +84,16 @@ def _choices(source: type[StrEnum], labels: dict[str, str] | None = None) -> tup
 CURRENCIES: tuple[Choice, ...] = tuple(
     Choice(code, f"{code} — {name}")
     for code, name in (
+        # OMR was missing, in a product whose market is Oman and whose sign-up form
+        # placeholder is `you@yourcompany.om`. Doc 08 §1.3 lists it first and doc 01
+        # §3's regional principle names "OMR/AED/SAR"; the list had the other two.
+        # Found by trying to complete setup as an Omani company and being told the
+        # rial "is not an option".
+        #
+        # It sorts first deliberately rather than alphabetically: this is the default
+        # a majority of customers want, and a select whose most likely answer is
+        # eleventh is a select that gets mis-answered.
+        ("OMR", "Omani rial"),
         ("AED", "UAE dirham"),
         ("AUD", "Australian dollar"),
         ("CAD", "Canadian dollar"),
@@ -113,6 +131,42 @@ MONTHS: tuple[Choice, ...] = tuple(
 )
 
 
+class Sink(StrEnum):
+    """Where an answer actually lands.
+
+    Almost everything is an `onboarding_answer` row, and that table is unique on
+    `(workspace_id, question_key)` — a *workspace* fact. Two of the things the
+    registration flow has to collect are not:
+
+    - **The person's own name** is per user. As an answer, two members of one
+      workspace would fight over a single row, and the second would silently
+      overwrite the first.
+    - **The company's name** already exists, as `workspace.name`. Writing it to
+      `onboarding_answer` as well would give one fact two homes that can disagree,
+      which is precisely the drift that produced `ReviewState`'s wrong spelling and
+      a `document.status` of `indexed` that nothing had earned.
+
+    So those two write through to their real column instead. The alternative —
+    special-casing them in the route — would put the routing rule somewhere no
+    question can be read next to, and this catalogue is meant to be the one place
+    a question's behaviour is legible.
+    """
+
+    ANSWER = "answer"
+    """An `onboarding_answer` row, classified from the catalogue. The default."""
+
+    WORKSPACE_NAME = "workspace_name"
+    """`workspace.name`. The company's name has exactly one home."""
+
+    USER_DISPLAY_NAME = "user_display_name"
+    """`app_user.display_name`, for the calling user and nobody else.
+
+    Written with `WHERE id = <session's user id>`, never an id from the request —
+    the caller's identity is bound to the session (I2), so there is no argument
+    here to get wrong.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Question:
     key: str
@@ -122,10 +176,31 @@ class Question:
     scope: Scope
     department: Department | None
     """The department that owns this fact at L3. `None` for L1/L2 facts."""
+    asked_of: Department | None = None
+    """Whose question block this belongs to. `None` means company-wide.
+
+    **Deliberately not the same field as `department`, and D15 is explicit about
+    why.** They answer different questions and routinely disagree:
+
+    - `department` is a *classification* — which department owns the answer as an
+      L3 fact. It is what the scope predicate filters on.
+    - `asked_of` is *routing* — which department's block the question appears in,
+      and therefore who is asked it at all.
+
+    Doc 08 §4.3 ("above what amount does spend need approval?") is asked of Finance
+    **and** classified L3 Finance, so both are set and they agree. Doc 08 §3.1 ("what
+    are your pipeline stages?") is asked of Sales and classified L2 — structural, not
+    sensitive — so `asked_of` is Sales and `department` is None. Collapsing the two
+    would have made every Sales question an L3 Sales fact, which would hide the
+    pipeline stages from a Viewer for no reason, and would have made every L3 fact
+    into a routing rule.
+    """
     required: bool = False
     why: str = ""
     """Shown to the user. Doc 04 §5 — every question should be justified by
     something they have already seen."""
+    sink: Sink = Sink.ANSWER
+    """Where the value is stored. See `Sink` — the default is the ordinary case."""
     options: tuple[Choice, ...] = ()
     """The permitted answers, when the set is genuinely closed.
 
@@ -139,8 +214,453 @@ class Question:
         return not self.options and self.answer_type is not AnswerType.USER_LIST
 
 
+TOOL_LABELS: dict[str, str] = {
+    "ga4": "Google Analytics",
+    "search_console": "Google Search Console",
+    "crm": "A CRM",
+    "accounting": "An accounting system",
+    "ads": "An ad platform",
+}
+"""Names for the connection step, written out rather than derived.
+
+`dashboards.LABELS` exists for a different job: it fills the middle of a sentence
+("Needs **your CRM**."), so its entries are lower-case fragments with possessives.
+Transforming them into standalone option labels produced "Crm" and "An ad platform"
+as a heading — worse than either source. The keys are checked against `CONNECTABLE`
+below, so the two lists still cannot drift apart.
+"""
+
+CONNECTABLE_TOOLS: tuple[Choice, ...] = tuple(
+    Choice(source.value, TOOL_LABELS[source.value]) for source in CONNECTABLE
+)
+"""What a customer may be asked about. Ordered as `CONNECTABLE` is.
+
+A `KeyError` here at import time is the intended failure: adding a source to
+`CONNECTABLE` without naming it should stop the application starting rather than
+render a blank option.
+"""
+
+
+SCOREABLE_DEPARTMENTS: tuple[Choice, ...] = (
+    Choice(Department.MARKETING.value, "Marketing"),
+    Choice(Department.SALES.value, "Sales"),
+    Choice(Department.FINANCE.value, "Finance"),
+    Choice(Department.OPERATIONS.value, "Operations"),
+    Choice(Department.HR.value, "People / HR"),
+    Choice(Department.STRATEGY.value, "Strategy"),
+)
+"""The six a company can be asked about.
+
+`Department.EXECUTIVE` is deliberately absent. It is a synthesis layer that
+consumes the others and produces no data of its own, which is why the composite
+score is out of six and never seven (doc 05 §10, `ARCHITECTURE.md` §7) — and why
+doc 08 documents six question blocks.
+
+Doc 08 §1.6 says "multi-select across the **seven** below" and computes 39 fields
+from `4 + 7 x 5`. Only six blocks exist in that document, and the seventh would have
+to be Executive, which by doc 05's own rule has nothing to ask. Read as six: 34
+fields, not 39. Recorded in ADR 0015 rather than silently reconciled.
+"""
+
+
+def _dept(
+    key: str,
+    prompt: str,
+    asked_of: Department,
+    answer_type: AnswerType,
+    why: str,
+    *,
+    scope: Scope = Scope.L2_COMPANY_INTERNAL,
+    department: Department | None = None,
+    options: tuple[Choice, ...] = (),
+) -> Question:
+    """One question in a department block.
+
+    `scope` defaults to L2 because most of these are *definitions* — what counts as
+    a lead, when an order is late, which stages the pipeline has. Doc 08 §0 says the
+    whole set is L1 or L2, and for most of it that is right.
+
+    Where it is not right, `scope` and `department` are set explicitly. Doc 06 §2.5
+    outranks doc 08 here and is unambiguous: *"Average deal size and marketing budget
+    are L3 Sales and L3 Finance facts. They are not 'company facts' visible to
+    everyone merely because they arrived through a form."* A spend-approval threshold
+    and a runway figure are the same kind of fact, so they are classified the same way
+    rather than published to every Viewer because a form collected them.
+    """
+    return Question(
+        key=key,
+        prompt=prompt,
+        stage=Pass.DEPARTMENT,
+        answer_type=answer_type,
+        scope=scope,
+        department=department,
+        why=why,
+        asked_of=asked_of,
+        options=options,
+    )
+
+
+def _opts(*pairs: tuple[str, str]) -> tuple[Choice, ...]:
+    return tuple(Choice(value, label) for value, label in pairs)
+
+
+_M, _S, _F, _O, _P, _St = (
+    Department.MARKETING,
+    Department.SALES,
+    Department.FINANCE,
+    Department.OPERATIONS,
+    Department.HR,
+    Department.STRATEGY,
+)
+
+DEPARTMENT_QUESTIONS: tuple[Question, ...] = (
+    # 28, where doc 08 §2-§7 lists 30. The two missing ones already exist in the
+    # company-wide passes and are **reused rather than asked twice**:
+    #
+    #   §2.3 "Monthly budget for acquisition" -> `monthly_marketing_budget` (L3 Finance)
+    #   §4.1 "When does your financial year end?" -> `fiscal_year_start`
+    #
+    # Asking either again would put one fact in two rows and let them disagree, which
+    # is the same reasoning `Sink` exists for.
+    #
+    # ── Marketing (doc 08 §2A) ────────────────────────────────
+    _dept(
+        "lead_definition",
+        "What counts as a lead worth passing to Sales?",
+        _M,
+        AnswerType.LONG_TEXT,
+        "The denominator of every conversion figure. Without it, conversion rate has "
+        "no agreed meaning.",
+    ),
+    _dept(
+        "channels_run",
+        "Which channels do you actively run?",
+        _M,
+        AnswerType.MULTI_CHOICE,
+        "A channel you do not run is reported as not run, never as zero.",
+        options=_opts(
+            ("search", "Search"),
+            ("paid", "Paid advertising"),
+            ("social", "Social"),
+            ("referrals", "Referrals"),
+            ("trade_shows", "Trade shows"),
+            ("email", "Email"),
+        ),
+    ),
+    _dept(
+        "lost_to",
+        "Who do you most often lose to?",
+        _M,
+        AnswerType.TEXT,
+        "Seeds competitor tracking before discovery has run.",
+    ),
+    _dept(
+        "arabic_content",
+        "Is Arabic-language content in scope this year?",
+        _M,
+        AnswerType.SINGLE_CHOICE,
+        "Decides whether the Arabic-language gap is an opportunity or out of scope.",
+        options=_opts(
+            ("not_yet", "Not yet"), ("planned", "Planned"), ("publishing", "Already publishing")
+        ),
+    ),
+    # ── Sales (doc 08 §3A) ────────────────────────────────────
+    _dept(
+        "pipeline_stages",
+        "What are your pipeline stages, in order?",
+        _S,
+        AnswerType.TEXT,
+        "The board columns, and the stage conversion rates a forecast is built from.",
+    ),
+    _dept(
+        "stale_deal_days",
+        "After how many days of silence should a deal be flagged?",
+        _S,
+        AnswerType.SINGLE_CHOICE,
+        "The stale-deal threshold. 'Use my median cycle' derives it from your own "
+        "history rather than a generic 30-day rule.",
+        options=_opts(
+            ("7", "7 days"),
+            ("10", "10 days"),
+            ("14", "14 days"),
+            ("median_cycle", "Use my median cycle"),
+        ),
+    ),
+    _dept(
+        "lead_assignment",
+        "How are new leads assigned?",
+        _S,
+        AnswerType.SINGLE_CHOICE,
+        "Decides whether an unassigned lead is an error state or normal.",
+        options=_opts(
+            ("round_robin", "Round robin"),
+            ("by_region", "By region"),
+            ("by_product", "By product"),
+            ("manager", "Manager assigns"),
+        ),
+    ),
+    _dept(
+        "quota_period",
+        "What is the quota period?",
+        _S,
+        AnswerType.SINGLE_CHOICE,
+        "The attainment window. 'No formal quota' suppresses attainment entirely "
+        "rather than inventing a target.",
+        options=_opts(
+            ("monthly", "Monthly"),
+            ("quarterly", "Quarterly"),
+            ("annual", "Annual"),
+            ("none", "No formal quota"),
+        ),
+    ),
+    _dept(
+        "deal_disqualifiers",
+        "What disqualifies a deal outright?",
+        _S,
+        AnswerType.LONG_TEXT,
+        "Which deals are excluded from the forecast rather than weighted low.",
+    ),
+    # ── Finance (doc 08 §4A) ──────────────────────────────────
+    _dept(
+        "payment_terms",
+        "Standard payment terms you offer?",
+        _F,
+        AnswerType.SINGLE_CHOICE,
+        "The ageing buckets, and what counts as overdue.",
+        options=_opts(
+            ("on_receipt", "On receipt"),
+            ("30", "30 days"),
+            ("45", "45 days"),
+            ("60", "60 days"),
+        ),
+    ),
+    _dept(
+        "spend_approval_threshold",
+        "Above what amount does spend need approval?",
+        _F,
+        AnswerType.MONEY,
+        "Which requests enter the approvals queue at all.",
+        # L3 Finance, not L2. Doc 06 §2.5's rule: a money threshold is not a company
+        # fact visible to every Viewer because a form collected it.
+        scope=Scope.L3_DEPARTMENT,
+        department=Department.FINANCE,
+    ),
+    _dept(
+        "spend_approver",
+        "Who approves spend above that?",
+        _F,
+        AnswerType.SINGLE_CHOICE,
+        "Where an approval routes.",
+        options=_opts(
+            ("owner", "Owner only"),
+            ("owner_or_finance", "Owner or Finance Manager"),
+            ("department_manager", "Department manager"),
+            ("board", "Board"),
+        ),
+    ),
+    _dept(
+        "runway_alert_months",
+        "How many months of runway would worry you?",
+        _F,
+        AnswerType.SINGLE_CHOICE,
+        "The runway alert threshold - a judgement of yours, never a benchmark of ours.",
+        # L3 Finance: the answer discloses how close to the edge the company is.
+        scope=Scope.L3_DEPARTMENT,
+        department=Department.FINANCE,
+        options=_opts(("3", "Under 3"), ("6", "Under 6"), ("9", "Under 9"), ("12", "Under 12")),
+    ),
+    # ── Operations (doc 08 §5A) ───────────────────────────────
+    _dept(
+        "promised_lead_time",
+        "What do you promise customers as a lead time?",
+        _O,
+        AnswerType.TEXT,
+        "The baseline on-time dispatch is measured against.",
+    ),
+    _dept(
+        "usual_delay_cause",
+        "What usually causes a delay?",
+        _O,
+        AnswerType.SINGLE_CHOICE,
+        "Which bottleneck is checked first when dispatch slips.",
+        options=_opts(
+            ("stock_outs", "Stock-outs"),
+            ("supplier_lead_time", "Supplier lead time"),
+            ("picking_capacity", "Picking capacity"),
+            ("transport", "Transport"),
+        ),
+    ),
+    _dept(
+        "stock_model",
+        "Do you hold stock, or order per job?",
+        _O,
+        AnswerType.SINGLE_CHOICE,
+        "Whether stock levels and reorder minimums apply at all.",
+        options=_opts(("hold_stock", "Hold stock"), ("per_job", "Order per job"), ("both", "Both")),
+    ),
+    _dept(
+        "order_late_definition",
+        "At what point is an order officially late?",
+        _O,
+        AnswerType.SINGLE_CHOICE,
+        "The definition of late, and therefore the on-time percentage.",
+        options=_opts(
+            ("missed_date", "Missed promised date"),
+            ("one_day", "One day after"),
+            ("three_days", "Three days after"),
+        ),
+    ),
+    _dept(
+        "supplier_concentration",
+        "Which supplier are you most exposed to?",
+        _O,
+        AnswerType.LONG_TEXT,
+        "Concentration risk, before purchase history is long enough to show it.",
+        # L3 Operations: a named dependency and its share is commercially sensitive,
+        # and the example answer in doc 08 is exactly that.
+        scope=Scope.L3_DEPARTMENT,
+        department=Department.OPERATIONS,
+    ),
+    # ── People (doc 08 §6A) ───────────────────────────────────
+    _dept(
+        "leave_model",
+        "Is leave accrued monthly or granted annually?",
+        _P,
+        AnswerType.SINGLE_CHOICE,
+        "How the leave liability is computed - a different formula, not a different label.",
+        options=_opts(
+            ("accrued", "Accrued monthly"),
+            ("granted", "Granted annually"),
+            ("mixed", "Mixed by contract"),
+        ),
+    ),
+    _dept(
+        "hire_approver",
+        "Who signs off a new hire?",
+        _P,
+        AnswerType.SINGLE_CHOICE,
+        "Where a requisition routes.",
+        options=_opts(
+            ("owner", "Owner only"),
+            ("owner_and_manager", "Owner and department manager"),
+            ("department_manager", "Department manager"),
+        ),
+    ),
+    _dept(
+        "people_risk",
+        "What is your biggest people risk right now?",
+        _P,
+        AnswerType.LONG_TEXT,
+        "Links a vacancy to the operational impact it is having.",
+        # L3 HR. Doc 08's own example names an individual's role and the gap they
+        # leave; a free-text people risk will often identify a person.
+        scope=Scope.L3_DEPARTMENT,
+        department=Department.HR,
+    ),
+    _dept(
+        "review_cycle",
+        "Do you run performance reviews on a cycle?",
+        _P,
+        AnswerType.SINGLE_CHOICE,
+        "Whether review timing appears at all.",
+        options=_opts(
+            ("none", "No formal cycle"),
+            ("annual", "Annual"),
+            ("twice", "Twice a year"),
+            ("quarterly", "Quarterly"),
+        ),
+    ),
+    _dept(
+        "track_document_expiry",
+        "Should NEXUS track visa and document expiry?",
+        _P,
+        AnswerType.SINGLE_CHOICE,
+        "A GCC-specific capability, opt-in because it involves sensitive documents.",
+        options=_opts(("yes", "Yes"), ("no", "No"), ("not_yet", "Not yet")),
+    ),
+    # ── Strategy (doc 08 §7A) ─────────────────────────────────
+    _dept(
+        "twelve_month_success",
+        "What would make the next twelve months a success?",
+        _St,
+        AnswerType.LONG_TEXT,
+        "What every opportunity is ranked against.",
+    ),
+    _dept(
+        "competitors_to_watch",
+        "Which competitors should NEXUS watch?",
+        _St,
+        AnswerType.TEXT,
+        "Seeds the tracked set before discovery runs.",
+    ),
+    _dept(
+        "target_market",
+        "Which market or segment are you trying to enter?",
+        _St,
+        AnswerType.TEXT,
+        "Whether a regional signal is an opportunity or noise.",
+        # L3 Strategy: unannounced expansion intent.
+        scope=Scope.L3_DEPARTMENT,
+        department=Department.STRATEGY,
+    ),
+    _dept(
+        "binding_constraint",
+        "What is the binding constraint today?",
+        _St,
+        AnswerType.SINGLE_CHOICE,
+        "Which recommendations are suppressed as unactionable.",
+        options=_opts(
+            ("cash", "Cash"),
+            ("people", "People"),
+            ("stock", "Stock"),
+            ("demand", "Demand"),
+            ("time", "Time"),
+        ),
+    ),
+    _dept(
+        "deliberately_not_doing",
+        "What are you deliberately not doing?",
+        _St,
+        AnswerType.LONG_TEXT,
+        "Stops NEXUS recommending something you have already ruled out.",
+    ),
+)
+
+
 CATALOGUE: tuple[Question, ...] = (
     # ── Pass 1: enough to run the audit ───────────────────────
+    #
+    # Two identity questions come first. They are here rather than in Pass 2
+    # despite doc 04 §5's "value first" rule, because neither costs the user any
+    # thought and both are needed before the product can address them at all:
+    # registration names the workspace from the email domain, so without this the
+    # company is called `acmetrading.om` on every screen.
+    Question(
+        key="your_name",
+        prompt="What should we call you?",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        # About the person, visible to their colleagues. Never L1: a name is not
+        # published material just because a company's services are.
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="So the brief and the assistant address you rather than your email address.",
+        sink=Sink.USER_DISPLAY_NAME,
+    ),
+    Question(
+        key="company_name",
+        prompt="Your company's name",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        # A company's own name is published material by definition.
+        scope=Scope.L1_COMPANY_PUBLIC,
+        department=None,
+        why=(
+            "Registration named your workspace from your email domain. This replaces "
+            "it, and appears on anything you generate."
+        ),
+        sink=Sink.WORKSPACE_NAME,
+    ),
     Question(
         key="company_url",
         prompt="Your website address",
@@ -187,10 +707,27 @@ CATALOGUE: tuple[Question, ...] = (
         key="stated_purpose",
         prompt="What do you want help with most?",
         stage=Pass.ONE,
-        answer_type=AnswerType.LONG_TEXT,
+        # Doc 08 §1.5, and a closed set rather than the free text this was.
+        #
+        # The change matters because the answer *does* something: each value maps to
+        # a landing screen in `agents/persona.PURPOSE_LANDING`, by a pure function
+        # rather than by a model reading prose and guessing. Free text could not
+        # drive that without something inferring intent from a sentence, which is
+        # exactly the kind of quiet judgement doc 08 §1.5 replaces with four options.
+        #
+        # Converted under ADR 0015, which makes doc 08 authoritative for question
+        # content. Answers stored as free text before this simply do not match an
+        # option and render unselected — visible, and correctable by answering again.
+        answer_type=AnswerType.SINGLE_CHOICE,
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
-        why="It shapes what your assistant leads with.",
+        why="It decides what each dashboard leads with. It changes emphasis, never access.",
+        options=(
+            Choice("diagnose", "Find out what is quietly broken"),
+            Choice("consolidate", "Get one place for the numbers"),
+            Choice("time", "Free up my own time"),
+            Choice("grow", "Prepare for growth or funding"),
+        ),
     ),
     # ── Pass 2: after the audit ───────────────────────────────
     Question(
@@ -211,6 +748,21 @@ CATALOGUE: tuple[Question, ...] = (
         department=None,
         why="It orders the improvement roadmap.",
     ),
+    # Doc 08 §1.1. In Pass 2 deliberately: the whole justification for asking is
+    # that the crawl has already guessed a category and guessed it imprecisely, so
+    # the question only earns its place *after* the audit has run.
+    Question(
+        key="what_we_sell",
+        prompt="What does the business sell?",
+        stage=Pass.TWO,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L1_COMPANY_PUBLIC,
+        department=None,
+        why=(
+            "The crawl infers a category imprecisely. Your own words anchor every "
+            "generated artefact, competitor match and opportunity."
+        ),
+    ),
     Question(
         key="ideal_customer",
         prompt="Describe your ideal customer, in your words",
@@ -219,6 +771,24 @@ CATALOGUE: tuple[Question, ...] = (
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
         why="Often different from who you currently serve.",
+    ),
+    # Doc 08 §1.4, with its option bands verbatim. A band rather than a number
+    # because nobody knows their headcount exactly and a spurious integer would be
+    # treated as a measurement.
+    Question(
+        key="headcount",
+        prompt="Roughly how many people?",
+        stage=Pass.TWO,
+        answer_type=AnswerType.SINGLE_CHOICE,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="Sizes the People department, and decides which benchmarks apply.",
+        options=(
+            Choice("under_10", "Under 10"),
+            Choice("10_to_50", "10-50"),
+            Choice("50_to_200", "50-200"),
+            Choice("over_200", "Over 200"),
+        ),
     ),
     Question(
         key="average_deal_size",
@@ -258,6 +828,7 @@ CATALOGUE: tuple[Question, ...] = (
         answer_type=AnswerType.MULTI_CHOICE,
         scope=Scope.L1_COMPANY_PUBLIC,
         department=None,
+        why="Your own vocabulary, so generated copy sounds like you rather than like us.",
     ),
     Question(
         key="currency",
@@ -281,6 +852,40 @@ CATALOGUE: tuple[Question, ...] = (
         why="Period comparisons depend on it.",
         options=MONTHS,
     ),
+    # Doc 08 §1.6. Which blocks the company is asked at all, so it has to be
+    # answered before the department stage can render anything.
+    Question(
+        key="departments_run",
+        prompt="Which of these does your company actually run?",
+        stage=Pass.TWO,
+        answer_type=AnswerType.MULTI_CHOICE,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        required=True,
+        why=(
+            "Each one you pick adds five questions only you can answer, and unlocks "
+            "that director. Each one you leave out stays absent rather than empty."
+        ),
+        options=SCOREABLE_DEPARTMENTS,
+    ),
+    # Doc 04 §5 stage 4. **Answering this connects nothing**, and the wording says
+    # so: no connector is built (M10 — and D3 and D10 are still open), so the only
+    # honest thing to collect is which of these the customer actually has. It is
+    # worth collecting anyway: it decides which Locked tiles are a real unlock for
+    # this company and which are irrelevant to it.
+    Question(
+        key="tools_available",
+        prompt="Which of these does your company use?",
+        stage=Pass.CONNECT,
+        answer_type=AnswerType.MULTI_CHOICE,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why=(
+            "Nothing is connected by answering - no connector is built yet. It tells "
+            "us which locked capabilities are worth unlocking for you first."
+        ),
+        options=CONNECTABLE_TOOLS,
+    ),
     # ── After team invitation (doc 06 §4.10) ──────────────────
     Question(
         key="brief_recipients",
@@ -291,6 +896,7 @@ CATALOGUE: tuple[Question, ...] = (
         department=None,
         why="Recipients must be people in this workspace.",
     ),
+    *DEPARTMENT_QUESTIONS,
 )
 
 BY_KEY: dict[str, Question] = {q.key: q for q in CATALOGUE}
@@ -298,6 +904,19 @@ BY_KEY: dict[str, Question] = {q.key: q for q in CATALOGUE}
 
 def questions_for(stage: Pass) -> tuple[Question, ...]:
     return tuple(q for q in CATALOGUE if q.stage is stage)
+
+
+def questions_for_departments(selected: frozenset[Department]) -> tuple[Question, ...]:
+    """The department block, narrowed to the departments a company runs.
+
+    An unselected department's questions are **absent**, not disabled: doc 08 §2.2's
+    principle applied to the form itself — a channel the company does not run is
+    reported as *not run* rather than as zero, and a department it does not have
+    should not be a row of greyed-out inputs implying it forgot something.
+    """
+    return tuple(
+        q for q in DEPARTMENT_QUESTIONS if q.asked_of is not None and q.asked_of in selected
+    )
 
 
 def scope_for_answer(key: str) -> tuple[Scope, Department | None]:

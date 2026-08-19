@@ -31,17 +31,17 @@ Two PowerShell 5.1 traps already hit in this repo:
 
 Doc 07 is the build contract. **One milestone at a time; stop at the end of each
 and wait for validation.** Every milestone ends with passing tests, a
-`MILESTONE-N.md`, and an updated `TASKS.md`.
+`doc/MILESTONE-N.md`, and an updated `doc/TASKS.md`.
 
 Where documents conflict: doc 07 > doc 06 > doc 05 > doc 04 > doc 03/01.
-Conflicts settled by that rule are listed in `ARCHITECTURE.md` §0. Anything not
-settled by it goes to `DECISIONS-REQUIRED.md` — **never invent a resolution.**
+Conflicts settled by that rule are listed in `doc/ARCHITECTURE.md` §0. Anything not
+settled by it goes to `doc/DECISIONS-REQUIRED.md` — **never invent a resolution.**
 
 Every decision the user makes is recorded in `doc/adr/NNNN-title.md`.
 
 ## Invariants
 
-The ten in doc 07 §2 are the reason the product exists. `ARCHITECTURE.md` §1
+The ten in doc 07 §2 are the reason the product exists. `doc/ARCHITECTURE.md` §1
 explains how the layering makes each structurally true rather than policy-true.
 The two that shape almost every file:
 
@@ -152,9 +152,62 @@ Two rules the tests enforce:
 `anthropic_api_key` deliberately bypasses `Settings.require()`. Every other secret
 fails loudly when absent; this one must not.
 
+## Registration creates the workspace (ADR 0013, ADR 0014)
+
+`POST /auth/register` **signs the caller in and creates their workspace.** Both are
+departures from doc 07 and both are recorded:
+
+- **No verified domain is required** (ADR 0013). The domain is *inferred* from the
+  sign-up email and stored with `domain_verified_at IS NULL`; a free provider yields
+  **no** domain rather than a wrong one. Verification is no longer a gate — it buys
+  *exclusivity*, and the partial unique index still only sees verified rows.
+- **Registration returns a session** (ADR 0014), which trades away the
+  account-enumeration property. A duplicate address with the *same* password signs
+  in (idempotent); with a wrong one it returns login's exact wording. **D14 (login
+  rate limiting) is the compensating control and does not exist yet.**
+- **There is still no password reset.** `POST /auth/dev/reset-password` exists, 404s
+  outside `local`/`ci`, and is not a product flow — no token, no expiry, no proof of
+  ownership.
+
+Two traps if you touch this path:
+
+- **Registration makes ~8 round trips.** Against Neon from a laptop that is 8-11s,
+  and it broke the web proxy's 15s timeout *after the API had succeeded* — account
+  created, browser shown a 503. The timeout is now 30s and the measurements are in
+  ADR 0013. Do not "optimise" this for local latency; deployed co-located it is tens
+  of milliseconds.
+- **The whole of registration is one transaction.** `register_user` no longer commits
+  on its own, so `authenticate` reads its uncommitted insert from the same session.
+  A partial write here would recreate the account-with-no-workspace dead end.
+
+## Embeddings are optional too, and `indexed` is a promise (ADR 0003, task 5.6)
+
+`NEXUS_EMBEDDING_BACKEND` defaults to **`none`**. Documents still upload, parse,
+classify and queue for review — they stay `parsed`, which means *stored and
+reviewable but not searchable*, and the upload response says so. `indexed` means
+every chunk carries a vector. Never widen that: the route used to write `indexed`
+unconditionally, which is a promise nothing kept, and the customer discovers it
+when a proposal silently omits a price they uploaded.
+
+To switch it on: add `NEXUS_EMBEDDING_BACKEND=fastembed` to `.env`, then
+`pip install -e ".[embeddings]"` in `services\api`. First use downloads ~1.1 GB to
+`models\`.
+
+- **Nothing outside `app/embedding/` picks a model or applies a prefix.** e5 needs
+  `query: ` and `passage: `, and getting it wrong does not error — retrieval just
+  returns worse rows. The protocol has no `embed(text)`, only `embed_passages` and
+  `embed_query`.
+- **`deterministic` is a test double and is refused outside `local`/`ci`.** It
+  returns well-formed, stable, correctly-sized vectors with no meaning, so every
+  mechanism downstream appears to work. That is worse than an outage, and worse
+  than the demo mode `app/ai/providers.py` refuses to have.
+- **Embedding is not a visibility decision.** Every chunk is embedded including the
+  ones I4 withholds; a vector is not a permission. `chunks_embedded` and
+  `chunks_indexed` are separate numbers and are routinely different.
+
 ## Known defects
 
-`AUDIT-FINDINGS.md` records what four audits found and what was done about each.
+`doc/AUDIT-FINDINGS.md` records what four audits found and what was done about each.
 Fourteen findings are open and scheduled. The three worth knowing before touching
 auth or deployment: **argon2 blocks the event loop**, **`/auth/login` has no rate
 limit** (both D14), and **`env` defaults to `local`** - so a missing `NEXUS_ENV`

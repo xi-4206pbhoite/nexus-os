@@ -13,6 +13,21 @@ Version 0.9 (Draft for review) · 16 August 2026 · Parul Bhoite
 | `08-Department-Onboarding-Questions-and-Dashboard-Offering.md` / `.docx` | **Department question bank & as-built offering** — for each of the seven departments: the onboarding questions with their option lists, what NEXUS deliberately does *not* ask because a connector answers it, what the dashboard offers section by section, what stays locked, and what the scoped assistant can answer. Extracted from the prototype, so it records what exists rather than what was intended | Building onboarding, or answering "what does a Sales manager actually get?" |
 | `NEXUS-OS-Solution-Overview.pptx` | **Executive deck** (20 slides) — opportunity, solution, capability, trust model, architecture, business model, roadmap, risks, next steps | Presenting to stakeholders |
 
+## Build artifacts
+
+Produced during the build rather than supplied, and kept here alongside the specs:
+
+| File | What it is |
+|---|---|
+| `07-Claude-Code-Build-Prompt.md` | **The build contract** — milestones, invariants, process rules. Highest precedence of any document here |
+| `ARCHITECTURE.md` | The system as built, and how the layering makes each invariant structurally true |
+| `TASKS.md` | Milestone breakdown and status |
+| `MILESTONE-0.md` … `MILESTONE-5.md` | What each completed milestone delivered and what it deliberately did not |
+| `DECISIONS-REQUIRED.md` | Open decisions that no document's precedence rule settles |
+| `AUDIT-FINDINGS.md` | What four audits found and what was done about each |
+| `USAGE.md` | Running the system end to end |
+| `adr/` | One record per decision made |
+
 ## Source material
 
 Everything here derives from four supplied documents plus the interactive prototype:

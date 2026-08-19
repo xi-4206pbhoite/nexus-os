@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Any
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -37,23 +39,42 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.persona import (
+    CommunicationStyle,
+    LandingScreen,
+    propose_persona,
+)
+from app.ai.contracts import LlmProvider
+from app.ai.registry import get_provider
 from app.auth import invitations as invites
 from app.auth.csrf import require_csrf
+from app.config import Settings, get_settings
+from app.connectors.crawler import FetchError, fetch_page
+from app.connectors.extract import extract_signals
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.domain.access import AccessDecision, Aggregate, decide_l3_access
+from app.domain.dashboards import (
+    CONNECTABLE,
+    DIRECTORS,
+    landing_department,
+    offerings_needing,
+)
 from app.domain.invitations import InvitationError, check_invitation, may_administer
 from app.domain.onboarding import (
     BY_KEY,
     CATALOGUE,
+    TOOL_LABELS,
     AnswerType,
     Choice,
     Question,
+    Sink,
     scope_for_answer,
 )
 from app.domain.scopes import Department, Role, Scope, scope_code, scope_from_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
+from app.mail import Email, FileMailer, Mailer
 from app.retrieval.scoped import scoped_connection
 
 router = APIRouter(tags=["setup"])
@@ -88,6 +109,76 @@ def may_read_answer(caller: ScopedSession, scope: Scope, department: Department 
     return caller.may_reach_scope(scope)
 
 
+def departments_selected(answers: dict[str, Any]) -> frozenset[Department]:
+    """Which department blocks this company runs, from its own answer (doc 08 §1.6).
+
+    Unrecognised values are dropped rather than raising. The stored answer is
+    validated against the catalogue's options on the way in, so a value that is not
+    a `Department` means the enum changed under an existing row — and the honest
+    response to that is to stop offering the block, not to fail the whole wizard.
+    """
+    raw = answers.get("departments_run") or []
+    if not isinstance(raw, list):
+        return frozenset()
+
+    selected: set[Department] = set()
+    for value in raw:
+        try:
+            selected.add(Department(value))
+        except ValueError:
+            continue
+    return frozenset(selected)
+
+
+def may_be_asked(
+    caller: ScopedSession, question: Question, selected: frozenset[Department]
+) -> bool:
+    """Whether this question belongs in this caller's wizard at all.
+
+    Two independent narrowings, and they are not the same thing:
+
+    - **The company runs it.** An unselected department's questions are absent, not
+      disabled — doc 08 §2.2's principle applied to the form: a channel that is not
+      run is reported as *not run*, never as zero, and a department the company does
+      not have should not be a row of greyed-out inputs implying it forgot something.
+    - **The caller reaches it.** Doc 08 §0: *"An invited team member answers only
+      their own department's set — a Sales Executive is never asked when the financial
+      year ends."* `may_reach_department` is the same call the dashboards make, so a
+      Sales manager cannot be handed Finance's questions here either.
+
+    Company-wide questions have no `asked_of` and are unaffected.
+    """
+    if question.asked_of is None:
+        return True
+    return question.asked_of in selected and caller.may_reach_department(question.asked_of)
+
+
+async def _stored_selection(session: AsyncSession) -> frozenset[Department]:
+    """The company's current `departments_run`, straight from its own row."""
+    row = (
+        await session.execute(
+            text("SELECT value FROM onboarding_answer WHERE question_key = 'departments_run'")
+        )
+    ).first()
+    return departments_selected({"departments_run": row.value if row else None})
+
+
+def _selection_after(
+    batch: dict[Question, Any], stored: frozenset[Department]
+) -> frozenset[Department]:
+    """The selection this request leaves behind.
+
+    If the batch sets `departments_run`, that value decides — a client may
+    legitimately select a department and answer its questions in one request, and
+    judging that batch against the *previous* selection would refuse the second half
+    of a perfectly coherent submission.
+    """
+    for question, value in batch.items():
+        if question.key == "departments_run":
+            return departments_selected({"departments_run": value})
+    return stored
+
+
 def ensure_may_answer(caller: ScopedSession, question: Question) -> None:
     """Refuse an answer this caller has no business setting.
 
@@ -113,6 +204,15 @@ def ensure_may_answer(caller: ScopedSession, question: Question) -> None:
     if not may_read_answer(caller, question.scope, question.department):
         # 404 rather than 403: for an L3 department the caller cannot reach,
         # confirming the question exists confirms the department does.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+    # The routing check, which `may_read_answer` above cannot make: doc 08 §3.1's
+    # pipeline stages are classified **L2**, so every role that can see the company
+    # can read them — but a Finance manager still has no business defining Sales's
+    # pipeline. D15's second open question is exactly this, and it is only reachable
+    # once D16 admits anyone below Executive; written now because a check added
+    # alongside the feature that needs it is a check nobody remembers to add.
+    if question.asked_of is not None and not caller.may_reach_department(question.asked_of):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
 
@@ -276,6 +376,12 @@ class QuestionOut(BaseModel):
     answer_type: str
     scope: str
     department: str | None
+    asked_of: str | None = None
+    """Whose block this question belongs to, so the client can group the stage.
+
+    Distinct from `department`, which is the scope classification — see
+    `Question.asked_of`. Only ever set on department-block questions.
+    """
     required: bool
     why: str
     options: list[ChoiceOut]
@@ -368,7 +474,32 @@ async def store_answer(
     classification is re-applied on update as well as insert: a question that is
     reclassified upward must not leave old rows sitting at the weaker scope
     forever because they happened to be answered first.
+
+    A question whose `sink` is not `ANSWER` goes to its real column instead, and
+    **only** there — see `Sink`. Writing both would give one fact two homes that
+    can disagree.
     """
+    if question.sink is Sink.WORKSPACE_NAME:
+        # RLS scopes this to the caller's own workspace: the policy's USING clause
+        # compares `workspace_id` to the GUC `scoped_connection` set, so there is no
+        # workspace id in this statement to point at somebody else's row.
+        await session.execute(
+            text("UPDATE workspace SET name = :n WHERE id = :ws"),
+            {"n": str(value).strip(), "ws": str(caller.workspace_id)},
+        )
+        return
+
+    if question.sink is Sink.USER_DISPLAY_NAME:
+        # `app_user` carries no workspace column and therefore no RLS, so the
+        # predicate is the whole protection here. It is the session's user id (I2),
+        # never a value from the request — there is no request field that could
+        # aim this at another account.
+        await session.execute(
+            text("UPDATE app_user SET display_name = :n WHERE id = :u"),
+            {"n": str(value).strip(), "u": str(caller.user_id)},
+        )
+        return
+
     answer_scope, department = scope_for_answer(question.key)
 
     await session.execute(
@@ -397,6 +528,459 @@ async def store_answer(
 # ── The catalogue, with this caller's answers ─────────────────
 
 
+class CompletionOut(BaseModel):
+    completed_at: datetime
+    landing_department: str | None
+    """Where to send them. `None` when their membership names no department — there
+    is no sensible default, and inventing one puts somebody in a department nobody
+    assigned them to."""
+
+    email_sent: bool
+    email_detail: str
+    """Why not, when `email_sent` is false. Completion never depends on it."""
+
+    already_complete: bool
+    """True when this call changed nothing. A second click must not re-send."""
+
+
+def _mailer(settings: Settings) -> Mailer | None:
+    """The configured mailer, or `None` when there is not one.
+
+    `None` rather than an exception: a missing mailer must never block completion.
+    That is this phase's stated requirement and it is also the right default — the
+    account exists, the setup is finished, and refusing to record that because a
+    notification could not go out would lose the thing that matters to keep the thing
+    that does not.
+    """
+    if settings.mailer_backend == "file":
+        return FileMailer(settings.mail_root)
+    return None
+
+
+MISSING_ANSWER_LIMIT = 10
+
+
+@router.post(
+    "/onboarding/complete",
+    response_model=CompletionOut,
+    dependencies=[Depends(require_csrf)],
+)
+async def complete_setup(
+    scope: CurrentScope,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> CompletionOut:
+    """Mark setup finished, tell the user, and say where to go next.
+
+    **Idempotent, and it has to be.** The timestamp is set with
+    `WHERE setup_completed_at IS NULL ... RETURNING`, so the database decides whether
+    this call was the transition. A read-then-write would let two clicks both see
+    `NULL` and both send an email — the classic version of this bug, and the reason
+    the check and the write are one statement.
+
+    **Required answers are enforced here rather than only in the UI.** `required` had
+    been a rendering hint; completing without `company_url` would have marked a
+    workspace set up while the audit had nothing to read. The response names what is
+    missing, because a refusal that does not say what to fix is a dead end.
+
+    **Email never gates completion.** It is sent after the transition and its failure
+    is reported in the payload, not raised. Doc 07's honesty rule cuts both ways: the
+    user is told the notification did not go out, and is not blocked by it.
+    """
+    async with scoped_connection(scope) as session:
+        answered = {
+            row.question_key
+            for row in await session.execute(text("SELECT question_key FROM onboarding_answer"))
+        }
+        selected = await _stored_selection(session)
+
+        missing = [
+            question.key
+            for question in CATALOGUE
+            if question.required
+            and question.sink is Sink.ANSWER
+            and may_be_asked(scope, question, selected)
+            and question.key not in answered
+        ]
+        if missing:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Still needed before setup can be marked complete: "
+                + ", ".join(missing[:MISSING_ANSWER_LIMIT]),
+            )
+
+        # One statement: the WHERE clause is what makes this idempotent, and
+        # RETURNING is what tells us whether we were the ones who changed it.
+        row = (
+            await session.execute(
+                text(
+                    "UPDATE workspace SET setup_completed_at = now()"
+                    " WHERE id = :ws AND setup_completed_at IS NULL"
+                    " RETURNING setup_completed_at"
+                ),
+                {"ws": str(scope.workspace_id)},
+            )
+        ).first()
+
+        transitioned = row is not None
+
+        # The workspace name and the caller's own address, in one statement. The
+        # address is joined on the *session's* user id, never one from the request —
+        # this is the only place a recipient is chosen, so there is one thing to read
+        # when asking "could this ever email somebody else?".
+        details = (
+            await session.execute(
+                text(
+                    "SELECT w.name, w.setup_completed_at, u.email"
+                    "  FROM workspace w, app_user u"
+                    " WHERE w.id = :ws AND u.id = :u"
+                ),
+                {"ws": str(scope.workspace_id), "u": str(scope.user_id)},
+            )
+        ).one()
+        completed_at = details.setup_completed_at
+        workspace_name = details.name
+        recipient = details.email
+
+    landing = landing_department(
+        executive_surface=scope.can_see_executive_surface,
+        departments=scope.departments,
+    )
+
+    sent, detail = (
+        _notify_setup_complete(settings, recipient=recipient, workspace_name=workspace_name)
+        if transitioned
+        else (False, "Already complete — no second notification is sent.")
+    )
+
+    log.info(
+        "onboarding.completed",
+        transitioned=transitioned,
+        email_sent=sent,
+        landing=landing.value if landing else None,
+    )
+    return CompletionOut(
+        completed_at=completed_at,
+        landing_department=landing.value if landing else None,
+        email_sent=sent,
+        email_detail=detail,
+        already_complete=not transitioned,
+    )
+
+
+def _notify_setup_complete(
+    settings: Settings, *, recipient: str | None, workspace_name: str
+) -> tuple[bool, str]:
+    """Best effort, and honest about it. Never raises.
+
+    The recipient is passed in, already read from `app_user` on the session's user id.
+    Doc 06 §4.10's rule — that output goes to workspace users, resolved at send time —
+    starts here even though this is one transactional message rather than a brief.
+    """
+    mailer = _mailer(settings)
+    if mailer is None:
+        return False, (
+            f"No mailer is configured ({settings.mailer_backend!r}), so no email was "
+            "sent. Your setup is complete regardless."
+        )
+    if not recipient:
+        return False, "No address on file for your account, so no email was sent."
+
+    try:
+        mailer.send(
+            Email(
+                to=recipient,
+                subject=f"{workspace_name} is set up on NEXUS OS",
+                text_body=(
+                    f"Your workspace {workspace_name} is set up.\n\n"
+                    "What exists now: your company details, the departments you run and "
+                    "their questions, and your profile.\n\n"
+                    "What does not: every dashboard capability is still unbuilt, and no "
+                    "tool is connected. Each tile says so rather than showing a zero.\n"
+                ),
+            )
+        )
+    except OSError as exc:
+        # Type only — a mail path can carry the deployment layout.
+        log.warning("onboarding.complete.mail_failed", error=type(exc).__name__)
+        return False, "The notification could not be sent. Your setup is complete regardless."
+
+    return True, ""
+
+
+class PersonaProposalOut(BaseModel):
+    summary: str
+    priority_topics: list[str]
+    communication_style: str | None
+    default_landing_screen: str | None
+    available: bool
+    unavailable_reason: str
+    provenance: list[str]
+    """What was read to produce this. Stands in for the `generation` row M8 will add."""
+
+
+class PersonaIn(BaseModel):
+    """What a human confirmed. Deliberately *not* the proposal object.
+
+    A confirm endpoint that accepted "the proposal I just showed you" would be
+    trusting a value the client could not have edited meaningfully. These are the
+    fields as the person left them, validated here, so an edited proposal and a
+    hand-written persona take exactly the same path.
+    """
+
+    stated_purpose: str | None = Field(default=None, max_length=MAX_LONG_TEXT)
+    priority_topics: list[str] = Field(default_factory=list)
+    communication_style: str | None = None
+    default_landing_screen: str | None = None
+    language: str = Field(default="en", max_length=8)
+    timezone: str = Field(default="Asia/Muscat", max_length=64)
+
+
+@router.post("/onboarding/persona/propose", response_model=PersonaProposalOut)
+async def propose_persona_route(
+    scope: CurrentScope,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider: Annotated[LlmProvider, Depends(get_provider)],
+) -> PersonaProposalOut:
+    """Run the agent team and return a proposal. **Writes nothing.**
+
+    Two agents: company research over a page fetched from the workspace's own domain,
+    and profile analysis over the answers the user typed. Neither touches a document,
+    a chunk or a vector search, which is what keeps this off M6.
+
+    Nothing is stored, deliberately. A proposal written to `persona` and then
+    presented for approval is a persona that took effect before anybody agreed to it —
+    and the difference matters most in the case where the model is wrong. The cost is
+    that leaving this screen loses the proposal and re-running it spends tokens again;
+    that is the right side of the trade, and it is recorded rather than hidden.
+
+    Never raises on a model failure. `propose_persona` converts every one into a named
+    unavailable state, because this is a request handler and the honest answer to "the
+    model is down" is a screen that says so with the fields left editable.
+    """
+    async with scoped_connection(scope) as session:
+        stored = (
+            (await session.execute(text("SELECT question_key, value FROM onboarding_answer")))
+            .mappings()
+            .all()
+        )
+        domain = (
+            await session.execute(
+                text("SELECT domain FROM workspace WHERE id = :ws"),
+                {"ws": str(scope.workspace_id)},
+            )
+        ).scalar_one_or_none()
+
+    answers: dict[str, object] = {row["question_key"]: row["value"] for row in stored}
+
+    # The crawl target is the workspace's *own* domain, or the URL its own setup
+    # answer gave. Never a value from this request: a client-supplied URL here would
+    # make this endpoint an SSRF primitive with a language model attached, and the
+    # guard in `connectors/ssrf.py` should not be the only thing standing in the way.
+    target = _as_url(answers.get("company_url")) or (f"https://{domain}" if domain else None)
+
+    page_text, page_url = await _fetch_own_page(target, settings)
+    proposal = await propose_persona(
+        provider, answers=answers, page_text=page_text, page_url=page_url
+    )
+
+    return PersonaProposalOut(
+        summary=proposal.summary,
+        priority_topics=list(proposal.priority_topics),
+        communication_style=(
+            proposal.communication_style.value if proposal.communication_style else None
+        ),
+        default_landing_screen=(
+            proposal.default_landing_screen.value if proposal.default_landing_screen else None
+        ),
+        available=proposal.available,
+        unavailable_reason=proposal.unavailable_reason,
+        provenance=list(proposal.provenance),
+    )
+
+
+def _as_url(value: object) -> str | None:
+    return value if isinstance(value, str) and value.startswith(("http://", "https://")) else None
+
+
+async def _fetch_own_page(target: str | None, settings: Settings) -> tuple[str | None, str | None]:
+    """Fetch the workspace's own page, or return nothing and say so in the log.
+
+    A failed crawl is not a failed persona. The profile agent still has the answers
+    the user typed, so the proposal degrades to those rather than to an error — which
+    is the difference between "we could not read your site" and "setup is broken".
+    """
+    if target is None:
+        return None, None
+
+    try:
+        page = await fetch_page(
+            target,
+            max_bytes=settings.crawl_max_bytes,
+            timeout_seconds=settings.crawl_timeout_seconds,
+            max_redirects=settings.crawl_max_redirects,
+        )
+    except FetchError as exc:
+        log.info("agents.persona.crawl_failed", reason=type(exc).__name__)
+        return None, None
+
+    signals = extract_signals(page.html, url=page.final_url)
+    # `text_sample` is the leading body text, and its own docstring already called it
+    # "untrusted content — see the M12 boundary". This is the first caller to actually
+    # honour that: it goes to `wrap_untrusted` and nowhere else.
+    #
+    # It is capped at 2000 characters upstream, well under `MAX_CRAWL_CHARS`, so the
+    # agent sees a page's opening rather than its whole text. That is a real limit on
+    # what the summary can know, and the reason the proposal is editable.
+    return signals.text_sample, page.final_url
+
+
+@router.post(
+    "/onboarding/persona",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_csrf)],
+)
+async def save_persona(payload: PersonaIn, scope: CurrentScope) -> Response:
+    """Store the persona this person confirmed.
+
+    Per user *and* per workspace: `uq_persona_workspace_user`, so the same person in
+    two workspaces has two personas and neither leaks into the other.
+
+    **A persona changes emphasis, never access.** Doc 06 §2.6 is explicit, and
+    `test_persona_and_invitations.py` asserts the enforcement by walking
+    `ScopedSession`, the access rule and the scope table for persona field names.
+    Nothing in this handler touches `membership`, which is the only thing
+    `build_scope` reads.
+    """
+    style = _one_of(payload.communication_style, CommunicationStyle, "communication style")
+    landing = _one_of(payload.default_landing_screen, LandingScreen, "landing screen")
+    topics = [
+        item
+        for raw in payload.priority_topics[:MAX_LIST_ITEMS]
+        if (item := raw.strip()[:MAX_ITEM_LENGTH])
+    ]
+
+    async with scoped_connection(scope) as session:
+        await session.execute(
+            text(
+                "INSERT INTO persona"
+                " (workspace_id, user_id, stated_purpose, priority_topics,"
+                "  default_landing_screen, communication_style, language, timezone)"
+                " VALUES (:ws, :u, :purpose, :topics, :landing, :style, :lang, :tz)"
+                " ON CONFLICT (workspace_id, user_id) DO UPDATE"
+                "    SET stated_purpose = EXCLUDED.stated_purpose,"
+                "        priority_topics = EXCLUDED.priority_topics,"
+                "        default_landing_screen = EXCLUDED.default_landing_screen,"
+                "        communication_style = EXCLUDED.communication_style,"
+                "        language = EXCLUDED.language,"
+                "        timezone = EXCLUDED.timezone,"
+                "        updated_at = now()"
+            ),
+            {
+                "ws": str(scope.workspace_id),
+                # The session's user, never a field from the request. A persona is
+                # personal, and an id here would let one member rewrite another's.
+                "u": str(scope.user_id),
+                "purpose": payload.stated_purpose,
+                "topics": topics,
+                "landing": landing.value if landing else None,
+                "style": style.value if style else None,
+                "lang": payload.language.strip() or "en",
+                "tz": payload.timezone.strip() or "Asia/Muscat",
+            },
+        )
+
+    log.info("onboarding.persona.saved", topics=len(topics), has_style=style is not None)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _one_of(value: str | None, choices: type[StrEnum], label: str) -> StrEnum | None:
+    """Accept a value from the enum, or refuse. Never coerce.
+
+    Coercion is how a preference nobody expressed ends up stored — "conversational"
+    quietly becoming `brief`.
+    """
+    if value is None or not value.strip():
+        return None
+    try:
+        return choices(value.strip().lower())
+    except ValueError:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"{value!r} is not a valid {label}."
+        ) from None
+
+
+class ConnectionOut(BaseModel):
+    source: str
+    label: str
+    connected: bool
+    """Always false. There is no connector, and a field that could only ever be
+    false is still worth sending: the client renders state from data rather than
+    hard-coding an assumption it would then have to remember to remove."""
+
+    unlocks: int
+    """How many capabilities this would make reachable, counted from the same
+    offering definitions the dashboards render."""
+
+    departments: list[str]
+    """Which directors those capabilities sit under."""
+
+    detail: str
+
+
+class ConnectionsOut(BaseModel):
+    connections: list[ConnectionOut]
+    connected_count: int
+    """Zero, and stated rather than implied."""
+
+
+@router.get("/onboarding/connections", response_model=ConnectionsOut)
+async def connections(scope: CurrentScope) -> ConnectionsOut:
+    """What connecting each tool would unlock, and that none of them is connected.
+
+    Doc 04 §5's stage 4. **No OAuth, and no fake connected state** — M10 is unbuilt
+    and both its prerequisites are open decisions (**D3** Google credentials, **D10**
+    which CRM). So this is the honest version: name each tool, count what it would
+    actually unlock, and say plainly that nothing is attached.
+
+    The counts come from `offerings_needing`, which reads the same offering
+    definitions the director pages render. A hand-written "connect GA4 to unlock 6
+    things" would be a number that goes stale the first time doc 05's spec changes —
+    and it went stale in the other direction already: `Source.SEARCH_CONSOLE`
+    unlocked *nothing* until offering 3.7's `needs` was corrected, so this endpoint
+    would have offered a tool that changes no tile.
+
+    Read-only, and it discloses no workspace data — only the shape of the product.
+    It still takes a `ScopedSession`, because everything under a workspace does.
+    """
+    out: list[ConnectionOut] = []
+    for source in CONNECTABLE:
+        offerings = offerings_needing(source)
+        departments = sorted(
+            {
+                director.department.value
+                for director in DIRECTORS
+                for offering in director.offerings
+                if offering in offerings
+            }
+        )
+        out.append(
+            ConnectionOut(
+                source=source.value,
+                label=TOOL_LABELS[source.value],
+                connected=False,
+                unlocks=len(offerings),
+                departments=departments,
+                detail=(
+                    "Not connected. No connector is built yet, so this stays locked "
+                    "however you answer."
+                ),
+            )
+        )
+
+    log.info("onboarding.connections.listed", tools=len(out), connected=0)
+    return ConnectionsOut(connections=out, connected_count=0)
+
+
 @router.get("/onboarding/questions", response_model=QuestionsOut)
 async def questions(scope: CurrentScope) -> QuestionsOut:
     """Every question, plus whatever of it this caller may see.
@@ -420,6 +1004,23 @@ async def questions(scope: CurrentScope) -> QuestionsOut:
             .mappings()
             .all()
         )
+        # Sink-backed questions live in their real columns, so they have to be read
+        # from there or the wizard would render them blank on every reload and
+        # invite the user to type their own name again.
+        #
+        # One statement, and `app_user` is joined on the *session's* user id — not
+        # a join across the membership table, which would make this a company
+        # directory the endpoint was never asked to be.
+        sinks = (
+            await session.execute(
+                text(
+                    "SELECT w.name AS workspace_name, u.display_name"
+                    "  FROM workspace w, app_user u"
+                    " WHERE w.id = :ws AND u.id = :u"
+                ),
+                {"ws": str(scope.workspace_id), "u": str(scope.user_id)},
+            )
+        ).first()
         # Only administrators choose brief recipients, so only they need the
         # roster. Returning it to everyone would make this endpoint a company
         # directory that nothing asked for.
@@ -439,6 +1040,21 @@ async def questions(scope: CurrentScope) -> QuestionsOut:
         if may_read_answer(scope, stored_scope, stored_department):
             answers[row["question_key"]] = row["value"]
 
+    for question in CATALOGUE:
+        if question.sink is Sink.ANSWER or sinks is None:
+            continue
+        # Read through the same permission check as any other answer. Both of these
+        # are L1/L2 and so reachable by everyone who can see the workspace, but
+        # deciding it here rather than assuming it means a later reclassification
+        # cannot leave a value visible that the catalogue no longer permits.
+        if not may_read_answer(scope, question.scope, question.department):
+            continue
+        value = sinks.workspace_name if question.sink is Sink.WORKSPACE_NAME else sinks.display_name
+        if value:
+            answers[question.key] = value
+
+    selected = departments_selected(answers)
+
     return QuestionsOut(
         can_administer=administers,
         members=members,
@@ -450,6 +1066,7 @@ async def questions(scope: CurrentScope) -> QuestionsOut:
                 answer_type=q.answer_type.value,
                 scope=scope_code(q.scope),
                 department=q.department.value if q.department else None,
+                asked_of=q.asked_of.value if q.asked_of else None,
                 required=q.required,
                 why=q.why,
                 options=[ChoiceOut(value=c.value, label=c.label) for c in q.options],
@@ -458,6 +1075,9 @@ async def questions(scope: CurrentScope) -> QuestionsOut:
                 value=answers.get(q.key),
             )
             for q in CATALOGUE
+            # Absent, not disabled. A department the company does not run, or that
+            # this caller cannot reach, produces no rows here at all.
+            if may_be_asked(scope, q, selected)
         ],
     )
 
@@ -489,6 +1109,26 @@ async def save_answers(payload: AnswersIn, scope: CurrentScope) -> SavedOut:
             questions_to_write.append(
                 (question, validate_answer(question, answer.value, member_ids=member_ids))
             )
+
+        # The write path has to narrow by selection too, or it goes asymmetric with
+        # the read path: `GET /onboarding/questions` never offers a department the
+        # company did not select, so an answer for one could only arrive from a
+        # client that built the request itself — and it would then be **stored,
+        # classified, and invisible**, because the same filter hides it on the way
+        # back out. That is the shape of every silent-state defect in this codebase.
+        #
+        # Resolved against the selection *as it will be after this batch*, not as it
+        # is now. A client is entitled to send `departments_run` and that department's
+        # answers in one request, and refusing the second half of its own batch would
+        # be an ordering trap rather than a rule.
+        selected = _selection_after(dict(questions_to_write), await _stored_selection(session))
+        for question, _ in questions_to_write:
+            if question.asked_of is not None and question.asked_of not in selected:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"{question.asked_of.value.title()} is not one of the departments "
+                    "this workspace runs.",
+                )
 
         for question, value in questions_to_write:
             await store_answer(session, caller=scope, question=question, value=value)

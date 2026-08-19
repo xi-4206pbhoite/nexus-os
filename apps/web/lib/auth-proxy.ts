@@ -28,8 +28,28 @@ import { NextResponse } from 'next/server'
 
 const API_BASE = process.env.NEXUS_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
-/** Comfortably above a round trip to a managed database, well below a hang. */
-const TIMEOUT_MS = 15_000
+/**
+ * Comfortably above the slowest auth call, well below a hang.
+ *
+ * Raised from 15s because registration outgrew it. That call now makes roughly
+ * eight round trips — insert the account, authenticate, read memberships, create
+ * the tenant/workspace/membership, re-read, issue the session, commit — and
+ * measured from a development laptop against Neon in `us-east-2` each one costs
+ * ~0.5s, with the *first* statement paying ~1.5-5s of connection setup on top.
+ * Total: 8-11s, and occasionally past 15s, at which point this aborted a request
+ * the API had already completed.
+ *
+ * That failure was worse than slow. The account and workspace were created, the
+ * browser saw a 503, and only the idempotent re-registration path (ADR 0014) made
+ * a retry recover. A timeout that fires while the server succeeds is a lie to the
+ * client.
+ *
+ * **This is local-development latency, not production latency.** Deployed, the API
+ * sits beside its database and the same request is a few tens of milliseconds. The
+ * number here has to accommodate the development setup, because the alternative is
+ * that registration cannot be tested locally at all.
+ */
+const TIMEOUT_MS = 30_000
 
 /**
  * Headers copied from the browser to the API. An allowlist rather than a

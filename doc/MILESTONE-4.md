@@ -5,7 +5,7 @@
 
 Doc 07 M4: *"Done when the role → scope table is enforced at the API layer and a Contributor cannot reach L3 aggregates."*
 
-`D5` is resolved and recorded as [ADR 0005](doc/adr/0005-contributor-l3-subset.md).
+`D5` is resolved and recorded as [ADR 0005](adr/0005-contributor-l3-subset.md).
 
 ---
 

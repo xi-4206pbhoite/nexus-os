@@ -82,20 +82,64 @@ def test_the_sensitive_answers_are_not_company_public(key: str) -> None:
 
 
 def test_l1_is_reserved_for_material_that_leaves_the_company() -> None:
+    """Every member of this set has to be defensible as *published*.
+
+    `company_name` and `what_we_sell` joined it on the same argument the brand-voice
+    questions already carry: a company's own name and what it sells are outward-facing
+    by nature, and both feed generated copy that leaves the building. `your_name` did
+    **not** — a person's name is not published material merely because their
+    employer's services are, so it sits at L2.
+    """
     l1_keys = {q.key for q in CATALOGUE if q.scope is Scope.L1_COMPANY_PUBLIC}
-    assert l1_keys == {"company_url", "forbidden_terms", "preferred_terms"}, (
-        "L1 means published or outward-facing. Anything else belongs at L2 or above."
-    )
+    assert l1_keys == {
+        "company_url",
+        "company_name",
+        "what_we_sell",
+        "forbidden_terms",
+        "preferred_terms",
+    }, "L1 means published or outward-facing. Anything else belongs at L2 or above."
 
 
 # ── Sequencing (doc 04 §5, doc 06 §4.10) ──────────────────────
 
 
-def test_pass_one_asks_only_what_the_audit_needs() -> None:
+AUDIT_NEEDS = {"company_url", "role", "department", "stated_purpose"}
+"""What doc 04 §5 licenses asking before anything has been shown."""
+
+IDENTITY = {"your_name", "company_name"}
+"""The two exceptions, and they are exceptions rather than a widening.
+
+Doc 04 §5's rule is that the audit earns the right to ask. Neither of these is
+needed by the audit, so admitting them **is** a relaxation of it — recorded here
+rather than absorbed by loosening the assertion.
+
+What justifies them: registration names the workspace from the email domain
+(ADR 0013), so without these the company is called `acmetrading.om` on every
+screen and the assistant addresses the user by their email address. Both cost the
+user no thought, which is the property that makes them harmless before the audit —
+and is exactly what a third addition would have to argue for too.
+"""
+
+
+def test_pass_one_asks_only_the_audit_and_identity() -> None:
     """Doc 04 §5 — the audit comes before the questionnaire, because it is the
-    only moment that earns the right to ask for the rest."""
+    only moment that earns the right to ask for the rest.
+
+    Still an exact set: the point is that anything new has to justify itself in one
+    of the two buckets above, not that Pass 1 is now open.
+    """
     keys = {q.key for q in questions_for(Pass.ONE)}
-    assert keys == {"company_url", "role", "department", "stated_purpose"}
+    assert keys == AUDIT_NEEDS | IDENTITY
+
+
+def test_the_identity_questions_are_not_required() -> None:
+    """They are conveniences, so they must not block a user from reaching the audit.
+
+    `company_url` is the only Pass 1 answer the audit cannot run without.
+    """
+    by_key = {q.key: q for q in questions_for(Pass.ONE)}
+    for key in IDENTITY:
+        assert by_key[key].required is False
 
 
 def test_money_questions_are_never_in_pass_one() -> None:

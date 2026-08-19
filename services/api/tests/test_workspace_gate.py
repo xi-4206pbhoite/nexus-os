@@ -1,8 +1,18 @@
-"""No workspace exists without a verified domain.
+"""No workspace holds a domain *authoritatively* without verifying it.
 
-Doc 07 M3's acceptance, and its validation step: *"try to create a workspace for
-a domain I don't control and fail."* These are that attempt, in every shape I
-could think of.
+Doc 07 M3's acceptance was stronger — *"no workspace exists without a verified
+domain"* — and **ADR 0013 replaced it**, because it left registration with nowhere
+to go. What these tests prove is the half that survived, and it is the half the
+database enforces: verification decides **exclusivity**, not existence.
+
+Nothing in this file was rewritten to accommodate that, which is the useful part.
+Every case here was always about claim mechanics and the partial unique index on
+`lower(domain) WHERE domain_verified_at IS NOT NULL`, so they hold unchanged — and
+`test_the_uniqueness_only_applies_to_verified_domains` was, all along, the
+assertion that made an unverified workspace legal. The schema anticipated ADR 0013;
+only the application refused it.
+
+The unverified path has its own suite in `test_workspace_at_registration.py`.
 
 Runs against the real database, because the last line of defence is a partial
 unique index rather than application logic — first verified wins is decided by

@@ -302,8 +302,16 @@ MARKETING = Director(
             "3.7",
             "SEO Intelligence",
             "Keyword volumes and difficulty, gaps, briefs, technical issues",
-            (Source.DATAFORSEO, Source.CRAWL),
-            note="Volumes are fetched, never estimated. Rankings additionally need Search Console.",
+            # Search Console was named in the note and missing from `needs`, which
+            # meant it unlocked *nothing*: `offerings_needing` returned an empty
+            # tuple for it, so a connection step would have offered a tool that
+            # changes no tile, and this offering would have rendered Live with its
+            # ranking half having no data source at all. Doc 05 §3.7 is explicit —
+            # "Rankings need Search Console" — and §3 line 105 counts it among the
+            # sources 3.7 requires. With it listed, connecting DataForSEO and the
+            # crawl alone renders Partial, which is what "the ranking half" means.
+            (Source.DATAFORSEO, Source.CRAWL, Source.SEARCH_CONSOLE),
+            note="Volumes are fetched, never estimated. Rankings need Search Console.",
         ),
         Offering(
             "3.8",
@@ -724,6 +732,56 @@ def state_for(offering: Offering, *, connected: frozenset[Source]) -> WidgetStat
         return WidgetState.LOCKED
     # Some inputs present, so there is something real to show at reduced scope.
     return WidgetState.PARTIAL
+
+
+CONNECTABLE: tuple[Source, ...] = (
+    Source.GA4,
+    Source.SEARCH_CONSOLE,
+    Source.CRM,
+    Source.ACCOUNTING,
+    Source.ADS,
+)
+"""The sources a *customer* connects, and nothing else.
+
+`Source` is deliberately wider than this, and the exclusions are the point — a
+connection step that offered all sixteen would be asking people to connect things
+that are not theirs to connect:
+
+- **CRAWL** happens on its own, from the URL they already gave.
+- **ONBOARDING** is the wizard they are standing in.
+- **ROSTER** is the team step, and comes from `membership`.
+- **OPS_LAYER** is NEXUS's own first-party records. There is nothing external to
+  attach; it fills up by being used (M11).
+- **HISTORY** is time passing. Offering to connect it would be absurd, and doc 04
+  §6 rule 3 is explicit that week one is a baseline rather than a brief.
+- **PAGESPEED**, **DATAFORSEO**, **ENRICHMENT**, **TENDER_FEED** are *our* provider
+  accounts, not the customer's — and two of them are unresolved procurement
+  (**D2** keyword data, and doc 05 §2.5's note that no tender provider is named in
+  any source document). Listing them here would ask a customer to solve our
+  supplier problem.
+- **LANGUAGE_MODEL** is an API key set by whoever runs the deployment (ADR 0011),
+  not a per-workspace connection.
+
+What remains is the five M10 was scoped around, plus Ads. None of them is
+implemented — **D3** (Google credentials) and **D10** (which CRM) are both open —
+so this list drives an honest "not connected" surface and nothing more.
+"""
+
+
+def offerings_needing(source: Source) -> tuple[Offering, ...]:
+    """Every capability that would become reachable if this were connected.
+
+    Built from the same offering definitions the dashboards render, so the count a
+    connection step shows and the tiles a director page locks cannot disagree. The
+    alternative — a hand-written "connect GA4 to unlock 6 things" — is a number that
+    goes stale the first time doc 05's spec changes.
+    """
+    return tuple(
+        offering
+        for director in DIRECTORS
+        for offering in director.offerings
+        if source in offering.needs
+    )
 
 
 def missing_sources(offering: Offering, *, connected: frozenset[Source]) -> tuple[Source, ...]:

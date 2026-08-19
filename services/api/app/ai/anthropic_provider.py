@@ -57,6 +57,21 @@ def _sdk() -> Any:
     return anthropic
 
 
+def _sdk_importable() -> bool:
+    """Whether the optional SDK is present, without importing it.
+
+    `find_spec` rather than a try/import so that `status()` — which a readiness probe
+    calls on every request — does not pay for a module import, and does not leave a
+    half-imported module behind if one fails.
+    """
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("anthropic") is not None
+    except (ImportError, ValueError):  # pragma: no cover - defensive
+        return False
+
+
 class AnthropicProvider:
     """Talks to Anthropic. Constructed by the registry, never directly."""
 
@@ -84,6 +99,28 @@ class AnthropicProvider:
                 model=None,
                 detail="No API key configured. AI features are unavailable until one is set.",
             )
+
+        # A key is not enough: the SDK is an optional dependency, and it was possible
+        # to have one without the other. `/health/ready` then reported the language
+        # model as `ok` while any call raised — which is precisely the promise this
+        # interface makes and breaks. `contracts.py` says `availability()` answers
+        # *before* a call so a surface can render "this needs a key" rather than
+        # catching an error from a call it should never have attempted; that only
+        # holds if this checks both halves.
+        #
+        # Found by configuring a key without installing the package, and fixed the
+        # same way `app/embedding/fastembed_provider.py` already handled it.
+        if not _sdk_importable():
+            return ProviderStatus(
+                availability=Availability.UNCONFIGURED,
+                provider=self.name,
+                model=self._model,
+                detail=(
+                    "An API key is set but the anthropic package is not installed — "
+                    'run pip install -e ".[ai]"'
+                ),
+            )
+
         return ProviderStatus(
             availability=Availability.AVAILABLE,
             provider=self.name,

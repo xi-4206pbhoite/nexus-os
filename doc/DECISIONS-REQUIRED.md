@@ -193,6 +193,36 @@ Doc 08 describes itself as extracted from `prototype/nexus-os-prototype.html` an
 
 ---
 
+### D18 — What the chunk-level retrieval predicate excludes *(blocks M6)*
+
+`ARCHITECTURE.md` §3.3 writes the retrieval predicate with
+`AND review_state != 'quarantined'`. That value has never been allowed on a chunk:
+`ck_chunk_review_state` permits `auto_approved`, `pending_review`, `approved`,
+`rejected`, and quarantine is a **document** state — `document.status` carries it for
+an unsupported file type. So as written the clause matches every row and filters
+nothing.
+
+Found while finishing task 5.6. Not fixed there, because the correct predicate is a
+product decision rather than a spelling fix, and it has three parts:
+
+1. **`rejected` must be excluded.** A human looked at the chunk and said no. Not in
+   question.
+2. **`pending_review` — excluded for everyone, or reachable by its uploader?** The
+   chunk sits at L5 owned by the uploader, so the scope predicate already limits it
+   to them. Excluding it as well means a person cannot search a document they just
+   uploaded until someone reviews it; including it means the assistant can cite
+   content the workspace has not yet cleared. Today **every** chunk is
+   `pending_review` (no classifier exists), so this single choice decides whether
+   retrieval returns anything at all before M7.
+3. **Should a quarantined *document* hide its chunks?** A quarantined document has no
+   parsed chunks today, so it is moot in practice — but stating it makes the
+   join explicit rather than incidental.
+
+My reading is exclude `rejected`, allow `pending_review` **only** for its owner
+(which the L5 branch already does), and add the document join for completeness. I
+have not implemented it: doc 07 §5.6 says stop rather than silently redesign, and
+this changes what the assistant is allowed to quote.
+
 ## 4. Assumptions I have made — object if any is wrong
 
 | # | Assumption | Basis |

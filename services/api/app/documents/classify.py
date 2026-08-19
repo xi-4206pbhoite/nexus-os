@@ -30,10 +30,36 @@ CONFIDENCE_THRESHOLD = 0.85
 
 
 class ReviewState(StrEnum):
+    """The four states `ck_chunk_review_state` accepts, spelled its way.
+
+    The values are the database's vocabulary, not this module's. They did not
+    used to be: `NEEDS_REVIEW` was `"needs_review"` while migration 0007
+    constrains the column to `pending_review`, and `_record` writes
+    `review_state.value` straight into it. Since no classifier exists yet every
+    chunk withholds, so *every* chunk insert violated the constraint — the M5
+    upload path could not store a single chunk in a real database, and the review
+    queue's `WHERE review_state = 'pending_review'` could never have matched
+    anything it wrote.
+
+    Nothing caught it because `tests/test_document_upload.py` substitutes
+    `_record`, so the suite asserted the shape the route meant to write rather
+    than the shape Postgres would accept — the same failure mode as the two
+    defects in `AUDIT-FINDINGS.md`. Tests reference the members, never the
+    strings, which is why realigning the values changed no test.
+
+    **There is no chunk-level `quarantined`.** Quarantine is a *document* state —
+    `document.status` carries it for an unsupported file type — and the chunk
+    constraint has never allowed the value. `ARCHITECTURE.md` §3.3 writes
+    `review_state != 'quarantined'` into the retrieval predicate, which would
+    match every row. What M6's predicate should actually exclude is an open
+    question rather than an obvious fix, so it is recorded for M6 instead of
+    being decided here.
+    """
+
     AUTO_APPROVED = "auto_approved"
-    NEEDS_REVIEW = "needs_review"
-    HUMAN_APPROVED = "human_approved"
-    QUARANTINED = "quarantined"
+    NEEDS_REVIEW = "pending_review"
+    HUMAN_APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 # Scopes an automatic classifier may assign.

@@ -19,9 +19,17 @@ wrong rather than the upload having failed.
 `classify_chunk`, which withholds to L5 plus the review queue on any parse
 failure, classifier failure, or confidence below threshold.
 
-What this module deliberately does *not* do is embed. That is task 5.6, and it
-is a separate step because embedding is slow, needs a model, and must not sit
-between the customer and their upload confirmation.
+**Searchable is a claim, so it is earned (task 5.6).** Embedding happens here,
+and `document.status` distinguishes the two outcomes: `indexed` means the chunks
+carry vectors and can be retrieved, `parsed` means they were stored, classified
+and are reviewable but no embedder was available. Before 5.6 this route wrote
+`indexed` unconditionally, which was a promise nothing kept.
+
+Embedding runs inline, inside the request. That is a deliberate interim: it keeps
+the document and its vectors in one transaction, so no document is ever
+momentarily `indexed` with nothing to retrieve. The cost is latency proportional
+to document length, which for a long PDF on CPU is seconds — `MILESTONE-5.md`
+records it as the reason indexing belongs in `jobs/` once M6 needs throughput.
 """
 
 from __future__ import annotations
@@ -49,10 +57,13 @@ from app.config import Settings, get_settings
 from app.deps import CurrentScope
 from app.documents.chunk import Chunk, chunk_document
 from app.documents.classify import Classification, ClassificationInput, classify_chunk
+from app.documents.index import index_plan
 from app.documents.parse import MAX_FILE_BYTES, ParseOutcome, parse_document
 from app.domain.access import Sensitivity
 from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
+from app.embedding.contracts import EmbeddedText, Embedder
+from app.embedding.registry import get_embedder
 from app.logging import get_logger
 from app.retrieval.scoped import scoped_connection
 from app.storage import FilesystemObjectStore, ObjectStore, workspace_key
@@ -78,6 +89,23 @@ class UploadOut(BaseModel):
     filename: str
     status: str
     chunks_indexed: int
+    """Chunks a *workspace* member could reach — classified and not withheld.
+
+    Distinct from `chunks_embedded`, and the two are routinely different: today
+    every chunk withholds to L5 (no classifier exists), so a fully embedded
+    document reports `chunks_indexed: 0` and `chunks_embedded: 41`. Collapsing
+    them into one number would make "searchable" and "visible" look like the same
+    property, and I4 depends on them not being.
+    """
+
+    chunks_embedded: int
+    """Chunks that carry a vector, whatever their scope. Embedding is not a
+    visibility decision — see `app/documents/index.py`."""
+
+    searchable: bool
+    """Whether this document can be retrieved at all. False whenever no embedder
+    was available, in which case `message` says so."""
+
     chunks_held_for_review: int
     page_count: int | None
     message: str
@@ -110,6 +138,7 @@ def _object_store(settings: Settings) -> ObjectStore:
 async def upload_document(
     scope: CurrentScope,
     settings: Annotated[Settings, Depends(get_settings)],
+    embedder: Annotated[Embedder, Depends(get_embedder)],
     file: Annotated[UploadFile, File()],
     consent: Annotated[bool, Form()] = False,
     supersedes_id: Annotated[UUID | None, Form()] = None,
@@ -170,12 +199,18 @@ async def upload_document(
             filename=filename,
             status="failed",
             chunks_indexed=0,
+            chunks_embedded=0,
+            searchable=False,
             chunks_held_for_review=0,
             page_count=parsed.page_count or None,
             message=parsed.message,
         )
 
-    classified = _classify_all(chunk_document(parsed.pages), scope=scope)
+    # One chunk list, used by both steps, so the vectors cannot drift out of
+    # alignment with the classifications they belong to.
+    chunks = chunk_document(parsed.pages)
+    classified = _classify_all(chunks, scope=scope)
+    plan = index_plan(chunks, embedder=embedder, expected_dim=settings.embedding_dim)
 
     await _record(
         document_id=document_id,
@@ -185,17 +220,20 @@ async def upload_document(
         size_bytes=len(data),
         storage_key=key,
         digest=digest,
-        state="indexed",
+        state=plan.document_status,
         failure_reason=None,
         page_count=parsed.page_count,
         supersedes_id=supersedes_id,
         chunks=classified,
+        vectors=plan.vectors,
     )
 
     held = sum(1 for _, c in classified if c.review_state.value != "auto_approved")
     log.info(
-        "document.indexed",
+        "document.stored",
+        status=plan.document_status,
         chunks=len(classified),
+        embedded=len(plan.vectors),
         held_for_review=held,
         page_count=parsed.page_count,
     )
@@ -203,11 +241,13 @@ async def upload_document(
     return UploadOut(
         document_id=document_id,
         filename=filename,
-        status="indexed",
+        status=plan.document_status,
         chunks_indexed=len(classified) - held,
+        chunks_embedded=len(plan.vectors),
+        searchable=plan.searchable,
         chunks_held_for_review=held,
         page_count=parsed.page_count,
-        message="",
+        message=plan.message,
     )
 
 
@@ -251,13 +291,24 @@ _INSERT_DOCUMENT = text(
     "         :status, :consent_at, :consent_version, :failure, :pages, :supersedes)"
 )
 
+# The scope columns and the vector are written by the same statement, which is
+# the schema decision of migration 0007 made operational: because `scope`,
+# `department`, `owner_user_id` and `embedding` live on one row, the permission
+# predicate is part of the ANN query rather than a pass over its results (I3).
+# A chunk cannot be embedded into a state where its scope is not yet known.
+#
+# `embedding` is cast from pgvector's text form. There is no bound-parameter type
+# for `vector` on asyncpg without registering the codec, and a cast keeps the one
+# statement readable; `EmbeddedText.to_sql_literal` is the only formatter.
 _INSERT_CHUNK = text(
     "INSERT INTO chunk"
     " (workspace_id, document_id, source_page, source_label, ordinal, content,"
     "  token_estimate, scope, department, owner_user_id, sensitivity,"
-    "  classified_by, confidence, review_state)"
+    "  classified_by, confidence, review_state,"
+    "  embedding, embedding_model_id, embedding_dim, embedded_at)"
     " VALUES (:ws, :doc, :page, :label, :ordinal, :content, :tokens, :scope,"
-    "         :department, :owner, :sensitivity, :classified_by, :confidence, :review)"
+    "         :department, :owner, :sensitivity, :classified_by, :confidence, :review,"
+    "         CAST(:embedding AS vector), :embedding_model, :embedding_dim, :embedded_at)"
 )
 
 
@@ -275,6 +326,7 @@ async def _record(
     page_count: int | None,
     supersedes_id: UUID | None,
     chunks: list[tuple[Chunk, Classification]] | None = None,
+    vectors: tuple[EmbeddedText, ...] = (),
 ) -> None:
     """Write the document and its chunks in one transaction, under RLS.
 
@@ -286,9 +338,28 @@ async def _record(
 
     One transaction covers the document and every chunk. A partial write would
     leave a document claiming to be `indexed` with only part of its content
-    reachable - the silent-failure shape doc 07 M5 forbids.
+    reachable - the silent-failure shape doc 07 M5 forbids. The vectors are in
+    that transaction too, for the same reason: `indexed` and "has an embedding"
+    must become true at the same instant or the status is a guess.
+
+    `vectors` is empty or exactly as long as `chunks`; `index_plan` guarantees it
+    and the assertion below is what makes that a checked guarantee rather than a
+    comment. Silently zipping a short list would leave the tail of a document
+    unsearchable inside a document marked searchable.
     """
-    consent_at = datetime.now(UTC) if state == "indexed" else None
+    # Consent is recorded whenever content was retained, not only when it became
+    # searchable. The warranty was given for the bytes we now hold, and a
+    # document that stopped at `parsed` because no embedder was configured is
+    # still being kept. `ck_document_consent_before_indexing` names `indexed`
+    # only, so this is stricter than the constraint requires, which is the right
+    # direction for a record of what someone warranted.
+    consent_at = datetime.now(UTC) if state in {"indexed", "parsed"} else None
+    embedded_at = datetime.now(UTC) if vectors else None
+
+    if vectors and len(vectors) != len(chunks or []):
+        raise RuntimeError(
+            f"{len(vectors)} vectors for {len(chunks or [])} chunks; refusing a partial index"
+        )
 
     async with scoped_connection(scope) as session:
         await session.execute(
@@ -314,7 +385,8 @@ async def _record(
             },
         )
 
-        for chunk, classification in chunks or []:
+        for index, (chunk, classification) in enumerate(chunks or []):
+            vector = vectors[index] if vectors else None
             await session.execute(
                 _INSERT_CHUNK,
                 {
@@ -334,6 +406,14 @@ async def _record(
                     "classified_by": classification.classified_by,
                     "confidence": classification.confidence,
                     "review": classification.review_state.value,
+                    # All three or none: `ck_chunk_embedding_provenance` refuses
+                    # a vector whose model and width are not recorded, because a
+                    # row that cannot say what embedded it cannot be re-embedded
+                    # when the model changes (ADR 0003).
+                    "embedding": vector.to_sql_literal() if vector else None,
+                    "embedding_model": vector.model_id if vector else None,
+                    "embedding_dim": vector.dim if vector else None,
+                    "embedded_at": embedded_at if vector else None,
                 },
             )
 

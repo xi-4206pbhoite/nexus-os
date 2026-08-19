@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024
     model_cache_dir: Path = REPO_ROOT / "models"
 
+    embedding_backend: str = "none"
+    """Which embedder runs: `fastembed`, `deterministic`, or `none`.
+
+    Defaults to `none` for the same reason `anthropic_api_key` defaults to empty
+    (ADR 0011): `fastembed` is an optional dependency whose first use downloads
+    ~1.1 GB of weights, so a default that reached for it would make a clean clone
+    and every CI run pay for a capability they may not exercise. With `none` the
+    product still uploads, parses, classifies and reviews documents — they simply
+    stay `parsed` rather than `indexed`, which is the truth.
+
+    `deterministic` is the test double. It produces well-formed, stable,
+    non-semantic vectors and `app/embedding/registry.py` refuses it outside
+    `local` and `ci` — well-formed noise is harder to notice than an outage.
+    """
+
     # ── Language model (ADR 0011) ─────────────────────────────
     # Deliberately has no usable default and is NOT passed through `require()`.
     # Every other secret here fails loudly when absent because the application

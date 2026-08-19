@@ -20,6 +20,7 @@ import pytest
 
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
+from app.embedding.registry import get_embedder
 
 _PINNED = (
     "NEXUS_DATABASE_URL",
@@ -32,6 +33,9 @@ def _clear_caches() -> None:
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_sessionmaker.cache_clear()
+    # The embedder is process-wide and chosen from settings, so a test that
+    # selects a backend would otherwise leak it into every test after it.
+    get_embedder.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +50,10 @@ def hermetic_settings(
     # Keep the storage probe out of the repo working tree.
     monkeypatch.setenv("NEXUS_STORAGE_ROOT", str(tmp_path_factory.mktemp("storage")))
     monkeypatch.setenv("NEXUS_MAIL_ROOT", str(tmp_path_factory.mktemp("mail")))
+
+    # No embedder unless a test asks for one. `fastembed` would download ~1.1 GB
+    # of weights on first use, which a test suite must never do implicitly.
+    monkeypatch.setenv("NEXUS_EMBEDDING_BACKEND", "none")
 
     _clear_caches()
     yield

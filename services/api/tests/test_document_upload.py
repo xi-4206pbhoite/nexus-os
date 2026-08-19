@@ -137,7 +137,11 @@ def test_a_sensitive_document_is_not_workspace_visible_until_reviewed(client) ->
 
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "indexed"
+    # `parsed`, not `indexed`: no embedder is configured in the hermetic baseline,
+    # so the content is stored and reviewable but not searchable (task 5.6).
+    # `test_document_indexing.py` covers both statuses and the difference between
+    # embedded and visible; this test is about the withholding.
+    assert body["status"] == "parsed"
     assert body["chunks_indexed"] == 0, "nothing may be visible without a decision"
     assert body["chunks_held_for_review"] > 0
 

@@ -7,9 +7,12 @@ unconfigured. That is the same failure mode as a dashboard tile showing `0`.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from app.config import get_settings
+from app.health import _check_embeddings
 from app.main import create_app
 
 
@@ -30,7 +33,13 @@ def test_readiness_reports_not_ready_without_a_database() -> None:
     assert body["status"] == "not_ready"
 
     names = {check["name"] for check in body["checks"]}
-    assert names == {"database", "pgvector", "object_storage", "language_model"}
+    assert names == {
+        "database",
+        "pgvector",
+        "object_storage",
+        "embeddings",
+        "language_model",
+    }
 
 
 def test_pgvector_is_reported_but_advisory() -> None:
@@ -127,3 +136,50 @@ def test_supplied_request_id_is_echoed() -> None:
     with TestClient(create_app()) as client:
         response = client.get("/health", headers={"x-request-id": "abc123"})
     assert response.headers["x-request-id"] == "abc123"
+
+
+# ── Embeddings, reported but never gating (task 5.6) ──────────
+
+
+def test_embeddings_are_reported_as_unconfigured_by_default() -> None:
+    """The default state of a clean install, and a working one.
+
+    Documents still upload, parse, classify and queue for review; they stay
+    `parsed`. So this must never make the service `not_ready` — a readiness probe
+    failing here would take the whole application out of a load balancer over a
+    capability the product is designed to run without.
+    """
+    check = _check_embeddings()
+
+    assert check.state == "unconfigured"
+    assert check.required_now is False
+
+
+def test_a_refused_embedder_is_an_error_not_an_unconfigured_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`deterministic` in a deployed environment is a deployment mistake.
+
+    It returns well-formed, stable, correctly-sized vectors with no semantic
+    structure, so nothing downstream fails and nothing is labelled — the whole
+    Brain is indexed with noise and the only symptom is that grounded answers are
+    quietly useless. `unconfigured` would read as "switch it on when ready";
+    `error` reads as "this is wrong now".
+    """
+    from app.embedding.registry import get_embedder
+
+    monkeypatch.setenv("NEXUS_EMBEDDING_BACKEND", "deterministic")
+    monkeypatch.setenv("NEXUS_ENV", "production")
+    get_settings.cache_clear()
+    get_embedder.cache_clear()
+    try:
+        check = _check_embeddings()
+    finally:
+        get_settings.cache_clear()
+        get_embedder.cache_clear()
+
+    assert check.state == "error"
+    assert check.detail is not None
+    assert "fastembed" in check.detail, "the error must say what to set instead"
+    # Still advisory: the product runs, documents are simply not searchable.
+    assert check.required_now is False

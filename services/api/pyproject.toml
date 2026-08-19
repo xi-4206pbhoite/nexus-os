@@ -9,13 +9,24 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "pydantic[email]>=2.9",
   "pydantic-settings>=2.6",
-  "sqlalchemy>=2.0.36",
+  # The `asyncio` extra, not bare sqlalchemy: async support needs `greenlet`, and
+  # SQLAlchemy no longer installs it by default. Without it every async engine
+  # call dies in `greenlet_spawn` -> `_not_implemented()`, which took out 29
+  # tests across four modules on a clean install while looking like a database
+  # outage.
+  "sqlalchemy[asyncio]>=2.0.36",
   "alembic>=1.14",
   "asyncpg>=0.30",
   "pgvector>=0.3.6",
   "argon2-cffi>=23.1",
   "itsdangerous>=2.2",
   "httpx>=0.28",
+  # Crawl extraction. Declared because `app/connectors/extract.py` imports them
+  # at module scope: without them ten test modules fail to *collect*, so a clean
+  # clone could not pass CI. They were named in ARCHITECTURE.md §8 from the
+  # start and simply never reached this file.
+  "beautifulsoup4>=4.12",
+  "lxml>=5.3",
   "tenacity>=9.0",
   "structlog>=24.4",
   # Scheduler for expiry sweeps and, later, crawls and score recomputation.
@@ -43,6 +54,15 @@ dependencies = [
 # nothing at startup.
 ai = [
   "anthropic>=0.40",
+]
+# Embeddings are OPTIONAL for the same reason (ADR 0003, ADR 0011's pattern).
+# `fastembed` pulls onnxruntime and downloads ~1.1 GB of weights on first use, so
+# neither a clean clone nor CI should pay for it implicitly. Install with
+#   pip install -e ".[embeddings]"
+# and set NEXUS_EMBEDDING_BACKEND=fastembed. Without it documents are stored,
+# classified and reviewable but stay `parsed` rather than `indexed`.
+embeddings = [
+  "fastembed>=0.4",
 ]
 dev = [
   "pytest>=8.3",

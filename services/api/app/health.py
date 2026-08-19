@@ -175,6 +175,49 @@ def _check_language_model() -> DependencyCheck:
     )
 
 
+def _check_embeddings() -> DependencyCheck:
+    """Reported, and not required — but for a different reason than the model.
+
+    An absent language model costs a feature. An absent embedder costs
+    *searchability*: documents still upload, parse, classify and queue for
+    review, and they stay `parsed` instead of `indexed`. That is a working state,
+    so it must not take the service out of a load balancer.
+
+    It must be visible, though, and prominently: with no embedder every document
+    a customer uploads is retained and unsearchable. Discovering that from the
+    Brain being empty is the failure this check exists to pre-empt.
+    """
+    from app.embedding.registry import embedder_status
+
+    try:
+        status = embedder_status()
+    except Exception as exc:  # pragma: no cover - defensive
+        return DependencyCheck(
+            name="embeddings",
+            state="error",
+            detail=type(exc).__name__,
+            required_now=False,
+        )
+
+    # `refused` is an error rather than `unconfigured`: it means a non-semantic
+    # backend was configured somewhere it must never run, which is a deployment
+    # mistake to fix, not a capability waiting to be switched on.
+    state: CheckState
+    if status.usable:
+        state = "ok"
+    elif status.availability.value == "refused":
+        state = "error"
+    else:
+        state = "unconfigured"
+
+    return DependencyCheck(
+        name="embeddings",
+        state=state,
+        detail=f"{status.backend}: {status.detail}",
+        required_now=False,
+    )
+
+
 def _check_storage(settings: Settings) -> DependencyCheck:
     if settings.storage_backend == "filesystem":
         try:
@@ -199,7 +242,13 @@ def _check_storage(settings: Settings) -> DependencyCheck:
 async def readiness(response: Response) -> Readiness:
     settings = get_settings()
     database, vector = await _probe_database(settings)
-    checks = [database, vector, _check_storage(settings), _check_language_model()]
+    checks = [
+        database,
+        vector,
+        _check_storage(settings),
+        _check_embeddings(),
+        _check_language_model(),
+    ]
 
     # Advisory checks are reported but do not gate readiness.
     ready = all(c.state == "ok" for c in checks if c.required_now)

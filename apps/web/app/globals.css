@@ -55,6 +55,25 @@
     @apply mx-auto w-full max-w-shell px-[var(--shell-x)];
   }
 
+  /* The same gutters, no ceiling.
+   *
+   * `.shell` caps at 78rem, which is right for the landing page: it is prose and
+   * marketing sections, and a 2000px line of body copy is unreadable. The signed-in
+   * application is the opposite case — dashboards, question grids, tables — where a
+   * cap turns most of a wide monitor into empty margin.
+   *
+   * The three app screens had each hand-rolled `mx-auto max-w-3xl px-6 sm:px-10`,
+   * which is both narrower than the landing page and a different gutter rhythm from
+   * it. This is one class so the padding is tuned in one place, and it shares
+   * `--shell-x` so the gutters line up with the marketing pages at every breakpoint.
+   *
+   * Line length is handled where text lives — `max-w-prose` on the paragraph — not
+   * by squeezing the whole page.
+   */
+  .shell-wide {
+    @apply w-full px-[var(--shell-x)];
+  }
+
   .eyebrow {
     @apply font-mono text-2xs uppercase tracking-[0.22em] text-steel-500;
   }

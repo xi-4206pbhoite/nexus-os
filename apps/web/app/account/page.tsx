@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function AccountPage() {
   return (
     <main className="min-h-screen bg-bone-50">
-      <div className="mx-auto max-w-3xl px-6 py-8 sm:px-10">
+      <div className="shell-wide py-8">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-100 pb-6">
           <Link
             href="/"

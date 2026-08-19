@@ -62,7 +62,7 @@ export function DirectorPage({ department }: { department: string }) {
 
   return (
     <main className="min-h-screen bg-bone-50">
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-10">
+      <div className="shell-wide py-8">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-ink-100 pb-6">
           <Link
             href="/"
@@ -132,7 +132,10 @@ function Ready({ director, all }: { director: Director; all: Dashboards }) {
 
       {/* Doc 05 §1's shell is not built. Saying which parts are missing is the
           honest version of a header strip with an empty score in it. */}
-      <div className="mt-6 rounded-2xl border border-gold-300 bg-gold-100 px-5 py-5">
+      {/* Capped on the box, not only on the paragraphs inside it. At full width a
+          panel that stretches to the edge while its text stops at `max-w-prose`
+          reads as half-empty; the box should hug what it contains. */}
+      <div className="mt-6 max-w-3xl rounded-2xl border border-gold-300 bg-gold-100 px-5 py-5">
         <p className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">
           A placeholder, and what it is missing
         </p>

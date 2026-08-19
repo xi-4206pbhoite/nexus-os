@@ -25,9 +25,13 @@ export function AuthShell({
 }) {
   return (
     <main className="min-h-screen bg-bone-50">
-      <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* Full width, so the artwork reaches the edge of the screen instead of
+          sitting in a letterbox with bone-coloured margin either side. The 6xl cap
+          this replaces meant that above ~1150px the page stopped growing and the
+          two columns drifted into the middle. */}
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* ── The form ── */}
-        <div className="flex flex-col px-6 py-8 sm:px-10 lg:py-12">
+        <div className="flex flex-col px-[var(--shell-x)] py-8 lg:py-12">
           <Link
             href="/"
             className="inline-flex w-fit rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold-500"
@@ -53,8 +57,20 @@ export function AuthShell({
               letterboxes against `bg-ink-900`, which is the artwork's own
               ground, so the fit is invisible. */}
           <PaperLandscape className="absolute inset-0 h-full w-full" />
+
+          {/* A scrim, because the caption sits on the artwork rather than below it.
+              At the old capped width the illustration letterboxed and the text landed
+              on flat `bg-ink-900`; full width pushes the artwork down behind it, and
+              bone-100 on pale water is unreadable. The gradient is the artwork's own
+              ground colour, so it darkens the foot of the picture rather than
+              introducing a panel. */}
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-ink-900 via-ink-900/85 to-transparent"
+            aria-hidden="true"
+          />
+
           <div className="absolute inset-x-0 bottom-0 p-10">
-            <p className="max-w-sm font-display text-xl leading-snug text-bone-100">
+            <p className="max-w-xl font-display text-xl leading-snug text-bone-100">
               Every number NEXUS shows you is fetched or computed. None of them are
               generated.
             </p>

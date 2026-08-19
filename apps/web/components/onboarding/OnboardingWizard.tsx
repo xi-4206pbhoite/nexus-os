@@ -284,7 +284,15 @@ export function OnboardingWizard() {
       {step.id === 'departments' && questions.length === 0 ? <NoDepartments /> : null}
 
       {questions.length > 0 ? (
-        <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
+        // One column until xl, two beyond it. Full width made a name field span the
+        // screen; pairing short questions uses that space instead of stretching one
+        // input across it. `QuestionField` decides which of them can share a row —
+        // a paragraph, an option list or an ordering takes the whole one.
+        //
+        // `items-start` matters: without it, grid rows stretch every cell to the
+        // tallest in the row, so a select would grow to match a neighbour with two
+        // lines of help text under it.
+        <div className="grid items-start gap-x-12 rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper xl:grid-cols-2 xl:gap-y-8">
           {questions.map((question) => (
             <QuestionField
               key={question.key}

@@ -23,6 +23,26 @@ const inputClass =
   'focus:border-steel-500 focus:ring-2 focus:ring-steel-200 ' +
   'disabled:bg-bone-100 disabled:text-ink-500'
 
+/**
+ * Whether a question needs the whole row when the form is two columns wide.
+ *
+ * Half a row is right for a short answer and wrong for an answer that is a
+ * paragraph, a list of options, or an ordering. Cramming those into a column
+ * produces a textarea you cannot read a sentence in and checkbox lists that wrap
+ * every second item — which is worse than the single wide column this replaced.
+ *
+ * Decided on the answer type rather than per question, so a new question inherits
+ * the right behaviour from what it asks for rather than needing a layout note.
+ */
+export function spansFullWidth(question: Question): boolean {
+  return (
+    question.answer_type === 'long_text' ||
+    question.answer_type === 'multi_choice' ||
+    question.answer_type === 'ranked' ||
+    question.answer_type === 'user_list'
+  )
+}
+
 export function QuestionField({
   question,
   value,
@@ -40,7 +60,19 @@ export function QuestionField({
   const readOnly = disabled || !question.writable
 
   return (
-    <div className="border-t border-ink-100 py-6 first:border-t-0 first:pt-0">
+    <div
+      className={[
+        // Below xl this is a list: a rule between each question, and the first one
+        // sits flush against the card's own padding.
+        'border-t border-ink-100 py-6 first:border-t-0 first:pt-0',
+        // At xl the parent becomes two columns, and the rules have to go. `first:`
+        // matches one element, so in a grid the top-*right* question would keep a
+        // border its neighbour had lost — a stray line across half the card. The
+        // grid's own `gap-y` does the separating instead.
+        'xl:border-t-0 xl:py-0 xl:first:pt-0',
+        spansFullWidth(question) ? 'xl:col-span-2' : '',
+      ].join(' ')}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <label htmlFor={id} className="text-[0.95rem] font-medium text-ink-900">
           {question.prompt}

@@ -17,28 +17,40 @@ import {
 } from '@/lib/onboarding-client'
 
 /**
- * The onboarding wizard.
+ * The onboarding wizard, in two flows rather than one.
  *
- * The order is doc 04 §5's, which is the whole argument of that document: value
- * first, then questions justified by what was shown, connections and documents
- * next, team last.
+ * The order is still doc 04 §5's — value first, then questions justified by what
+ * was shown, connections next, team last. What changed is where signup *ends*.
  *
- * - **the audit** (§5 stage 1) is M7, and is still a named gap here. The free
- *   Preview audit on the landing page is the same engine running on the
- *   outside-in half;
- * - **connections** (§5 stage 4) exist as a step, and connect nothing. M10 is
- *   unbuilt and both its prerequisites are open decisions, so `ConnectStep`
- *   shows what each tool would unlock and states plainly that none is attached.
- *   A Connect button there would be a control that lies.
+ * **`setup` is signup, and it is two steps long.** Its rule: an answer earns a
+ * place here only if the audit cannot run without it, or if it costs the user no
+ * thought and the product cannot address them without it. That is four fields, one
+ * of them required. Walking the old seven-step version end to end is what settled
+ * this — it asked for a ranked list of quarterly goals, an ideal-customer
+ * paragraph, an average deal size and a marketing budget before it had shown the
+ * user a single thing about their own business, and finished with a step containing
+ * one checkbox naming the only person in the workspace.
  *
- * Skipping straight from the basics to the money questions is *worse* than the
- * intended flow, and pretending otherwise with a mock audit would be worse
- * still: a fabricated score is exactly the failure the product's central claim
- * exists to prevent. So the gap is named where it falls.
+ * **`details` is everything else, and nothing in it blocks anything.** Same
+ * component, same catalogue, reached from the finish screen and from the dashboard.
+ * Deferring these questions is not the same as dropping them: each is still asked,
+ * at a point where the user has seen why it matters and can decline without being
+ * held at the door.
  *
- * One rule here is not cosmetic. Brief recipients come after the team step
- * because recipients must be workspace users (doc 06 §4.10) — and the API
- * refuses a non-member regardless of what this component renders.
+ * Two gaps are named rather than papered over, and both fall in `setup`:
+ *
+ * - **the audit** (§5 stage 1) is M7. The free Preview audit on the landing page
+ *   is the same engine running on the outside-in half, so the step links to it
+ *   instead of showing a placeholder score. A fabricated number is exactly the
+ *   failure the product's central claim exists to prevent.
+ * - **connections** (§5 stage 4) connect nothing — M10 is unbuilt and both its
+ *   prerequisites are open decisions. That step moved into `details`, because a
+ *   step that can only describe what it would do one day has no business standing
+ *   between a new user and their product.
+ *
+ * One rule here is not cosmetic. Brief recipients come after the team step because
+ * recipients must be workspace users (doc 06 §4.10) — and the API refuses a
+ * non-member regardless of what this component renders.
  */
 
 type Step = {
@@ -49,17 +61,27 @@ type Step = {
   stage?: Question['stage']
 }
 
+export type Flow = 'setup' | 'details'
+
 const DEPARTMENTS_KEY = 'departments_run'
 /** The one answer that changes which *other* questions exist. */
 
-const STEPS: Step[] = [
+/**
+ * Signup. Two steps, and the second one has no fields.
+ *
+ * Held deliberately short. Every question the API still marks `required` is in
+ * step one, so "finish setup" cannot refuse for a reason the user has not been
+ * shown — which was possible before, when a required currency select sat three
+ * steps deep behind a disabled button.
+ */
+const SETUP_STEPS: Step[] = [
   {
     id: 'basics',
     title: 'The basics',
     // Deliberately not a count. It said "Four questions" and went stale the moment
     // the catalogue grew — a number in prose beside a list rendered from data is a
     // claim nothing keeps true.
-    blurb: 'Who you are, and enough to run your first audit. Everything else waits.',
+    blurb: 'Enough to run your first audit, and nothing else. The rest can wait.',
     stage: 'pass_1',
   },
   {
@@ -67,9 +89,19 @@ const STEPS: Step[] = [
     title: 'Your audit',
     blurb: 'What we would normally show you here, and why we are not going to pretend.',
   },
+]
+
+/**
+ * Everything deferred out of signup, in the order doc 04 §5 puts it.
+ *
+ * Reachable at `/onboarding/details`, and skippable in whole or in part: nothing
+ * on these steps is required, so the Finish button here saves and leaves rather
+ * than gating.
+ */
+const DETAIL_STEPS: Step[] = [
   {
     id: 'context',
-    title: 'What we cannot work out for ourselves',
+    title: 'Your context',
     blurb:
       'Your site tells us what you sell. It does not tell us what you are trying to do, or what a deal is worth.',
     stage: 'pass_2',
@@ -86,7 +118,7 @@ const STEPS: Step[] = [
     // `departments_run` is answered in the previous step, which is why it renders
     // its own empty state rather than assuming it has fields.
     blurb:
-      'Five questions each, and only for the departments you run. These are the ones no crawl and no connector can answer.',
+      'Only for the departments you run. These are the ones no crawl and no connector can answer.',
     stage: 'department',
   },
   {
@@ -109,18 +141,35 @@ const STEPS: Step[] = [
   },
 ]
 
+const STEPS_FOR: Record<Flow, Step[]> = {
+  setup: SETUP_STEPS,
+  details: DETAIL_STEPS,
+}
+
 type State =
   | { status: 'loading' }
   | { status: 'error'; message: string }
   | { status: 'ready'; catalogue: Catalogue }
 
-export function OnboardingWizard() {
+export function OnboardingWizard({ flow = 'setup' }: { flow?: Flow } = {}) {
+  const STEPS = STEPS_FOR[flow]
+
   const [state, setState] = useState<State>({ status: 'loading' })
   const [index, setIndex] = useState(0)
   const [draft, setDraft] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [finished, setFinished] = useState<Completion | null>(null)
+  /** The detail flow's end. Nothing was completed — answers were simply saved. */
+  const [done, setDone] = useState(false)
+
+  // Advancing used to leave the page scrolled where the previous step's button
+  // was, so a long step handed the next one to the user already halfway down it —
+  // on the departments step that meant landing between two unrelated selects with
+  // the heading off screen. Found by walking the flow, invisible to every test.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [index, finished, done])
 
   useEffect(() => {
     let live = true
@@ -161,7 +210,14 @@ export function OnboardingWizard() {
   }, [state, step])
 
   if (state.status === 'loading') {
-    return <p className="font-mono text-sm text-ink-500">Loading your setup…</p>
+    // `aria-live` because this replaces the whole form: without it a screen reader
+    // is told nothing between page load and the form appearing, which on a cold
+    // Neon connection is several seconds of silence.
+    return (
+      <p aria-live="polite" className="font-mono text-sm text-ink-500">
+        Loading your setup…
+      </p>
+    )
   }
 
   if (state.status === 'error') {
@@ -187,6 +243,10 @@ export function OnboardingWizard() {
         }}
       />
     )
+  }
+
+  if (done) {
+    return <DetailsSaved onRevisit={() => setDone(false)} />
   }
 
   const missing = questions.filter(
@@ -231,6 +291,15 @@ export function OnboardingWizard() {
     }
 
     if (index === STEPS.length - 1) {
+      // Only signup completes anything. The detail flow runs *after* completion, so
+      // calling it again there would be a second no-op round trip whose only visible
+      // effect is the "already complete, no second notification" line — a confusing
+      // thing to show someone who was just filling in optional questions.
+      if (flow === 'details') {
+        setDone(true)
+        return
+      }
+
       // The last step is where setup actually becomes complete. Until this call the
       // wizard only set a local flag, so nothing was recorded, no notification went
       // out, and a reload started the form again.
@@ -256,7 +325,7 @@ export function OnboardingWizard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Progress index={index} />
+      <Progress steps={STEPS} index={index} />
 
       {!catalogue.can_administer ? (
         <div className="rounded-2xl border border-gold-300 bg-gold-100 px-5 py-4">
@@ -325,8 +394,15 @@ export function OnboardingWizard() {
           {saving
             ? 'Saving…'
             : index === STEPS.length - 1
-              ? 'Finish setup'
-              : 'Save and continue'}
+              ? flow === 'details'
+                ? 'Save and close'
+                : 'Finish setup'
+              : // A step with nothing to save should not claim to save. The audit step
+                // has no fields, and "Save and continue" there was a label describing
+                // an action that did not happen.
+                questions.length === 0
+                ? 'Continue'
+                : 'Save and continue'}
         </Button>
 
         {index > 0 ? (
@@ -357,25 +433,69 @@ function isEmpty(value: unknown): boolean {
   return false
 }
 
-function Progress({ index }: { index: number }) {
+/**
+ * Where you are, and how much is left.
+ *
+ * The count is stated in words as well as drawn in pills. Seven pills, one of them
+ * reading "WHAT WE CANNOT WORK OUT FOR OURSELVES", told a user how many steps there
+ * were only if they stopped to count them — and the widest label wrapped the row on
+ * a laptop, which made the row itself look like progress it was not.
+ */
+function Progress({ steps, index }: { steps: Step[]; index: number }) {
   return (
-    <ol className="flex flex-wrap gap-2">
-      {STEPS.map((step, position) => (
-        <li
-          key={step.id}
-          aria-current={position === index ? 'step' : undefined}
-          className={`rounded-full px-3 py-1.5 font-mono text-2xs uppercase tracking-[0.1em] ${
-            position === index
-              ? 'bg-ink-800 text-bone-50'
-              : position < index
-                ? 'bg-bone-200 text-ink-600'
-                : 'border border-ink-100 text-ink-400'
-          }`}
-        >
-          {step.title}
-        </li>
-      ))}
-    </ol>
+    <div className="flex flex-col gap-3">
+      <p className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-500">
+        Step {index + 1} of {steps.length}
+      </p>
+      <ol className="flex flex-wrap gap-2">
+        {steps.map((step, position) => (
+          <li
+            key={step.id}
+            aria-current={position === index ? 'step' : undefined}
+            className={`rounded-full px-3 py-1.5 font-mono text-2xs uppercase tracking-[0.1em] ${
+              position === index
+                ? 'bg-ink-800 text-bone-50'
+                : position < index
+                  ? 'bg-bone-200 text-ink-600'
+                  : 'border border-ink-100 text-ink-400'
+            }`}
+          >
+            {step.title}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/**
+ * The end of the detail flow.
+ *
+ * Deliberately not the `Finished` screen: nothing completed here, because setup was
+ * already complete before this flow was reachable. Saying "that is everything" a
+ * second time would misdescribe what just happened.
+ */
+function DetailsSaved({ onRevisit }: { onRevisit: () => void }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
+        <h2 className="font-display text-title font-medium text-ink-900">Saved</h2>
+        <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
+          Every answer is stored at the scope shown beside it. Anything you left blank
+          is simply unanswered — nothing here assumed a value on your behalf, and you
+          can come back to it whenever the question becomes worth answering.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <Button href="/dashboard" size="lg">
+          Back to your dashboard
+        </Button>
+        <Button type="button" onClick={onRevisit} variant="secondary" size="lg">
+          Change an answer
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -459,19 +579,35 @@ function Finished({
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-2xl border border-ink-100 bg-white px-6 py-6 shadow-paper">
+        {/* Was "That is everything we can use yet", which apologised for the product
+            at the one moment the user had just finished doing what was asked. It also
+            described the scope of a deal size and a marketing budget — two answers
+            signup no longer asks for, so on a normal run it named figures the user
+            had never typed. */}
         <h2 className="font-display text-title font-medium text-ink-900">
-          That is everything we can use yet
+          Your workspace is set up
         </h2>
         <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
-          Your answers are stored with their scope attached — the deal size as a Sales
-          fact, the marketing budget as a Finance one — so they are visible to the
-          people those departments include and to nobody else. Nothing you typed
-          changed what you or anyone else can see; that comes from the workspace.
+          Every answer is stored at the scope shown beside it, visible to the people
+          that scope includes and to nobody else. Nothing you typed changed what you or
+          anyone else can see; that comes from the workspace.
         </p>
         <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
           Your department&rsquo;s dashboard is next. It is a placeholder: every offering on
           it is real and says what it needs, and none of them is built yet. That is
           stated on each tile rather than dressed up as an empty widget.
+        </p>
+        <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
+          There are more questions we could ask — your goals, your departments, your
+          team, the tools you use. None of them is needed to start, so none of them is
+          in your way.{' '}
+          <Link
+            href="/onboarding/details"
+            className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+          >
+            Answer them whenever you like
+          </Link>
+          .
         </p>
       </div>
 

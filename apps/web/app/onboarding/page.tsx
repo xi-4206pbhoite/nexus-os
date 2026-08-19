@@ -42,9 +42,14 @@ export default function OnboardingPage() {
             Set up your workspace
           </h1>
           <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
-            Every answer is stored with the scope it belongs at — shown beside each
-            question, so you can see where it will live before you type it. Answering
-            never changes what you or anyone else can see.
+            Four questions, one of them required. Every answer is stored with the scope
+            it belongs at — shown beside each question, so you can see where it will
+            live before you type it. Answering never changes what you or anyone else can
+            see.
+          </p>
+          <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-600">
+            Everything else — your goals, your departments, your team, the tools you use
+            — waits until after you have seen something. None of it is needed to start.
           </p>
 
           <div className="mt-10">

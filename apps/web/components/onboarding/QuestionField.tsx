@@ -43,6 +43,27 @@ export function spansFullWidth(question: Question): boolean {
   )
 }
 
+/**
+ * Whether this question's control is a group rather than a single input.
+ *
+ * It decides how the prompt is marked up, and getting it wrong is not cosmetic. A
+ * checkbox list and the member picker are `<fieldset>`s — no one element carries the
+ * `id`, so a `<label htmlFor={id}>` beside them pointed at nothing. The consequence
+ * was visible in the accessibility tree: every checkbox on "which of these does your
+ * company actually run?" reported its name as *"on"*, because the only text a screen
+ * reader could associate with it was the input's own value. WCAG 1.3.1 and 4.1.2.
+ *
+ * The fix is to render the prompt as a `<legend>` inside the fieldset's own labelling
+ * relationship instead — see `groupLabelId` below.
+ */
+function isGroupControl(question: Question): boolean {
+  if (question.answer_type === 'user_list') return true
+  return (
+    (question.answer_type === 'multi_choice' || question.answer_type === 'ranked') &&
+    !question.free_entry
+  )
+}
+
 export function QuestionField({
   question,
   value,
@@ -58,6 +79,7 @@ export function QuestionField({
 }) {
   const id = useId()
   const readOnly = disabled || !question.writable
+  const grouped = isGroupControl(question)
 
   return (
     <div
@@ -74,14 +96,28 @@ export function QuestionField({
       ].join(' ')}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <label htmlFor={id} className="text-[0.95rem] font-medium text-ink-900">
-          {question.prompt}
-          {question.required ? (
-            <span className="ml-1.5 font-mono text-2xs uppercase tracking-[0.1em] text-clay-500">
-              required
-            </span>
-          ) : null}
-        </label>
+        {/* A group's prompt is a plain element with an id the fieldset points at with
+            `aria-labelledby`; a single input's is a real `<label htmlFor>`. Using a
+            label for both is what left the checkbox groups unlabelled. */}
+        {grouped ? (
+          <span id={`${id}-label`} className="text-[0.95rem] font-medium text-ink-900">
+            {question.prompt}
+            {question.required ? (
+              <span className="ml-1.5 font-mono text-2xs uppercase tracking-[0.1em] text-clay-500">
+                required
+              </span>
+            ) : null}
+          </span>
+        ) : (
+          <label htmlFor={id} className="text-[0.95rem] font-medium text-ink-900">
+            {question.prompt}
+            {question.required ? (
+              <span className="ml-1.5 font-mono text-2xs uppercase tracking-[0.1em] text-clay-500">
+                required
+              </span>
+            ) : null}
+          </label>
+        )}
         <ScopeTag scope={question.scope} department={question.department} />
       </div>
 
@@ -94,6 +130,7 @@ export function QuestionField({
       <div className="mt-3">
         <Control
           id={id}
+          labelledBy={grouped ? `${id}-label` : undefined}
           describedBy={question.why ? `${id}-why` : undefined}
           question={question}
           value={value}
@@ -114,6 +151,7 @@ export function QuestionField({
 
 function Control({
   id,
+  labelledBy,
   describedBy,
   question,
   value,
@@ -122,6 +160,8 @@ function Control({
   disabled,
 }: {
   id: string
+  /** Set only for group controls, which cannot be the target of a `<label for>`. */
+  labelledBy?: string
   describedBy?: string
   question: Question
   value: unknown
@@ -205,6 +245,7 @@ function Control({
     case 'user_list':
       return (
         <MemberPicker
+          labelledBy={labelledBy}
           describedBy={describedBy}
           members={members}
           chosen={asList}
@@ -217,7 +258,12 @@ function Control({
     case 'ranked':
       if (!question.free_entry) {
         return (
-          <fieldset aria-describedby={describedBy} disabled={disabled} className="flex flex-col gap-2">
+          <fieldset
+            aria-labelledby={labelledBy}
+            aria-describedby={describedBy}
+            disabled={disabled}
+            className="flex flex-col gap-2"
+          >
             {question.options.map((option) => (
               <label key={option.value} className="flex items-center gap-2.5 text-[0.95rem] text-ink-800">
                 <input
@@ -415,12 +461,14 @@ function IconButton({
  * presentation choice.
  */
 function MemberPicker({
+  labelledBy,
   describedBy,
   members,
   chosen,
   onChange,
   disabled,
 }: {
+  labelledBy?: string
   describedBy?: string
   members: Member[]
   chosen: string[]
@@ -437,7 +485,12 @@ function MemberPicker({
   }
 
   return (
-    <fieldset aria-describedby={describedBy} disabled={disabled} className="flex flex-col gap-2">
+    <fieldset
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      disabled={disabled}
+      className="flex flex-col gap-2"
+    >
       {members.map((member) => (
         <label
           key={member.user_id}

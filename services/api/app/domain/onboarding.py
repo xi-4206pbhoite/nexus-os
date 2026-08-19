@@ -630,11 +630,19 @@ DEPARTMENT_QUESTIONS: tuple[Question, ...] = (
 CATALOGUE: tuple[Question, ...] = (
     # ── Pass 1: enough to run the audit ───────────────────────
     #
-    # Two identity questions come first. They are here rather than in Pass 2
-    # despite doc 04 §5's "value first" rule, because neither costs the user any
-    # thought and both are needed before the product can address them at all:
-    # registration names the workspace from the email domain, so without this the
-    # company is called `acmetrading.om` on every screen.
+    # **Four questions, and one of them required.** Pass 1 is the whole of signup,
+    # so its size is the thing that decides whether anybody finishes. It is held to
+    # one test: could the audit run without this answer? If yes, the question waits.
+    #
+    # Two identity questions are here despite failing that test, because neither
+    # costs the user any thought and both are needed before the product can address
+    # them at all: registration names the workspace from the email domain, so
+    # without them the company is called `acmetrading.om` on every screen and the
+    # assistant writes to an email address.
+    #
+    # `role` and `department` used to be here, and required. They moved to Pass 2 —
+    # see the note on `role` for why asking them at the door was both unnecessary
+    # and slightly dishonest.
     Question(
         key="your_name",
         prompt="What should we call you?",
@@ -672,37 +680,6 @@ CATALOGUE: tuple[Question, ...] = (
         required=True,
         why="We read it to build your first audit.",
     ),
-    # These two are **stated facts, not grants**. Answering them writes a row in
-    # `onboarding_answer`; it never touches `membership`, which is the only thing
-    # `build_scope` reads and therefore the only thing that authorises anything.
-    # Doc 06 §2.2 — a self-declared role is privilege escalation via dropdown, so
-    # the escalation has to be impossible rather than merely unimplemented.
-    Question(
-        key="role",
-        prompt="What is your role?",
-        stage=Pass.ONE,
-        answer_type=AnswerType.SINGLE_CHOICE,
-        scope=Scope.L2_COMPANY_INTERNAL,
-        department=None,
-        required=True,
-        why=(
-            "It shapes what your assistant leads with. It does not change what you "
-            "can see — that comes from your membership, not from this answer."
-        ),
-        options=_choices(Role, {"external": "External / Client"}),
-    ),
-    Question(
-        key="department",
-        prompt="Which department is that in?",
-        stage=Pass.ONE,
-        answer_type=AnswerType.SINGLE_CHOICE,
-        scope=Scope.L2_COMPANY_INTERNAL,
-        department=None,
-        required=True,
-        # Doc 06 §2.3 — derived from role, confirmable, Owner-overridable.
-        why="Derived from your role. Correct it if it is wrong.",
-        options=_choices(Department, {"hr": "HR / People"}),
-    ),
     Question(
         key="stated_purpose",
         prompt="What do you want help with most?",
@@ -730,6 +707,53 @@ CATALOGUE: tuple[Question, ...] = (
         ),
     ),
     # ── Pass 2: after the audit ───────────────────────────────
+    #
+    # These two are **stated facts, not grants**. Answering them writes a row in
+    # `onboarding_answer`; it never touches `membership`, which is the only thing
+    # `build_scope` reads and therefore the only thing that authorises anything.
+    # Doc 06 §2.2 — a self-declared role is privilege escalation via dropdown, so
+    # the escalation has to be impossible rather than merely unimplemented.
+    #
+    # **Moved out of Pass 1, and no longer required.** Two reasons, and the second is
+    # the stronger one:
+    #
+    #   1. The audit does not read either of them, so by Pass 1's own test they do
+    #      not belong there. They shape emphasis — which dashboard leads with what —
+    #      and emphasis can be set after something has been shown.
+    #   2. The person answering these during signup is, without exception, the Owner
+    #      who just cleared the domain gate. Their real role and department are
+    #      already in `membership`, which is the only record that decides anything.
+    #      Asking them to type it anyway made the form open with two dropdowns whose
+    #      answer the product already held, next to help text explaining that the
+    #      answer does not do what a reader would assume it does. A question that has
+    #      to disclaim its own effect is a question worth deferring.
+    #
+    # They stay in the catalogue, answerable, because they are genuinely useful for a
+    # *later* member whose stated role differs from the membership they were given.
+    Question(
+        key="role",
+        prompt="What is your role?",
+        stage=Pass.TWO,
+        answer_type=AnswerType.SINGLE_CHOICE,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why=(
+            "It shapes what your assistant leads with. It does not change what you "
+            "can see — that comes from your membership, not from this answer."
+        ),
+        options=_choices(Role, {"external": "External / Client"}),
+    ),
+    Question(
+        key="department",
+        prompt="Which department is that in?",
+        stage=Pass.TWO,
+        answer_type=AnswerType.SINGLE_CHOICE,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        # Doc 06 §2.3 — derived from role, confirmable, Owner-overridable.
+        why="Derived from your role. Correct it if it is wrong.",
+        options=_choices(Department, {"hr": "HR / People"}),
+    ),
     Question(
         key="ranked_goals",
         prompt="Rank your goals for this quarter",
@@ -837,7 +861,11 @@ CATALOGUE: tuple[Question, ...] = (
         answer_type=AnswerType.SINGLE_CHOICE,
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
-        required=True,
+        # No longer required to finish setup. It is required to render a *figure*,
+        # which is a different moment: the surfaces that show money are M6 onward and
+        # none of them exists yet, so blocking completion on it bought nothing and
+        # cost a mandatory select with thirteen options. Whatever first needs to
+        # format an amount asks then, when the question explains itself.
         why="Every figure in the product is shown in it.",
         options=CURRENCIES,
     ),
@@ -848,7 +876,9 @@ CATALOGUE: tuple[Question, ...] = (
         answer_type=AnswerType.SINGLE_CHOICE,
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
-        required=True,
+        # Same argument as `currency`: it is a precondition for a period comparison,
+        # not for having an account. January is the overwhelming default and guessing
+        # it silently would be the wrong fix, so it is asked — just not at the door.
         why="Period comparisons depend on it.",
         options=MONTHS,
     ),
@@ -861,10 +891,17 @@ CATALOGUE: tuple[Question, ...] = (
         answer_type=AnswerType.MULTI_CHOICE,
         scope=Scope.L2_COMPANY_INTERNAL,
         department=None,
-        required=True,
+        # **Not required, and that is the single largest cut in this file.** Requiring
+        # it made signup's length depend on an answer given inside signup: ticking all
+        # six added 28 further questions, and the user had no way to see that cost
+        # before paying it. Nothing downstream breaks when it is unanswered —
+        # `questions_for_departments` returns an empty tuple and `may_be_asked`
+        # withholds every department block, which is the correct reading of "we do not
+        # know yet" rather than a gap to fill.
         why=(
-            "Each one you pick adds five questions only you can answer, and unlocks "
-            "that director. Each one you leave out stays absent rather than empty."
+            "Each one you pick adds five questions only that department can answer, "
+            "and unlocks its director. Each one you leave out stays absent rather "
+            "than empty. You can pick them later, from the department itself."
         ),
         options=SCOREABLE_DEPARTMENTS,
     ),

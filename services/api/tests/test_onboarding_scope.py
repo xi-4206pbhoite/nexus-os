@@ -103,8 +103,19 @@ def test_l1_is_reserved_for_material_that_leaves_the_company() -> None:
 # ── Sequencing (doc 04 §5, doc 06 §4.10) ──────────────────────
 
 
-AUDIT_NEEDS = {"company_url", "role", "department", "stated_purpose"}
-"""What doc 04 §5 licenses asking before anything has been shown."""
+AUDIT_NEEDS = {"company_url", "stated_purpose"}
+"""What doc 04 §5 licenses asking before anything has been shown.
+
+`role` and `department` were in this set and are not any more. They were never read
+by the audit, so their membership here was never earned by this test's own rule —
+what kept them was that they were *required*, which is the opposite of a
+justification. They are Pass 2 questions now, and optional ones.
+
+The person answering Pass 1 is always the Owner who just cleared the domain gate,
+and their real role and department are already in `membership` — the only record
+that decides anything. Two mandatory dropdowns whose help text has to explain that
+the answer does not do what it looks like it does are two dropdowns worth deferring.
+"""
 
 IDENTITY = {"your_name", "company_name"}
 """The two exceptions, and they are exceptions rather than a widening.
@@ -132,6 +143,16 @@ def test_pass_one_asks_only_the_audit_and_identity() -> None:
     assert keys == AUDIT_NEEDS | IDENTITY
 
 
+def test_pass_one_is_four_questions() -> None:
+    """The number is the point, so it is asserted rather than left to the set above.
+
+    Signup is the whole of Pass 1. Its length is what decides whether anyone reaches
+    the product, so growing it should require deleting this line and arguing for the
+    new number — not merely adding a `Question`.
+    """
+    assert len(questions_for(Pass.ONE)) == 4
+
+
 def test_the_identity_questions_are_not_required() -> None:
     """They are conveniences, so they must not block a user from reaching the audit.
 
@@ -140,6 +161,23 @@ def test_the_identity_questions_are_not_required() -> None:
     by_key = {q.key: q for q in questions_for(Pass.ONE)}
     for key in IDENTITY:
         assert by_key[key].required is False
+
+
+def test_company_url_is_the_only_required_answer_anywhere() -> None:
+    """Nothing else may block a user out of their own workspace.
+
+    Five questions were `required`: `company_url`, `role`, `department`, `currency`,
+    `fiscal_year_start` and `departments_run`. Four of them gated completion on facts
+    no built surface reads — a currency for figures that do not render yet, a fiscal
+    year for period comparisons that do not exist, a department selection whose only
+    effect is to *add* twenty-eight further questions.
+
+    `company_url` stays, because the audit genuinely cannot run without a site to
+    read, and `complete_setup` marking a workspace ready with nothing to crawl is the
+    failure that made `required` server-enforced in the first place.
+    """
+    required = {q.key for q in CATALOGUE if q.required}
+    assert required == {"company_url"}
 
 
 def test_money_questions_are_never_in_pass_one() -> None:

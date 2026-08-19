@@ -593,8 +593,12 @@ async def complete_setup(
         }
         selected = await _stored_selection(session)
 
+        # Prompts, not keys. This string is shown to the user, and it read
+        # "Still needed: company_url, departments_run, fiscal_year_start" — three
+        # column names for a person who has only ever seen "Your website address".
+        # The prompt is the only version of a question they can act on.
         missing = [
-            question.key
+            question.prompt
             for question in CATALOGUE
             if question.required
             and question.sink is Sink.ANSWER

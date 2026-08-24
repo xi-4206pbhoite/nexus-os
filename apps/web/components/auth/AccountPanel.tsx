@@ -177,9 +177,10 @@ export function AccountPanel() {
           What is not built yet
         </h2>
         <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-600">
-          Signing in works. Everything a workspace would contain does not: the seven AI
-          directors, the Company Brain, the morning brief and every dashboard are later
-          milestones. The scoped retrieval layer they all depend on comes first, because
+          The seven directors have pages, and every widget on them says what it will show
+          and what it needs — but <strong>none of them is built</strong>, so none carries a
+          number. The Company Brain and the morning brief that would fill them are later
+          milestones, and the scoped retrieval layer they depend on comes first, because
           adding permissions after the features is how these products leak.
         </p>
         <p className="mt-3 text-[0.95rem] text-ink-600">

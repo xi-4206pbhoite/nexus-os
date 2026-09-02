@@ -13,7 +13,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `dev` as well as `main`. Work happens on `dev` and lands on `main`, so a
+    # workflow triggered only by `main` would run after the fact - and this one
+    # exists to catch a broken policy or a drifted constraint before it is
+    # merged, not to confirm it afterwards.
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 

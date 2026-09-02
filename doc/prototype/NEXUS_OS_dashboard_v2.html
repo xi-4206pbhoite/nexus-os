@@ -1,0 +1,2474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS OS — Full Interactive Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --indigo-50:#EAF2FF;
+  --indigo-100:#D6E7FF;
+  --indigo-500:#0D6EFD;
+  --indigo-600:#0759D3;
+  --indigo-700:#0A4CA8;
+  --navy-900:#0A1428;
+  --navy-800:#0E1420;
+  --navy-700:#141A24;
+  --gray-50:#F7F9FC;
+  --gray-100:#F1F2F6;
+  --gray-200:#E4E8EF;
+  --gray-300:#D3D6E0;
+  --gray-500:#667085;
+  --gray-600:#4B5563;
+  --gray-900:#111827;
+  --green-500:#16A34A;
+  --green-50:#EAFBF1;
+  --orange-500:#F59E0B;
+  --red-500:#EF4444;
+  --purple-500:#8B5CF6;
+  --nexus-gold:#FFC107;
+  --nexus-gold-soft:#FFF7E0;
+  --card-radius:14px;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.06);
+  --shadow-md:0 4px 16px rgba(16,24,40,.08);
+  --shadow-lg:0 12px 32px rgba(16,24,40,.12);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color:var(--gray-900);
+  background:var(--gray-50);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.logo-text b,.stat-val,.page-head h1,.panel h1,.hero h1{
+  font-family:'Montserrat','Inter',system-ui,sans-serif;
+}
+a{text-decoration:none;color:inherit}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+ul{list-style:none;margin:0;padding:0}
+img{max-width:100%;display:block}
+.icon{width:18px;height:18px;stroke-width:2}
+
+/* Logo mark */
+.logo-mark{
+  width:36px;height:36px;border-radius:8px;
+  background:var(--navy-900);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--indigo-500);font-weight:800;font-size:16px;
+  flex-shrink:0;position:relative;
+}
+.logo-mark::before{content:'\2715'}
+.logo-group{display:flex;align-items:center;gap:10px}
+.logo-text{line-height:1.15}
+.logo-text b{font-size:15px;font-weight:700;color:var(--gray-900);display:block}
+.logo-text span{font-size:11px;color:var(--gray-500)}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 20px;border-radius:10px;font-size:14px;font-weight:600;
+  transition:all .15s ease;white-space:nowrap;
+}
+.btn-primary{background:var(--indigo-500);color:#fff;box-shadow:var(--shadow-sm)}
+.btn-primary:hover{background:var(--indigo-600)}
+.btn-outline{background:#fff;color:var(--gray-900);border:1px solid var(--gray-200)}
+.btn-outline:hover{border-color:var(--gray-300)}
+.btn-ghost{background:transparent;color:var(--gray-600)}
+.btn-block{width:100%}
+.btn-sm{padding:7px 14px;font-size:13px;border-radius:8px}
+
+/* Cards */
+.card{
+  background:#fff;border:1px solid var(--gray-200);border-radius:var(--card-radius);
+  box-shadow:var(--shadow-sm);
+}
+
+/* Inputs */
+.field{margin-bottom:18px}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--gray-900);margin-bottom:7px}
+.field input[type=text],.field input[type=email],.field input[type=tel],
+.field select,.field textarea{
+  width:100%;padding:11px 13px;border:1px solid var(--gray-200);border-radius:10px;
+  font-size:14px;font-family:inherit;color:var(--gray-900);background:#fff;
+  transition:border-color .15s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{
+  outline:none;border-color:var(--indigo-500);box-shadow:0 0 0 3px var(--indigo-100);
+}
+.field textarea{resize:vertical;min-height:90px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+.chip{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 6px;
+  background:var(--indigo-50);color:var(--indigo-600);border-radius:20px;font-size:12.5px;font-weight:500;
+}
+.chip button{color:var(--indigo-600);font-size:14px;line-height:1;opacity:.7}
+.chip button:hover{opacity:1}
+
+/* Scrollbars */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--gray-300);border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
+}
+
+
+  body{overflow-x:hidden}
+  .nav{
+    position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--gray-200);
+  }
+  .nav-inner{max-width:1280px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between}
+  .nav-links{display:flex;align-items:center;gap:32px;font-size:14.5px;font-weight:500;color:var(--gray-600)}
+  .nav-links a{display:flex;align-items:center;gap:4px}
+  .nav-links a:hover{color:var(--gray-900)}
+  .nav-right{display:flex;align-items:center;gap:14px}
+  .nav-right .btn-ghost{font-weight:600;color:var(--gray-900)}
+
+  .hero{max-width:1280px;margin:0 auto;padding:72px 32px 40px;display:grid;grid-template-columns:1fr;gap:40px}
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;background:var(--indigo-50);color:var(--indigo-600);
+    font-size:13px;font-weight:600;padding:7px 14px;border-radius:20px;margin-bottom:24px;
+  }
+  .hero h1{font-size:60px;line-height:1.05;font-weight:800;letter-spacing:-.02em;margin:0 0 20px;color:var(--gray-900)}
+  .hero h1 .grad{background:linear-gradient(90deg,#4F46E5,#7C3AED);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p.lead{font-size:18px;color:var(--gray-600);max-width:520px;line-height:1.6;margin:0 0 32px}
+  .hero-ctas{display:flex;gap:14px;margin-bottom:22px}
+  .hero-notes{display:flex;gap:22px;flex-wrap:wrap;font-size:13.5px;color:var(--gray-600)}
+  .hero-notes span{display:flex;align-items:center;gap:6px}
+  .hero-notes svg{color:var(--green-500);width:15px;height:15px}
+
+  .trust{max-width:1280px;margin:52px auto 0;padding:0 32px;text-align:center}
+  .trust p{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gray-500);font-weight:600;margin-bottom:22px}
+  .trust-logos{display:flex;justify-content:center;gap:44px;flex-wrap:wrap;opacity:.55;font-weight:700;color:var(--gray-600);font-size:14px}
+  .trust-logos span{display:flex;align-items:center;gap:8px}
+
+  .features-head{max-width:900px;margin:96px auto 12px;text-align:center;padding:0 32px}
+  .features-head .eyebrow{font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo-600);font-weight:700;margin-bottom:12px}
+  .features-head h2{font-size:34px;font-weight:800;letter-spacing:-.01em;margin:0 0 12px}
+  .features-head p{color:var(--gray-600);font-size:16px}
+
+  .features-grid{max-width:1280px;margin:44px auto 120px;padding:0 32px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .feature-card{padding:28px;border-radius:16px}
+  .feature-icon{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .feature-card h3{font-size:16.5px;font-weight:700;margin:0 0 8px}
+  .feature-card p{font-size:14px;color:var(--gray-600);line-height:1.55;margin:0}
+
+  .how-it-works-grid{max-width:1280px;margin:44px auto 0;padding:0 32px;display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .how-step{padding:26px 24px}
+  .how-num{width:30px;height:30px;border-radius:8px;background:var(--indigo-50);color:var(--indigo-500);font-family:'Montserrat',sans-serif;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+  .how-step h3{font-size:16px;margin:0 0 10px}
+  .how-step ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+  .how-step ul li{font-size:12.5px;color:var(--gray-600);padding-left:14px;position:relative}
+  .how-step ul li::before{content:'';position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--indigo-500)}
+
+  .outcome-card{padding:28px}
+  .outcome-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .outcome-list li{font-size:13.5px;color:var(--gray-700);font-weight:500;padding-left:16px;position:relative}
+  .outcome-list li::before{content:'\2713';position:absolute;left:0;top:0;color:var(--indigo-500);font-size:11px;font-weight:800}
+
+  .exec-team-grid{max-width:1280px;margin:44px auto 0;padding:0 32px;display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .exec-card{padding:24px}
+  .exec-avatar{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+  .exec-card h3{font-size:15px;margin:0 0 12px}
+  .exec-card .outcome-list li{font-size:12px}
+
+  .pillars-grid{max-width:1280px;margin:44px auto 0;padding:0 32px;display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  .pillar-card{padding:26px}
+  .pillar-card h3{font-size:16px;margin:0 0 6px}
+  .pillar-positioning{font-size:12.5px;color:var(--indigo-600);font-weight:600;margin:0 0 14px}
+  .pillar-card .outcome-list li{font-size:12.5px}
+
+  .simulator-demo{max-width:1280px;margin:44px auto 0;padding:0 32px;display:grid;grid-template-columns:1fr 1.3fr;gap:24px}
+  .sim-prompts{display:flex;flex-direction:column;gap:12px}
+  .sim-prompt{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;font-size:13.5px;font-style:italic;color:var(--gray-700);box-shadow:var(--shadow-sm)}
+  .sim-output{background:var(--navy-900);border-radius:16px;padding:26px;color:#fff}
+  .sim-output-head{font-size:14px;font-weight:700;margin-bottom:16px}
+  .sim-output-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .sim-output-grid span{display:block;font-size:11px;color:#9aa3b8;margin-bottom:4px}
+  .sim-output-grid b{font-size:15px;font-family:'Montserrat',sans-serif}
+  .sim-output-grid b.up{color:#4ADE80}
+  .sim-output-grid b.warn{color:var(--nexus-gold);font-size:13px}
+  .sim-scenarios{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#c5cbda;padding-top:14px;border-top:1px solid #253049;margin-bottom:12px}
+  .sim-scenarios b{color:#fff}
+  .sim-disclaimer{font-size:10.5px;color:#7a8299;margin:0;font-style:italic}
+
+  .opp-card-demo{max-width:640px;margin:44px auto 0;padding:24px 28px;border-radius:16px;border:1px solid var(--gray-200);box-shadow:var(--shadow-md);background:#fff}
+  .opp-card-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--indigo-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .opp-title{font-size:17px;font-weight:700;margin:0 0 12px}
+  .opp-meta-row{display:flex;gap:24px;font-size:13px;color:var(--gray-600);margin-bottom:14px}
+  .opp-action{background:var(--indigo-50);color:var(--indigo-700);border-radius:10px;padding:12px 14px;font-size:13px}
+
+  .mockup-frame{
+    border-radius:16px;border:1px solid var(--gray-200);box-shadow:var(--shadow-lg);overflow:hidden;background:#fff;
+  }
+  .mockup-bar{display:flex;align-items:center;gap:6px;padding:12px 16px;border-bottom:1px solid var(--gray-100)}
+  .mockup-bar span{width:10px;height:10px;border-radius:50%}
+  .mockup-bar span:nth-child(1){background:#FF5F57}
+  .mockup-bar span:nth-child(2){background:#FEBC2E}
+  .mockup-bar span:nth-child(3){background:#28C840}
+
+  @media(min-width:960px){
+    .hero{grid-template-columns:1fr;text-align:left}
+  }
+  @media(max-width:900px){
+    .hero h1{font-size:38px}
+    .features-grid{grid-template-columns:1fr}
+    .how-it-works-grid{grid-template-columns:1fr 1fr}
+    .exec-team-grid{grid-template-columns:1fr 1fr}
+    .pillars-grid{grid-template-columns:1fr}
+    .simulator-demo{grid-template-columns:1fr}
+    .nav-links{display:none}
+  }
+
+
+  body{background:var(--gray-50)}
+  .wiz-shell{max-width:760px;margin:0 auto;padding:36px 24px 80px}
+  .wiz-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:34px}
+  .step-counter{font-size:13px;color:var(--gray-500);font-weight:600}
+  .progress-track{height:6px;background:var(--gray-200);border-radius:6px;margin:18px 0 36px;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,#6366F1,#4338CA);border-radius:6px;transition:width .4s ease}
+
+  .panel{background:#fff;border:1px solid var(--gray-200);border-radius:18px;box-shadow:var(--shadow-md);padding:40px}
+  .back-link{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;color:var(--gray-500);margin-bottom:18px}
+  .back-link:hover{color:var(--gray-900)}
+  .panel h1{font-size:26px;font-weight:800;margin:0 0 8px;letter-spacing:-.01em}
+  .panel > p.sub{color:var(--gray-500);font-size:14.5px;margin:0 0 28px}
+
+  .step{display:none}
+  .step.active{display:block;animation:fadein .25s ease}
+  @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .foot-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:8px}
+
+  /* welcome */
+  .welcome-hero{text-align:center;padding:12px 0 4px}
+  .welcome-hero .logo-mark{width:64px;height:64px;border-radius:16px;margin:0 auto 22px;font-size:22px}
+  .welcome-hero h1{font-size:28px}
+  .welcome-hero p.sub{max-width:420px;margin:0 auto 30px}
+  .benefit-list{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left;margin-bottom:30px}
+  .benefit{display:flex;align-items:flex-start;gap:12px;padding:14px;border:1px solid var(--gray-200);border-radius:12px}
+  .benefit i{color:var(--indigo-500);flex-shrink:0;margin-top:2px}
+  .benefit b{display:block;font-size:13.5px}
+  .benefit span{font-size:12.5px;color:var(--gray-500)}
+  .check-summary{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:center;margin-bottom:30px}
+  .check-summary span{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-700);font-weight:500}
+  .check-summary i{color:var(--green-500);width:16px;height:16px}
+  .eta{font-size:12.5px;color:var(--gray-500);margin-bottom:18px}
+
+  /* pill selectable list (goals, brand voice, industry chips) */
+  .option-list{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
+  .module-choice-tier{margin-bottom:8px}
+  .tier-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--gray-900)}
+  .tier-label span{font-weight:500;color:var(--gray-500);font-size:12px}
+  .module-checklist{display:flex;flex-wrap:wrap;gap:8px 16px;margin:10px 0 18px}
+  .module-check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--gray-700);background:#fff;border:1px solid var(--gray-200);border-radius:9px;padding:8px 12px;cursor:pointer}
+  .module-check input{accent-color:var(--indigo-500);width:15px;height:15px}
+  .option{
+    display:flex;align-items:center;gap:12px;padding:13px 16px;border:1.5px solid var(--gray-200);
+    border-radius:12px;cursor:pointer;transition:all .12s;font-size:14.5px;font-weight:500;
+  }
+  .option i.opt-icon{color:var(--gray-500)}
+  .option:hover{border-color:var(--indigo-300,#B4B8F5)}
+  .option.selected{border-color:var(--indigo-500);background:var(--indigo-50);color:var(--indigo-700)}
+  .option.selected i.opt-icon{color:var(--indigo-500)}
+  .option .check{margin-left:auto;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--gray-300);display:flex;align-items:center;justify-content:center}
+  .option.selected .check{background:var(--indigo-500);border-color:var(--indigo-500);color:#fff}
+  .option.selected .check svg{display:block}
+  .option .check svg{display:none;width:12px;height:12px}
+  .option input.custom-inline{border:none;background:transparent;font:inherit;flex:1;outline:none}
+
+  /* connect tools */
+  .tool-section-label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-500);margin:22px 0 10px}
+  .tool-section-label:first-child{margin-top:0}
+  .tool-row{display:flex;align-items:center;gap:14px;padding:13px 14px;border:1px solid var(--gray-200);border-radius:12px;margin-bottom:10px}
+  .tool-row .tool-ic{width:38px;height:38px;border-radius:9px;background:var(--gray-100);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .tool-row .tool-name{font-weight:600;font-size:14px;flex:1}
+  .tool-row .tool-desc{font-size:12px;color:var(--gray-500)}
+  .connect-btn{font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--gray-200);color:var(--gray-700)}
+  .connect-btn.connected{background:var(--green-50);color:var(--green-500);border-color:transparent}
+
+  /* scan */
+  .scan-ring-wrap{display:flex;justify-content:center;margin:10px 0 8px}
+  .scan-ring{position:relative;width:180px;height:180px;display:flex;align-items:center;justify-content:center}
+  .scan-ring svg{transform:rotate(-90deg)}
+  .scan-ring .scan-label{position:absolute;text-align:center}
+  .scan-ring .scan-label b{display:block;font-size:30px}
+  .scan-ring .scan-label span{font-size:12.5px;color:var(--gray-500)}
+  .scan-check-list{display:flex;flex-direction:column;gap:12px;margin:20px 0 8px}
+  .scan-check-item{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--gray-400)}
+  .scan-check-item.done{color:var(--gray-900)}
+  .scan-check-item .dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--gray-300);flex-shrink:0}
+  .scan-check-item.done .dot{background:var(--green-500);border-color:var(--green-500);position:relative}
+  .scan-check-item.done .dot::after{content:'';position:absolute;left:5px;top:2px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .scan-check-item.active .dot{border-color:var(--indigo-500)}
+  .info-note{display:flex;gap:10px;background:var(--indigo-50);color:var(--indigo-700);padding:13px 15px;border-radius:12px;font-size:13px;align-items:flex-start}
+  .skip-link{margin-left:8px;font-size:11.5px;font-weight:600;color:var(--gray-400);cursor:pointer;white-space:nowrap}
+  .skip-link:hover{color:var(--gray-600);text-decoration:underline}
+  .findings-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .findings-list li{font-size:13.5px;color:var(--gray-700);padding-left:18px;position:relative}
+  .findings-list li::before{content:'\2713';position:absolute;left:0;color:var(--green-500);font-weight:800}
+
+  .discovery-result{background:var(--gray-50);border-radius:12px;padding:16px 18px;margin-top:14px}
+  .discovery-headline{font-size:14px;font-weight:700;margin:0 0 14px}
+  .discovery-group{margin-bottom:14px}
+  .discovery-group:last-child{margin-bottom:0}
+  .discovery-group-title{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-500);margin:0 0 8px}
+  .discovery-check{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--gray-700);padding:4px 0;cursor:pointer}
+  .discovery-check input{width:15px;height:15px;accent-color:var(--indigo-500)}
+
+  .audit-score-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .audit-score{border-radius:10px;padding:10px;text-align:center}
+  .audit-score span{display:block;font-size:10.5px;color:var(--gray-500);margin-bottom:4px}
+  .audit-score b{font-size:18px;font-family:'Montserrat',sans-serif}
+  .audit-score.good{background:var(--green-50)}
+  .audit-score.good b{color:var(--green-500)}
+  .audit-score.warn{background:#FFF3E9}
+  .audit-score.warn b{color:var(--orange-500)}
+  .audit-score.bad{background:#FDECEC}
+  .audit-score.bad b{color:var(--red-500)}
+
+  .roadmap-item{display:flex;align-items:center;gap:10px;justify-content:space-between;font-size:12.5px;color:var(--gray-700);padding:9px 0;border-bottom:1px solid var(--gray-100)}
+  .roadmap-item:last-child{border-bottom:none}
+  .ai-action-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--indigo-600);background:#fff;border:1px solid var(--indigo-100);padding:5px 11px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+  .ai-action-chip i{width:11px;height:11px}
+
+  .nexus-briefing{background:var(--navy-900);border-radius:14px;padding:22px 26px;margin:18px auto 0;max-width:420px;text-align:left;color:#fff}
+  .briefing-title{font-size:14px;font-weight:700;margin:0 0 14px}
+  .briefing-list{margin:0 0 14px;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+  .briefing-list li{font-size:12.5px;color:#c5cbda}
+  .briefing-list li b{color:#fff}
+  .briefing-insight{font-size:12.5px;color:var(--nexus-gold);font-style:italic;margin:0 0 14px;padding-top:12px;border-top:1px solid #253049}
+  .briefing-ready{font-size:14px;font-weight:700;margin:0;text-align:center}
+
+  /* dropzone */
+  .dropzone{border:2px dashed var(--gray-300);border-radius:14px;padding:36px 20px;text-align:center;margin-bottom:18px}
+  .dropzone i{color:var(--indigo-500);margin-bottom:10px}
+  .dropzone b{display:block;font-size:14.5px;margin-bottom:4px}
+  .dropzone span{font-size:12.5px;color:var(--gray-500)}
+  .file-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--gray-200);border-radius:10px;margin-bottom:8px;font-size:13.5px}
+  .file-row .fname{flex:1;font-weight:500}
+  .file-row .fsize{color:var(--gray-500);font-size:12px}
+
+  /* team members */
+  .member-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--gray-200);border-radius:12px;margin-bottom:9px}
+  .avatar{width:36px;height:36px;border-radius:50%;background:var(--indigo-100);color:var(--indigo-700);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+  .member-row .m-name{font-weight:600;font-size:14px}
+  .member-row .m-role{font-size:12px;color:var(--gray-500)}
+  .role-badge{margin-left:auto;font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;background:var(--gray-100);color:var(--gray-600)}
+  .remove-x{color:var(--gray-400);font-size:16px;padding:2px 4px}
+  .remove-x:hover{color:var(--red-500)}
+  .add-member-row{display:flex;gap:10px;margin-top:6px}
+  .add-member-row input{flex:1}
+
+  /* building */
+  .build-wrap{text-align:center;padding:20px 0 8px}
+  .build-wrap svg.rocket-ic{color:var(--indigo-500)}
+  .build-list{text-align:left;max-width:340px;margin:24px auto;display:flex;flex-direction:column;gap:13px}
+  .build-item{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--gray-400)}
+  .build-item.done{color:var(--gray-900)}
+  .build-item i{width:18px;height:18px;color:var(--gray-300)}
+  .build-item.done i{color:var(--green-500)}
+  .build-item.active i{color:var(--indigo-500)}
+
+  textarea.brief{width:100%}
+
+
+  body{background:var(--gray-50);font-size:14px}
+  .app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+
+  /* SIDEBAR */
+  .sidebar{background:var(--navy-900);color:#cbd2e3;display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .nav-section-label{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5b6478;margin:16px 12px 6px}
+  .sidebar .logo-group{padding:6px 8px 20px}
+  .sidebar .logo-text b{color:#fff}
+  .sidebar .logo-text span{color:#8891a8}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;font-size:13.5px;font-weight:500;color:#aab2c5;margin-bottom:2px}
+  .nav-item.pack-inactive{opacity:.55}
+  .nav-item.pack-inactive:hover{opacity:.85}
+  .industry-pill{padding:7px 13px;border-radius:20px;border:1px solid var(--gray-200);background:#fff;font-size:12px;font-weight:600;color:var(--gray-600);cursor:pointer}
+  .industry-pill.active{background:var(--indigo-500);border-color:var(--indigo-500);color:#fff}
+  .sop-row.recommended{background:var(--indigo-50);margin:0 -8px;padding:5px 8px;border-radius:6px;border-bottom:1px solid transparent}
+  .sop-row.recommended .industry-tag{background:var(--indigo-500);color:#fff}
+  .nav-item:hover{background:#1a2440;color:#fff}
+  .nav-item.active{background:var(--indigo-500);color:#fff}
+  .nav-item i{width:17px;height:17px;flex-shrink:0}
+  .nav-spacer{flex:1}
+  .plan-card{background:#1a2440;border-radius:12px;padding:16px;margin-top:12px}
+  .plan-card .p-label{font-size:11px;color:#8891a8;margin-bottom:4px}
+  .plan-card .p-name{font-size:15px;font-weight:700;color:#fff;margin-bottom:2px}
+  .plan-card .p-renew{font-size:11.5px;color:#8891a8;margin-bottom:12px}
+
+  /* MAIN */
+  .main{padding:26px 30px 60px;max-width:1500px}
+  .topbar{display:flex;align-items:center;gap:16px;margin-bottom:28px;flex-wrap:wrap}
+  .search-box{flex:1;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:9px 14px;min-width:220px;color:var(--gray-500);font-size:13.5px}
+  .search-box kbd{margin-left:auto;font-size:11px;background:var(--gray-100);padding:2px 6px;border-radius:5px;color:var(--gray-500)}
+  .top-actions{display:flex;align-items:center;gap:16px}
+  .icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid var(--gray-200);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--gray-600);position:relative}
+  .icon-btn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;background:var(--red-500);border-radius:50%}
+  .user-chip{display:flex;align-items:center;gap:10px}
+  .user-chip .avatar{width:38px;height:38px;border-radius:50%;background:var(--indigo-500);color:#fff}
+  .user-chip .u-name{font-size:13.5px;font-weight:600}
+  .user-chip .u-role{font-size:11.5px;color:var(--gray-500)}
+
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
+  .page-head h1{font-size:24px;margin:0 0 4px}
+  .page-head p{margin:0;color:var(--gray-500);font-size:14px}
+  .date-range{display:flex;align-items:center;gap:8px;border:1px solid var(--gray-200);background:#fff;border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:500;color:var(--gray-700)}
+
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+
+  /* Today's Business Brief */
+  .brief-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+  .brief-item{display:flex;gap:10px;align-items:flex-start;font-size:12.5px}
+  .brief-item i{width:16px;height:16px;flex-shrink:0;margin-top:1px}
+  .brief-item b{display:block;font-size:12.5px;margin-bottom:2px}
+  .brief-item span{color:var(--gray-500);font-size:11.5px;line-height:1.4}
+  .nexus-recommend{display:flex;gap:12px;background:var(--nexus-gold-soft);border:1px solid #FFE9A8;border-radius:12px;padding:14px 16px}
+  .nexus-recommend i{color:#B78103;width:18px;height:18px;flex-shrink:0;margin-top:1px}
+  .nexus-recommend b{display:block;font-size:12.5px;color:#7A5B02;margin-bottom:3px}
+  .nexus-recommend span{font-size:12.5px;color:#5C4600;line-height:1.5}
+
+  /* AI Actions pattern */
+  .ai-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .ai-action-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--indigo-600);background:#fff;border:1px solid var(--indigo-100);padding:6px 12px;border-radius:20px}
+  .ai-action-chip:hover{background:var(--indigo-50)}
+  .ai-action-chip i{width:12px;height:12px}
+  .fix-with-ai-btn{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:#fff;background:var(--indigo-500);padding:8px 16px;border-radius:20px;margin-top:10px}
+  .fix-with-ai-btn:hover{background:var(--indigo-600)}
+  .fix-with-ai-btn i{width:13px;height:13px}
+
+  .risk-detail-card{background:#FDECEC;border:1px solid #F9CACA;border-radius:12px;padding:14px 16px;margin-bottom:10px}
+  .risk-detail-card b.risk-headline{display:block;font-size:13px;color:#8A2A2A;margin-bottom:8px}
+  .risk-detail-card .risk-figures{display:flex;gap:20px;flex-wrap:wrap;font-size:11.5px;color:#8A2A2A;margin-bottom:2px}
+  .risk-detail-card .risk-figures b{display:block;font-size:14px}
+
+  .sales-detail-card{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+  .sales-detail-card b.sales-headline{display:block;font-size:13px;margin-bottom:8px}
+  .sales-detail-card .sales-figures{display:flex;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--gray-600);margin-bottom:2px}
+  .sales-detail-card .sales-figures b{display:block;font-size:14px;color:var(--gray-900)}
+  .sales-detail-card .sales-ai-note{font-size:11.5px;color:var(--green-500);font-weight:600;margin:8px 0 0}
+
+  /* Company Health Score */
+  .health-overall{font-family:'Montserrat',sans-serif;font-size:26px;font-weight:800;color:var(--indigo-500)}
+  .health-grid{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+  .health-item{display:grid;grid-template-columns:80px 1fr 26px;align-items:center;gap:10px;font-size:11.5px;color:var(--gray-600)}
+  .health-bar{height:7px;background:var(--gray-100);border-radius:6px;overflow:hidden}
+  .health-bar div{height:100%;border-radius:6px}
+  .health-item b{font-size:12px;text-align:right}
+  .health-note{display:flex;align-items:flex-start;gap:8px;font-size:11.5px;color:var(--gray-500);background:var(--gray-50);border-radius:10px;padding:10px 12px;margin:0}
+  .health-note i{width:14px;height:14px;flex-shrink:0;margin-top:1px;color:var(--indigo-500)}
+
+  .exec-rec-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:12px}
+  .exec-rec-list li{font-size:13px;color:var(--gray-700);line-height:1.4}
+
+  .risk-opp-row{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--gray-700);padding:9px 0;border-bottom:1px solid var(--gray-100)}
+  .risk-opp-row:last-child{border-bottom:none}
+  .risk-opp-row i{width:15px;height:15px;color:var(--gray-400);flex-shrink:0}
+
+  .dept-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .dept-card{border:1px solid var(--gray-200);border-radius:12px;padding:14px}
+  .dept-card b{display:block;font-size:13px;margin-bottom:6px}
+  .dept-card p{font-size:11.5px;color:var(--gray-500);margin:6px 0 8px}
+  .dept-card a{font-size:11px;color:var(--indigo-500);font-weight:600}
+  .dept-status{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px}
+  .dept-status.good{background:var(--green-50);color:var(--green-500)}
+  .dept-status.warn{background:#FFF3E9;color:var(--orange-500)}
+
+  .decision-box{background:var(--nexus-gold-soft);border:1px solid #FFE9A8;border-radius:12px;padding:16px}
+  .decision-box b{font-size:14px;display:block;margin-bottom:10px;color:#5C4600}
+  .decision-meta-row{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#5C4600;margin-bottom:10px}
+  .decision-reasoning{font-size:12.5px;color:#7A5B02;margin:0 0 12px;font-style:italic}
+
+  .beta-lab-panel{background:var(--navy-900);border-radius:14px;padding:20px;color:#fff}
+  .beta-lab-panel h3{color:#fff;margin:0}
+  .beta-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .beta-item{background:#141d33;border-radius:10px;padding:14px 12px}
+  .beta-item i{width:18px;height:18px;color:var(--nexus-gold);margin-bottom:8px}
+  .beta-item b{display:block;font-size:12.5px;margin-bottom:4px}
+  .beta-item span{font-size:11px;color:#9aa3b8;line-height:1.4}
+
+  /* Company Brain */
+  .brain-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .brain-item{border:1px solid var(--gray-200);border-radius:12px;padding:14px}
+  .brain-item h5{margin:0 0 8px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;color:var(--gray-700)}
+  .brain-item h5 i{width:14px;height:14px;color:var(--indigo-500)}
+  .brain-item p{margin:0;font-size:12px;color:var(--gray-500);line-height:1.5}
+  .brain-confirm{background:var(--nexus-gold-soft);border-color:#FFE9A8}
+  .brain-confirm h5{color:#7A5B02}
+  .brain-confirm h5 i{color:#B78103}
+  .stat-card{padding:18px}
+  .stat-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .stat-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .stat-val{font-size:24px;font-weight:800;margin:0 0 3px}
+  .stat-label{font-size:12.5px;color:var(--gray-500);margin:0 0 8px}
+  .stat-delta{font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
+  .stat-delta.up{color:var(--green-500)}
+  .stat-delta span{color:var(--gray-400);font-weight:500}
+
+  .grid-2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-bottom:20px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
+  .card-pad{padding:20px}
+  .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .card-head h3{font-size:15px;margin:0}
+  .link-sm{font-size:12.5px;font-weight:600;color:var(--indigo-500)}
+  .select-sm{font-size:12.5px;border:1px solid var(--gray-200);border-radius:8px;padding:5px 9px;color:var(--gray-600)}
+
+  .funnel-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin:9px 0;padding:0 4px}
+  .funnel-row b{font-size:14px}
+  .funnel-bars{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+  .funnel-bar{height:26px;border-radius:6px;display:flex;align-items:center}
+
+  .cal-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--gray-100)}
+  .cal-item:last-child{border-bottom:none}
+  .cal-date{width:44px;text-align:center;background:var(--indigo-50);border-radius:8px;padding:5px 0;flex-shrink:0}
+  .cal-date .mo{font-size:9.5px;font-weight:700;color:var(--indigo-500);text-transform:uppercase;display:block}
+  .cal-date .day{font-size:15px;font-weight:800;color:var(--indigo-700)}
+  .cal-title{font-size:13.5px;font-weight:600}
+  .cal-time{font-size:12px;color:var(--gray-500)}
+
+  .chan-row{display:flex;align-items:center;gap:10px;margin-bottom:13px;font-size:13px}
+  .chan-name{width:92px;flex-shrink:0;color:var(--gray-600)}
+  .chan-bar-track{flex:1;height:8px;background:var(--gray-100);border-radius:8px;overflow:hidden}
+  .chan-bar-fill{height:100%;border-radius:8px;background:var(--indigo-500)}
+  .chan-val{width:44px;text-align:right;font-weight:700;font-size:12.5px}
+
+  .activity-row{display:flex;gap:12px;padding:9px 0}
+  .activity-ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .activity-title{font-size:13px;font-weight:500}
+  .activity-time{font-size:11.5px;color:var(--gray-400)}
+
+  .assistant-card{background:#fff;border-radius:14px;border:1px solid var(--gray-200)}
+  .assistant-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--gray-100)}
+  .beta-tag{background:var(--indigo-50);color:var(--indigo-600);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px}
+  .assistant-msg{padding:16px 18px;font-size:13.5px;color:var(--gray-700);line-height:1.5}
+  .quick-actions{display:flex;flex-direction:column;gap:8px;padding:0 18px 14px}
+  .qa-btn{border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;font-size:13px;font-weight:500;text-align:left;color:var(--gray-700)}
+  .qa-btn:hover{border-color:var(--indigo-300,#B4B8F5);background:var(--indigo-50)}
+  .ask-row{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--gray-100)}
+  .ask-row input{flex:1;border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;font-size:13px}
+  .ask-send{width:36px;height:36px;border-radius:10px;background:var(--indigo-500);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+  .task-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--gray-100)}
+  .task-row:last-child{border-bottom:none}
+  .task-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--gray-300);flex-shrink:0}
+  .task-check.done{background:var(--green-500);border-color:var(--green-500)}
+  .task-name{flex:1;font-size:13px;font-weight:500}
+  .task-due{font-size:11.5px;font-weight:600;color:var(--gray-500)}
+  .task-due.today{color:var(--red-500)}
+  .task-due.tomorrow{color:var(--orange-500)}
+
+  /* Bottom tool widgets */
+  .tools-section-title{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gray-500);margin:36px 0 14px}
+  .tools-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .tool-widget{padding:16px;display:flex;flex-direction:column;gap:10px}
+  .tool-widget h4{font-size:13px;margin:0 0 2px;display:flex;align-items:center;gap:7px}
+  .tool-widget h4 i{width:15px;height:15px;color:var(--indigo-500)}
+
+  /* CRM kanban */
+  .crm-board{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .crm-col{background:var(--gray-50);border-radius:12px;padding:12px}
+  .crm-col-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12.5px;font-weight:700;color:var(--gray-600)}
+  .crm-col-head .count{background:#fff;border:1px solid var(--gray-200);border-radius:20px;padding:1px 8px;font-size:11px;color:var(--gray-500)}
+  .crm-card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:10px 11px;margin-bottom:9px;box-shadow:var(--shadow-sm)}
+  .crm-card .cc-name{font-size:12.5px;font-weight:700;margin-bottom:3px}
+  .crm-card .cc-meta{font-size:11px;color:var(--gray-500);display:flex;justify-content:space-between}
+  .crm-card .cc-val{color:var(--green-500);font-weight:700}
+  .crm-contacts{margin-top:18px}
+  .contact-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-100);font-size:12.5px}
+  .contact-row:last-child{border-bottom:none}
+  .contact-row .c-avatar{width:28px;height:28px;border-radius:50%;background:var(--indigo-100);color:var(--indigo-700);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+  .contact-row .c-co{color:var(--gray-500);font-size:11.5px}
+  .contact-row .c-stage{margin-left:auto;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:6px}
+  .stage-new{background:#EEF0FF;color:var(--indigo-600)}
+  .stage-qualified{background:#FFF3E9;color:var(--orange-500)}
+  .stage-won{background:#EAFBF1;color:var(--green-500)}
+
+  /* Lead gen widget */
+  .leadgen-input-row{display:flex;gap:6px}
+  .leadgen-input-row input{flex:1;font-size:11.5px;border:1px solid var(--gray-200);border-radius:6px;padding:6px 8px}
+  .lead-result{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:11px}
+  .lead-result:last-child{border-bottom:none}
+  .lead-result .lr-name{font-weight:600;flex:1}
+  .lead-result .lr-site{color:var(--gray-400);font-size:10px}
+
+  /* HR / social widgets */
+  .sop-row{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--gray-700);padding:5px 0;border-bottom:1px solid var(--gray-100)}
+  .sop-row:last-child{border-bottom:none}
+  .sop-row i{width:14px;height:14px;color:var(--gray-400);flex-shrink:0}
+  .social-post-preview{background:var(--gray-50);border-radius:8px;padding:10px;font-size:10.5px;color:var(--gray-600)}
+  .social-post-preview b{display:block;font-size:11.5px;color:var(--gray-900);margin-bottom:2px}
+  .connected-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--green-500);background:var(--green-50);padding:2px 8px;border-radius:20px}
+
+  /* Lead Intelligence */
+  .lead-card{border:1px solid var(--gray-200);border-radius:12px;padding:16px;margin-bottom:14px;background:var(--gray-50)}
+  .lead-card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+  .lead-card-top b{font-size:14.5px}
+  .lead-sub{display:block;font-size:11.5px;color:var(--gray-500);margin-top:2px}
+  .lead-score{background:var(--green-50);color:var(--green-500);font-weight:700;font-size:11.5px;padding:4px 10px;border-radius:20px;flex-shrink:0}
+  .lead-score-sm{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--green-500)}
+  .lead-why{font-size:12.5px;color:var(--gray-700);line-height:1.5;margin:0 0 10px}
+  .lead-meta-row{display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--gray-600);margin-bottom:10px}
+  .lead-meta-row span{display:flex;align-items:center;gap:5px}
+  .lead-meta-row i{width:13px;height:13px;color:var(--gray-400)}
+  .lead-message{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--gray-600);font-style:italic;margin-bottom:12px}
+  .lead-message b{display:block;font-size:11px;font-style:normal;font-weight:700;color:var(--gray-900);margin-bottom:4px}
+  .lead-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .lead-next{margin-left:auto;font-size:11px;color:var(--gray-500);display:flex;align-items:center;gap:5px}
+  .lead-next i{width:13px;height:13px}
+  .lead-more-list{display:flex;flex-direction:column}
+
+  /* Competitive Intelligence */
+  .competitor-dash{border:1px solid var(--gray-200);border-radius:12px;padding:16px;margin-bottom:14px}
+  .comp-dash-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .comp-dash-head b{font-size:14px}
+  .comp-stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .comp-stat{background:var(--gray-50);border-radius:8px;padding:9px 10px}
+  .comp-stat span{display:block;font-size:10.5px;color:var(--gray-500);margin-bottom:3px}
+  .comp-stat b{font-size:14px}
+  .comp-detail-row{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--gray-600)}
+  .alerts-list{display:flex;flex-direction:column;gap:9px}
+  .alert-row{font-size:12px;color:var(--gray-700);display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--gray-100)}
+  .alert-row i{width:15px;height:15px;flex-shrink:0;margin-top:1px}
+
+  /* Communication Intelligence */
+  .comms-profile{background:var(--gray-50);border-radius:10px;padding:12px;font-size:12px;color:var(--gray-700)}
+  .comms-disclaimer{font-size:10.5px;color:var(--gray-400);font-style:italic;margin-top:8px;line-height:1.4}
+  .mini-list{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--gray-500)}
+  .mini-list .sel{color:var(--indigo-600);font-weight:600}
+  .mini-tag{font-size:10.5px;background:var(--gray-100);color:var(--gray-600);border-radius:5px;padding:2px 6px;display:inline-block;margin:2px 4px 0 0}
+  .mini-table{width:100%;font-size:11px;border-collapse:collapse}
+  .mini-table th{text-align:left;color:var(--gray-400);font-weight:600;padding:3px 0}
+  .mini-table td{padding:3px 0;color:var(--gray-700)}
+  .mini-calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:9.5px;text-align:center}
+  .mini-calendar .mc-cell{aspect-ratio:1;border-radius:4px;background:var(--gray-50);display:flex;align-items:center;justify-content:center;color:var(--gray-400)}
+  .mini-calendar .mc-cell.has{background:var(--indigo-50);color:var(--indigo-600);font-weight:700}
+  .mini-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10.5px}
+  .mini-kpi{background:var(--gray-50);border-radius:8px;padding:8px}
+  .mini-kpi b{display:block;font-size:14px}
+  .mini-donut{width:70px;height:70px;margin:0 auto}
+  .doc-preview{background:var(--gray-50);border-radius:8px;padding:10px;font-size:10.5px;color:var(--gray-500)}
+  .doc-preview b{display:block;font-size:12.5px;color:var(--gray-900);margin-bottom:2px}
+
+  @media(max-width:1200px){
+    .grid-2,.grid-3{grid-template-columns:1fr}
+    .stats-grid{grid-template-columns:1fr 1fr}
+    .tools-grid{grid-template-columns:1fr 1fr}
+    .comp-stat-row{grid-template-columns:1fr 1fr}
+    .brain-grid,.brief-grid{grid-template-columns:1fr}
+    .dept-grid{grid-template-columns:1fr 1fr}
+    .beta-grid{grid-template-columns:1fr 1fr 1fr}
+  }
+  @media(max-width:820px){
+    .app{grid-template-columns:1fr}
+    .sidebar{display:none}
+    .stats-grid{grid-template-columns:1fr}
+  }
+
+.view{display:none}
+.view.active{display:block}
+#devNav{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:999;background:var(--navy-900);border-radius:14px;padding:8px;display:flex;gap:6px;box-shadow:0 12px 32px rgba(16,24,40,.35);}
+#devNav button{padding:9px 16px;border-radius:9px;font-size:12.5px;font-weight:600;color:#aab2c5;}
+#devNav button.active{background:var(--indigo-500);color:#fff}
+#devNav button:hover:not(.active){background:#1a2440;color:#fff}
+</style>
+</head>
+<body>
+<div class="view active" id="view-landing">
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="logo-group">
+      <div class="logo-mark"></div>
+      <div class="logo-text"><b>NEXUS OS</b><span>AI Business Operating System</span></div>
+    </div>
+    <div class="nav-links">
+      <a href="#executive-team">Product <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px"></i></a>
+      <a href="#solutions">Solutions <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px"></i></a>
+      <a href="#executive-team">Executive Team</a>
+      <a href="#pillars">Intelligence <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px"></i></a>
+      <a href="#industries">Industries</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#resources">Resources <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px"></i></a>
+    </div>
+    <div class="nav-right">
+      <a class="btn btn-ghost" href="javascript:void(0)" onclick="showView('dashboard')">Sign In</a>
+      <a class="btn btn-primary" href="javascript:void(0)" onclick="showView('onboarding')">Build My NEXUS OS <i data-lucide="arrow-right" class="icon" style="width:15px;height:15px"></i></a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div>
+    <span class="badge"><i data-lucide="sparkles" style="width:14px;height:14px"></i> NEXUS OS — BUILT AROUND YOUR BUSINESS</span>
+    <h1>Your AI executive<br>team.<br><span class="grad">Built around your company.</span></h1>
+    <p class="lead">Connect your website, documents, business tools and data. NEXUS learns how your company works, identifies what needs attention and helps your team plan, decide and execute.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="javascript:void(0)" onclick="showView('onboarding')" style="padding:14px 24px">Build My NEXUS OS <i data-lucide="arrow-right" class="icon"></i></a>
+      <a class="btn btn-outline" href="#demo" style="padding:14px 24px"><i data-lucide="play-circle" class="icon"></i> Watch Product Demo</a>
+    </div>
+    <div class="hero-notes">
+      <span><i data-lucide="check-circle"></i> Guided setup</span>
+      <span><i data-lucide="check-circle"></i> No credit card required</span>
+      <span><i data-lucide="check-circle"></i> Connect your tools securely</span>
+      <span><i data-lucide="check-circle"></i> Built for growing businesses</span>
+    </div>
+  </div>
+
+  <div class="mockup-frame" style="margin-top:24px">
+    <div class="mockup-bar"><span></span><span></span><span></span></div>
+    <div style="cursor:pointer" onclick="showView('dashboard')" title="Click to open the live dashboard">
+  <div style="padding:22px 24px;display:flex;gap:14px;flex-wrap:wrap">
+    <div class="card stat-card" style="flex:1;min-width:130px;box-shadow:none">
+      <p class="stat-val" style="font-size:19px">1,247</p><p class="stat-label">Total Leads</p>
+      <span class="stat-delta up" style="font-size:11px">&#8593; 18.5%</span>
+    </div>
+    <div class="card stat-card" style="flex:1;min-width:130px;box-shadow:none">
+      <p class="stat-val" style="font-size:19px">OMR 32,940</p><p class="stat-label">Sales Revenue</p>
+      <span class="stat-delta up" style="font-size:11px">&#8593; 12.7%</span>
+    </div>
+    <div class="card stat-card" style="flex:1;min-width:130px;box-shadow:none">
+      <p class="stat-val" style="font-size:19px">312%</p><p class="stat-label">ROI</p>
+      <span class="stat-delta up" style="font-size:11px">&#8593; 16.3%</span>
+    </div>
+  </div>
+  <div style="padding:0 24px 26px;font-size:12.5px;color:var(--gray-500);display:flex;align-items:center;gap:8px">
+    <i data-lucide="mouse-pointer-click" style="width:14px;height:14px"></i> Click to open the full live dashboard
+  </div>
+</div>
+  </div>
+</section>
+
+<section id="how-it-works" class="features-head" style="margin-top:80px">
+  <div class="eyebrow">The Central Promise</div>
+  <h2>Connect. Understand. Decide. Execute. Improve.</h2>
+  <p>Not a collection of separate tools — one system that learns your business, then acts on it.</p>
+</section>
+<div class="how-it-works-grid" style="grid-template-columns:repeat(5,1fr)">
+  <div class="card how-step">
+    <div class="how-num">1</div>
+    <h3>Connect</h3>
+    <p style="font-size:12px;color:var(--gray-500);margin:0">Your website, tools and knowledge</p>
+  </div>
+  <div class="card how-step">
+    <div class="how-num">2</div>
+    <h3>Understand</h3>
+    <p style="font-size:12px;color:var(--gray-500);margin:0">NEXUS learns your company</p>
+  </div>
+  <div class="card how-step">
+    <div class="how-num">3</div>
+    <h3>Decide</h3>
+    <p style="font-size:12px;color:var(--gray-500);margin:0">It identifies risks and opportunities</p>
+  </div>
+  <div class="card how-step">
+    <div class="how-num">4</div>
+    <h3>Execute</h3>
+    <p style="font-size:12px;color:var(--gray-500);margin:0">It creates strategies, tasks and workflows</p>
+  </div>
+  <div class="card how-step">
+    <div class="how-num">5</div>
+    <h3>Improve</h3>
+    <p style="font-size:12px;color:var(--gray-500);margin:0">It measures results and adapts</p>
+  </div>
+</div>
+
+<section id="executive-team" class="features-head" style="margin-top:96px">
+  <div class="eyebrow">Meet Your Digital Executive Team</div>
+  <h2>An executive team that already knows your business.</h2>
+  <p>Seven AI directors, all reading from the same Company Brain — not separate chatbots with disconnected knowledge.</p>
+</section>
+<div class="exec-team-grid">
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:var(--indigo-50);color:var(--indigo-500)"><i data-lucide="compass"></i></div>
+    <h3>Nexus Chief of Staff</h3>
+    <ul class="outcome-list"><li>Daily executive brief</li><li>Priorities</li><li>Risks</li><li>Cross-department recommendations</li><li>Meeting summaries</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:#EAFBF1;color:var(--green-500)"><i data-lucide="megaphone"></i></div>
+    <h3>AI Marketing Director</h3>
+    <ul class="outcome-list"><li>Marketing strategy</li><li>Campaign planning</li><li>Content calendar</li><li>SEO</li><li>Brand positioning</li><li>Channel performance</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:var(--nexus-gold-soft);color:#B78103"><i data-lucide="handshake"></i></div>
+    <h3>AI Sales Director</h3>
+    <ul class="outcome-list"><li>Sales pipeline</li><li>Lead intelligence</li><li>Forecasting</li><li>Proposals</li><li>Follow-ups</li><li>Negotiation preparation</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:#F1ECFE;color:var(--purple-500)"><i data-lucide="calculator"></i></div>
+    <h3>AI Finance Advisor</h3>
+    <ul class="outcome-list"><li>Revenue and margin analysis</li><li>Cash-flow signals</li><li>Budget scenarios</li><li>Pricing recommendations</li><li>Investment analysis</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:#E9F6FF;color:#0EA5E9"><i data-lucide="users"></i></div>
+    <h3>AI HR Director</h3>
+    <ul class="outcome-list"><li>HR policies</li><li>Recruitment plans</li><li>Onboarding</li><li>Training</li><li>Team capacity</li><li>Workforce insights</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:#FDECEC;color:var(--red-500)"><i data-lucide="settings-2"></i></div>
+    <h3>AI Operations Director</h3>
+    <ul class="outcome-list"><li>SOPs</li><li>Workflow analysis</li><li>Bottlenecks</li><li>Task management</li><li>Process improvement</li></ul>
+  </div>
+  <div class="card exec-card">
+    <div class="exec-avatar" style="background:var(--indigo-50);color:var(--indigo-500)"><i data-lucide="map"></i></div>
+    <h3>AI Strategy Director</h3>
+    <ul class="outcome-list"><li>Expansion planning</li><li>Market-entry analysis</li><li>Business simulation</li><li>Risk assessment</li><li>Strategic priorities</li></ul>
+  </div>
+</div>
+
+<div class="trust">
+  <p>Designed for growing businesses across Oman, the GCC and beyond</p>
+</div>
+
+<section id="pillars" class="features-head">
+  <div class="eyebrow">Platform Capability Map</div>
+  <h2>Seven pillars. One executive team.</h2>
+  <p>Everything is grouped by outcome, not by tool — so the product reads like a team, not a toolbox.</p>
+</section>
+
+<div class="pillars-grid">
+  <div class="card pillar-card">
+    <h3>1. Executive Command</h3>
+    <p class="pillar-positioning">Know what changed, why it matters and what to do next.</p>
+    <ul class="outcome-list"><li>CEO Morning Brief</li><li>Company Health Score</li><li>Opportunity Radar</li><li>Decision Assistant</li><li>Business Simulator</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>2. Growth &amp; Marketing</h3>
+    <p class="pillar-positioning">Plan, launch and optimize growth from one workspace.</p>
+    <ul class="outcome-list"><li>AI Marketing Director</li><li>Content &amp; Campaign Calendar</li><li>SEO Intelligence</li><li>Brand Intelligence</li><li>Pricing Intelligence</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>3. Sales &amp; Revenue</h3>
+    <p class="pillar-positioning">Find the right opportunities and move them toward revenue.</p>
+    <ul class="outcome-list"><li>Lead Intelligence</li><li>Sales Workspace &amp; CRM</li><li>Proposal Studio</li><li>Communication Intelligence</li><li>Revenue Forecasting</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>4. Competitive Intelligence</h3>
+    <p class="pillar-positioning">Know who your competitors are, what they're doing and how to respond.</p>
+    <ul class="outcome-list"><li>Competitor Discovery &amp; Monitoring</li><li>Advertisement Tracking</li><li>SEO Gap Analysis</li><li>Competitor Alerts</li><li>Market Positioning Comparison</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>5. Customers &amp; Retention</h3>
+    <p class="pillar-positioning">Identify customers at risk before revenue disappears.</p>
+    <ul class="outcome-list"><li>Customer Health</li><li>Churn Prediction</li><li>Review Monitoring</li><li>Retention Campaigns</li><li>Revenue at Risk</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>6. People &amp; Operations</h3>
+    <p class="pillar-positioning">Preserve knowledge and keep the company running consistently.</p>
+    <ul class="outcome-list"><li>Company Brain</li><li>SOP Builder</li><li>Workflow Automation</li><li>Team Capacity</li><li>Company Memory</li></ul>
+  </div>
+  <div class="card pillar-card">
+    <h3>7. Finance &amp; Strategic Decisions</h3>
+    <p class="pillar-positioning">Test major decisions before committing money and resources.</p>
+    <ul class="outcome-list"><li>Financial Health</li><li>Margin Analysis</li><li>Pricing &amp; Expansion Simulator</li><li>Scenario Planning</li><li>Risk Register</li></ul>
+  </div>
+</div>
+
+<section id="simulator" class="features-head" style="margin-top:96px">
+  <div class="eyebrow">Business Simulator</div>
+  <h2>Test the decision before you take the risk.</h2>
+  <p>Ask a what-if question in plain language — NEXUS models the outcome from your connected data.</p>
+</section>
+<div class="simulator-demo">
+  <div class="sim-prompts">
+    <div class="sim-prompt">"What happens if we increase prices by 10%?"</div>
+    <div class="sim-prompt">"Should we hire three new salespeople?"</div>
+    <div class="sim-prompt">"What if we enter Saudi Arabia?"</div>
+    <div class="sim-prompt">"Which service should we stop selling?"</div>
+  </div>
+  <div class="sim-output">
+    <div class="sim-output-head">Simulated: "Increase prices by 10%"</div>
+    <div class="sim-output-grid">
+      <div><span>Revenue impact</span><b class="up">+6.2%</b></div>
+      <div><span>Profit impact</span><b class="up">+11.4%</b></div>
+      <div><span>Cash-flow effect</span><b class="up">Positive, 60-day lag</b></div>
+      <div><span>Key risk</span><b class="warn">8-12% customer attrition</b></div>
+    </div>
+    <div class="sim-scenarios">
+      <span><b>Best case:</b> +14% profit, minimal churn</span>
+      <span><b>Expected:</b> +11.4% profit, moderate churn</span>
+      <span><b>Worst case:</b> +2% profit, high churn among price-sensitive accounts</span>
+    </div>
+    <p class="sim-disclaimer">Estimates based on available data, not guaranteed outcomes.</p>
+  </div>
+</div>
+
+<section id="opportunity-radar" class="features-head" style="margin-top:96px">
+  <div class="eyebrow">Opportunity Radar</div>
+  <h2>See opportunities before your competitors do.</h2>
+  <p>NEXUS scans public tenders, expansion announcements, hiring activity and market signals continuously.</p>
+</section>
+<div class="opp-card-demo">
+  <div class="opp-card-head"><i data-lucide="radar"></i> Opportunity detected</div>
+  <p class="opp-title">12 construction tenders published in Oman</p>
+  <div class="opp-meta-row">
+    <span><b>Estimated relevance:</b> High</span>
+    <span><b>Potential fit:</b> Commercial contracting</span>
+  </div>
+  <div class="opp-action"><b>Recommended action:</b> Prepare targeted capability proposal</div>
+</div>
+
+<div class="trust" style="margin-top:80px">
+  <p>NEXUS learns your business, watches your performance and market, tells you what matters, helps you decide, creates the work, and helps your team execute.</p>
+</div>
+</div>
+<div class="view" id="view-onboarding">
+<div class="wiz-shell">
+
+  <div class="wiz-top">
+    <div class="logo-group">
+      <div class="logo-mark" style="width:32px;height:32px;font-size:12px"></div>
+      <div class="logo-text"><b style="font-size:14px">NEXUS OS</b></div>
+    </div>
+    <span class="step-counter" id="stepCounter">Step 1 of 11</span>
+  </div>
+  <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:9%"></div></div>
+
+  <div class="panel">
+
+    <!-- STEP 1 : WELCOME -->
+    <section class="step active" data-step="1">
+      <div class="welcome-hero">
+        <div class="logo-mark"></div>
+        <h1>Let's build NEXUS around your business</h1>
+        <p class="sub">NEXUS will learn your company, connect your tools and create a personalized operating system for your team.</p>
+      </div>
+      <div class="benefit-list">
+        <div class="benefit"><i data-lucide="brain"></i><div><b>Learns Your Business</b><span>Built around your goals, customers and brand</span></div></div>
+        <div class="benefit"><i data-lucide="plug-zap"></i><div><b>Connects Your Tools</b><span>Bring your data and workflows into one workspace</span></div></div>
+        <div class="benefit"><i data-lucide="target"></i><div><b>Creates Your Strategy</b><span>Generate practical plans based on your company</span></div></div>
+        <div class="benefit"><i data-lucide="refresh-cw"></i><div><b>Improves Continuously</b><span>Recommendations update as your performance changes</span></div></div>
+      </div>
+      <div class="check-summary">
+        <span><i data-lucide="check"></i> Marketing Strategy</span>
+        <span><i data-lucide="check"></i> AI Assistant</span>
+        <span><i data-lucide="check"></i> Business Dashboard</span>
+        <span><i data-lucide="check"></i> Marketing Calendar</span>
+        <span><i data-lucide="check"></i> SEO Plan</span>
+        <span><i data-lucide="check"></i> KPIs &amp; Reports</span>
+      </div>
+      <p class="eta" style="text-align:center">This will take about 7 minutes</p>
+    </section>
+
+    <section class="step" data-step="2">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Company Basics</h1>
+      <p class="sub">Tell us more about your business.</p>
+      <div class="field"><label>Company Name</label><input type="text" value="ABC Construction LLC"></div>
+      <div class="field"><label>Website</label><input type="text" value="www.abcconstruction.com"></div>
+      <div class="field-row">
+        <div class="field"><label>Email</label><input type="text" value="info@abcconstruction.com"></div>
+        <div class="field"><label>Phone</label><input type="text" value="+968 9123 4567"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Country</label>
+          <select><option>Oman</option><option>UAE</option><option>Saudi Arabia</option><option>Qatar</option></select>
+        </div>
+        <div class="field"><label>Industry</label>
+          <select id="onbIndustrySelect"><option value="contracting">Construction</option><option value="retail">Retail</option><option value="services">Healthcare</option><option value="services">Technology</option></select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Number of Employees</label>
+          <select><option>50 - 100</option><option>1 - 10</option><option>10 - 50</option><option>100+</option></select>
+        </div>
+        <div class="field"><label>Annual Revenue (Optional)</label>
+          <select><option>OMR 1M - 5M</option><option>Under OMR 1M</option><option>OMR 5M+</option></select>
+        </div>
+      </div>
+      <div class="field"><label>Business Description</label>
+        <textarea>We provide construction and engineering services for residential, commercial and industrial projects.</textarea>
+      </div>
+      <div class="field"><label>Upload Logo</label>
+        <div class="file-row"><i data-lucide="image" class="icon"></i><span class="fname">abc-logo.png</span><span class="remove-x">&times;</span></div>
+      </div>
+    </section>
+
+    <section class="step" data-step="3">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Website Scan</h1>
+      <p class="sub">Our AI is analyzing your website to understand your business better.</p>
+      <div class="scan-ring-wrap">
+        <div class="scan-ring">
+          <svg width="180" height="180"><circle cx="90" cy="90" r="78" stroke="#E5E7EF" stroke-width="12" fill="none"/><circle id="scanArc" cx="90" cy="90" r="78" stroke="#4F46E5" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="490" stroke-dashoffset="490"/></svg>
+          <div class="scan-label"><b id="scanPct">0%</b><span>Scanning...</span></div>
+        </div>
+      </div>
+      <div class="scan-check-list" id="scanList">
+        <div class="scan-check-item"><span class="dot"></span> Reading pages</div>
+        <div class="scan-check-item"><span class="dot"></span> Analyzing content</div>
+        <div class="scan-check-item"><span class="dot"></span> Checking SEO</div>
+        <div class="scan-check-item"><span class="dot"></span> Analyzing competitors</div>
+        <div class="scan-check-item"><span class="dot"></span> Checking performance</div>
+        <div class="scan-check-item"><span class="dot"></span> Extracting data</div>
+        <div class="scan-check-item"><span class="dot"></span> Building business profile</div>
+      </div>
+      <div class="info-note"><i data-lucide="info" class="icon"></i> This may take 1-2 minutes. You can continue to the next step.</div>
+      <div class="scan-findings" id="scanFindings" style="display:none;margin-top:18px">
+        <p style="font-size:13.5px;font-weight:700;margin:0 0 14px">Your AI Business Audit</p>
+        <div class="audit-score-grid">
+          <div class="audit-score good"><span>Brand</span><b>84</b></div>
+          <div class="audit-score warn"><span>Marketing</span><b>69</b></div>
+          <div class="audit-score good"><span>Sales</span><b>81</b></div>
+          <div class="audit-score bad"><span>SEO</span><b>41</b></div>
+          <div class="audit-score warn"><span>Customer Exp.</span><b>73</b></div>
+          <div class="audit-score good"><span>Operations</span><b>88</b></div>
+          <div class="audit-score bad"><span>AI Readiness</span><b>35</b></div>
+        </div>
+
+        <p style="font-size:13.5px;font-weight:700;margin:20px 0 10px">AI Improvement Roadmap</p>
+        <div class="roadmap-item"><span>Your website lacks clear calls to action.</span><span class="ai-action-chip"><i data-lucide="wand-2"></i> Fix with AI</span></div>
+        <div class="roadmap-item"><span>Competitors are publishing more educational content.</span><span class="ai-action-chip"><i data-lucide="wand-2"></i> Generate Content Plan</span></div>
+        <div class="roadmap-item"><span>Your Meta ads use only static images.</span><span class="ai-action-chip"><i data-lucide="wand-2"></i> Create Video Campaign</span></div>
+        <div class="roadmap-item"><span>You have 126 dormant leads.</span><span class="ai-action-chip"><i data-lucide="wand-2"></i> Launch Reactivation Campaign</span></div>
+        <div class="roadmap-item"><span>Your proposal template converts poorly.</span><span class="ai-action-chip"><i data-lucide="wand-2"></i> Create New Proposal</span></div>
+
+        <p style="font-size:13.5px;font-weight:600;margin:18px 0 12px">Does this accurately describe your business?</p>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary btn-sm" onclick="nextStep()">Yes, continue</button>
+          <button class="btn btn-outline btn-sm">Edit findings</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="step" data-step="4">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>What are your main business goals?</h1>
+      <p class="sub">Select all that apply.</p>
+      <div class="option-list" id="goalsList">
+        <div class="option selected" data-icon="trending-up">Generate More Leads<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option selected" data-icon="dollar-sign">Increase Sales<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option selected" data-icon="megaphone">Brand Awareness<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option selected" data-icon="mouse-pointer-click">Improve Website Traffic<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="search">SEO Ranking<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="package-plus">Launch New Products<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="user-plus">Recruitment<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="globe-2">International Expansion<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="more-horizontal">Other (Please specify)<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+      </div>
+    </section>
+
+    <section class="step" data-step="5">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Tell us about your customers and revenue</h1>
+      <p class="sub">This helps NEXUS build a realistic revenue and growth model.</p>
+      <div class="field"><label>How many sales people do you have?</label><select><option>5 - 10</option><option>1 - 5</option><option>10 - 25</option><option>25+</option></select></div>
+      <div class="field"><label>How many branches do you have?</label><select><option>2</option><option>1</option><option>3 - 5</option><option>5+</option></select></div>
+      <div class="field"><label>Who is your ideal customer?</label><input type="text" value="Contractors, developers, government and private companies"></div>
+      <div class="field"><label>Average deal size?</label><select><option>OMR 10,000 - 50,000</option><option>Under OMR 10,000</option><option>OMR 50,000+</option></select></div>
+      <div class="field"><label>What is your monthly marketing budget?</label><select><option>OMR 500 - 1,000</option><option>Under OMR 500</option><option>OMR 1,000 - 5,000</option><option>OMR 5,000+</option></select></div>
+      <div class="field"><label>What are your biggest challenges?</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <span class="chip">Getting qualified leads <button>&times;</button></span>
+          <span class="chip">High competition <button>&times;</button></span>
+          <span class="chip">Low website traffic <button>&times;</button></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="step" data-step="6">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Choose your brand voice</h1>
+      <p class="sub">How should AI communicate on your behalf?</p>
+      <div class="option-list" id="voiceList">
+        <div class="option selected" data-icon="briefcase">Professional<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="smile">Friendly<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="building">Corporate<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="gem">Luxury<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="cpu">Technical<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="graduation-cap">Educational<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="lightbulb">Innovative<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="option" data-icon="pencil">Custom (Define your own voice)<span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+      </div>
+    </section>
+
+    <section class="step" data-step="7">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Products &amp; Services</h1>
+      <p class="sub">Tell NEXUS what you sell so it can quote and pitch it accurately.</p>
+      <div class="field"><label>Main products or services</label>
+        <textarea>Design-build construction, structural engineering, and industrial fit-out services for commercial and residential clients.</textarea>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Typical price range</label><input type="text" value="OMR 10,000 - 200,000 per project"></div>
+        <div class="field"><label>Delivery / service area</label><input type="text" value="Muscat, Sohar, Salalah"></div>
+      </div>
+      <div class="field"><label>What makes your offer different?</label>
+        <textarea>In-house engineering team, faster permit turnaround, and a track record with government and private-sector clients.</textarea>
+      </div>
+    </section>
+
+    <section class="step" data-step="8">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Who are your competitors?</h1>
+      <p class="sub">Many businesses only know their obvious competitors — let NEXUS find the rest.</p>
+
+      <div class="option-list" id="competitorModeList">
+        <div class="option" data-icon="pencil">I know my competitors — I'll add them manually</div>
+        <div class="option selected" data-icon="sparkles">Let NEXUS discover them automatically <span class="mini-tag" style="margin-left:8px">Recommended</span></div>
+      </div>
+
+      <div id="manualCompetitors" style="display:none">
+        <div class="field"><label>Competitor 1</label><input type="text" value="Oman Construction"></div>
+        <div class="field"><label>Competitor 2</label><input type="text" value="Muscat Builders"></div>
+        <div class="field"><label>Competitor 3</label><input type="text" value="Galfar Engineering"></div>
+        <div class="field"><label>Competitor 4 (Optional)</label><input type="text" placeholder="Optional"></div>
+      </div>
+
+      <div id="autoCompetitors">
+        <div class="info-note"><i data-lucide="sparkles" class="icon"></i> NEXUS is analyzing Google Search, Google Maps, the Meta Ads Library, LinkedIn, SEO rankings and website similarity to find your real competitors.</div>
+        <div class="discovery-result">
+          <p class="discovery-headline">We found 12 potential competitors</p>
+          <div class="discovery-group">
+            <p class="discovery-group-title">Direct Competitors</p>
+            <label class="discovery-check"><input type="checkbox" checked> Galfar Engineering</label>
+            <label class="discovery-check"><input type="checkbox" checked> Oman Construction</label>
+            <label class="discovery-check"><input type="checkbox" checked> Muscat Builders</label>
+          </div>
+          <div class="discovery-group">
+            <p class="discovery-group-title">Emerging Competitors</p>
+            <label class="discovery-check"><input type="checkbox" checked> XYZ Construction</label>
+            <label class="discovery-check"><input type="checkbox" checked> ABC Contractors</label>
+          </div>
+          <div class="discovery-group">
+            <p class="discovery-group-title">Digital Competitors</p>
+            <label class="discovery-check"><input type="checkbox" checked> Company dominating Google SEO in your category</label>
+            <label class="discovery-check"><input type="checkbox" checked> Company running heavy Meta Ads in your category</label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step" data-step="9">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Upload your business knowledge</h1>
+      <p class="sub">Upload any documents that will help AI understand your business.</p>
+      <div class="dropzone"><i data-lucide="upload-cloud" style="width:32px;height:32px;margin:0 auto 10px"></i><b>Drag &amp; drop files here</b><span>or click to browse<br>PDF, DOCX, PPTX, XLSX, TXT (Max 50MB) each</span></div>
+      <div class="file-row"><i data-lucide="file-text" class="icon"></i><span class="fname">Company Profile.pdf</span><span class="fsize">2.4 MB</span><span class="remove-x">&times;</span></div>
+      <div class="file-row"><i data-lucide="file-text" class="icon"></i><span class="fname">Services &amp; Products.pdf</span><span class="fsize">1.8 MB</span><span class="remove-x">&times;</span></div>
+      <div class="file-row"><i data-lucide="file-text" class="icon"></i><span class="fname">Price List 2024.pdf</span><span class="fsize">1.2 MB</span><span class="remove-x">&times;</span></div>
+      <div class="file-row"><i data-lucide="file-text" class="icon"></i><span class="fname">Marketing Plan 2024.pptx</span><span class="fsize">3.5 MB</span><span class="remove-x">&times;</span></div>
+      <div class="file-row"><i data-lucide="file-text" class="icon"></i><span class="fname">Brand Guidelines.pdf</span><span class="fsize">2.1 MB</span><span class="remove-x">&times;</span></div>
+    </section>
+
+    <section class="step" data-step="10">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Connect Your Tools</h1>
+      <p class="sub">Connect the tools you already use. You can always connect more later.</p>
+
+      <div class="tool-section-label">Website &amp; Social</div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="globe" class="icon"></i></div><div class="tool-name">Website<div class="tool-desc">www.abcconstruction.com</div></div><button class="connect-btn connected">Connected</button></div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="instagram" class="icon"></i></div><div class="tool-name">Instagram / Facebook / LinkedIn / TikTok / X</div><button class="connect-btn" onclick="this.classList.add('connected');this.textContent='Connected'">Connect All</button><a class="skip-link" onclick="nextStep()">Skip for now</a></div>
+
+      <div class="tool-section-label">Google</div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="bar-chart-2" class="icon"></i></div><div class="tool-name">Analytics / Search Console / Business Profile</div><button class="connect-btn" onclick="this.classList.add('connected');this.textContent='Connected'">Connect All</button><a class="skip-link" onclick="nextStep()">Skip for now</a></div>
+
+      <div class="tool-section-label">Marketing</div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="mail" class="icon"></i></div><div class="tool-name">Mailchimp / Brevo / HubSpot / Klaviyo</div><button class="connect-btn" onclick="this.classList.add('connected');this.textContent='Connected'">Connect All</button><a class="skip-link" onclick="nextStep()">Skip for now</a></div>
+
+      <div class="tool-section-label">CRM</div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="users" class="icon"></i></div><div class="tool-name">Pipedrive / Zoho CRM / HubSpot / Salesforce</div><button class="connect-btn" onclick="this.classList.add('connected');this.textContent='Connected'">Connect All</button><a class="skip-link" onclick="nextStep()">Skip for now</a></div>
+
+      <div class="tool-section-label">Accounting</div>
+      <div class="tool-row"><div class="tool-ic"><i data-lucide="calculator" class="icon"></i></div><div class="tool-name">QuickBooks / Xero / Zoho Books / Odoo</div><button class="connect-btn" onclick="this.classList.add('connected');this.textContent='Connected'">Connect All</button><a class="skip-link" onclick="nextStep()">Skip for now</a></div>
+    </section>
+
+    <section class="step" data-step="11">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Team &amp; Permissions</h1>
+      <p class="sub">Add your team and set their roles and permissions.</p>
+      <div id="memberList">
+        <div class="member-row"><span class="avatar">AA</span><div><div class="m-name">Alaa Ali (You)</div><div class="m-role">Owner</div></div><span class="role-badge">You</span></div>
+        <div class="member-row"><span class="avatar">AB</span><div><div class="m-name">Ahmed Al Balushi</div><div class="m-role">Marketing Manager</div></div><span class="role-badge">Admin</span><span class="remove-x" onclick="this.closest('.member-row').remove()">&times;</span></div>
+        <div class="member-row"><span class="avatar">FH</span><div><div class="m-name">Fatma Al Harrasi</div><div class="m-role">Sales Manager</div></div><span class="role-badge">Editor</span><span class="remove-x" onclick="this.closest('.member-row').remove()">&times;</span></div>
+        <div class="member-row"><span class="avatar">KM</span><div><div class="m-name">Khalid Mohammed</div><div class="m-role">HR Manager</div></div><span class="role-badge">Viewer</span><span class="remove-x" onclick="this.closest('.member-row').remove()">&times;</span></div>
+        <div class="member-row"><span class="avatar">SH</span><div><div class="m-name">Salim Al Harthy</div><div class="m-role">Accountant</div></div><span class="role-badge">Viewer</span><span class="remove-x" onclick="this.closest('.member-row').remove()">&times;</span></div>
+      </div>
+      <div class="add-member-row">
+        <input type="text" placeholder="Email address">
+        <button class="btn btn-outline btn-sm">+ Invite Team Member</button>
+      </div>
+    </section>
+
+    <section class="step" data-step="12">
+      <a class="back-link" onclick="prevStep()"><i data-lucide="arrow-left" class="icon" style="width:14px;height:14px"></i> Back</a>
+      <h1>Choose your modules</h1>
+      <p class="sub">Based on what you told us, here's what NEXUS recommends. Everything is pre-selected sensibly — add or remove anything before we build your workspace.</p>
+
+      <div class="module-choice-tier">
+        <div class="tier-label"><i data-lucide="check-circle" style="width:14px;height:14px;color:var(--indigo-500)"></i> Core Platform <span>— included for everyone, no need to choose</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin:8px 0 18px">
+          <span class="mini-tag">Morning Brief</span><span class="mini-tag">Nexus Assistant</span><span class="mini-tag">CRM &amp; Sales</span><span class="mini-tag">Content Studio</span><span class="mini-tag">Lead Intelligence</span><span class="mini-tag">+ 25 more core modules</span>
+        </div>
+      </div>
+
+      <div class="module-choice-tier">
+        <div class="tier-label"><i data-lucide="sparkles" style="width:14px;height:14px;color:var(--orange-500)"></i> Recommended for <b id="onbIndustryName">Distribution &amp; Dealer Network</b> <span>— based on your answers, uncheck anything you don't need</span></div>
+        <div id="onbModuleChecklist" class="module-checklist"></div>
+      </div>
+
+      <div class="module-choice-tier">
+        <div class="tier-label" onclick="document.getElementById('onbOtherModules').style.display = document.getElementById('onbOtherModules').style.display==='none'?'flex':'none'" style="cursor:pointer">
+          <i data-lucide="chevron-down" style="width:14px;height:14px;color:var(--gray-400)"></i> Browse everything else <span>— 20+ additional modules, all available whenever you want them</span>
+        </div>
+        <div id="onbOtherModules" class="module-checklist" style="display:none">
+          <label class="module-check"><input type="checkbox"> AI Ad Manager</label>
+          <label class="module-check"><input type="checkbox"> AI Voice Agent</label>
+          <label class="module-check"><input type="checkbox"> Support Chatbot</label>
+          <label class="module-check"><input type="checkbox"> AI Recruiter</label>
+          <label class="module-check"><input type="checkbox"> AI Contract Review</label>
+          <label class="module-check"><input type="checkbox"> Multi-language AI</label>
+          <label class="module-check"><input type="checkbox"> Loyalty &amp; Referrals</label>
+          <label class="module-check"><input type="checkbox"> Report Builder</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="step" data-step="13">
+      <div class="build-wrap">
+        <svg class="rocket-ic" width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+        <h1 style="margin-top:22px">Building your NEXUS OS</h1>
+        <p class="sub" style="max-width:340px;margin:0 auto 6px">Please wait while we customize everything for your business.</p>
+        <div class="build-list" id="buildList">
+          <div class="build-item"><i data-lucide="circle"></i> Building your company knowledge graph</div>
+          <div class="build-item"><i data-lucide="circle"></i> Creating your brand profile</div>
+          <div class="build-item"><i data-lucide="circle"></i> Mapping your customer journey</div>
+          <div class="build-item"><i data-lucide="circle"></i> Generating your growth strategy</div>
+          <div class="build-item"><i data-lucide="circle"></i> Building your content and campaign calendar</div>
+          <div class="build-item"><i data-lucide="circle"></i> Establishing your KPI framework</div>
+          <div class="build-item"><i data-lucide="circle"></i> Configuring your Nexus Assistant</div>
+          <div class="build-item"><i data-lucide="circle"></i> Preparing your executive dashboard</div>
+        </div>
+        <div class="progress-track" style="max-width:300px;margin:0 auto 10px"><div class="progress-fill" id="buildFill" style="width:0%"></div></div>
+        <p class="eta" id="buildPct">0%</p>
+
+        <div id="nexusBriefing" class="nexus-briefing" style="display:none">
+          <p class="briefing-title">Welcome to NEXUS. Here's what we've learned about your company.</p>
+          <ul class="briefing-list">
+            <li>We analyzed <b>124 pages</b> of your website.</li>
+            <li>We identified <b>7 services.</b></li>
+            <li>We found <b>12 important keywords.</b></li>
+            <li>We detected <b>12 competitors.</b></li>
+            <li>We discovered <b>3 SEO opportunities.</b></li>
+            <li>We identified <b>4 new lead opportunities.</b></li>
+            <li>We estimate your digital maturity at <b>71/100.</b></li>
+          </ul>
+          <p class="briefing-insight">Based on your data, your biggest growth opportunity is lead generation through search and customer case studies.</p>
+          <p class="briefing-ready">Your AI Executive Team is ready.</p>
+        </div>
+
+        <button class="btn btn-primary" id="enterWorkspaceBtn" style="display:none;margin-top:8px" onclick="goToDashboard()">Enter NEXUS OS <i data-lucide="arrow-right" class="icon" style="width:15px;height:15px"></i></button>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="foot-actions" id="footActions">
+    <button class="btn btn-outline" onclick="prevStep()" id="backBtn" style="visibility:hidden">Back</button>
+    <button class="btn btn-primary" onclick="nextStep()" id="nextBtn">Next <i data-lucide="arrow-right" class="icon" style="width:15px;height:15px"></i></button>
+  </div>
+
+</div>
+</div>
+<div class="view" id="view-dashboard">
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo-group">
+      <div class="logo-mark" style="width:32px;height:32px;font-size:12px"></div>
+      <div class="logo-text"><b style="font-size:14px">NEXUS OS</b><span style="font-size:10px">Business Intelligence Workspace</span></div>
+    </div>
+    <div class="workspace-switcher" id="w-workspaces" style="margin:14px 0 6px;padding:10px 12px;background:#1a2440;border-radius:10px;cursor:pointer">
+      <div style="font-size:10px;color:#8891a8;margin-bottom:2px">Current Workspace</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;font-weight:700;color:#fff">Suzuki Marine Oman</span>
+        <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px;color:#8891a8"></i>
+      </div>
+      <div style="font-size:10.5px;color:#8891a8;margin-top:2px">Al Khonji Group · 5 workspaces</div>
+    </div>
+    <nav>
+      <div class="nav-section-label" style="margin-top:0">Command Center</div>
+      <a class="nav-item active" data-target="#dash-top"><i data-lucide="layout-dashboard"></i> Executive Overview</a>
+      <a class="nav-item" data-target="#dash-top"><i data-lucide="sunrise"></i> Morning Brief</a>
+      <a class="nav-item" data-target="#assistant-panel"><i data-lucide="sparkles"></i> Nexus Assistant</a>
+      <a class="nav-item" data-target="#w-voiceceo"><i data-lucide="mic"></i> Voice CEO</a>
+      <a class="nav-item" data-target="#company-brain"><i data-lucide="brain-circuit"></i> Company Brain</a>
+
+      <div class="nav-section-label">Executive Team</div>
+      <a class="nav-item" data-target="#assistant-panel"><i data-lucide="compass"></i> Chief of Staff</a>
+      <a class="nav-item" data-target="#w-planner"><i data-lucide="megaphone"></i> Marketing Director</a>
+      <a class="nav-item" data-target="#crm-section"><i data-lucide="handshake"></i> Sales Director</a>
+      <a class="nav-item" data-target="#w-finance"><i data-lucide="calculator"></i> Finance Advisor</a>
+      <a class="nav-item" data-target="#w-hr"><i data-lucide="users"></i> HR Director</a>
+      <a class="nav-item" data-target="#w-hr"><i data-lucide="settings-2"></i> Operations Director</a>
+      <a class="nav-item" data-target="#w-simulator"><i data-lucide="map"></i> Strategy Director</a>
+
+      <div class="nav-section-label">Intelligence</div>
+      <a class="nav-item" data-target="#w-leadgen"><i data-lucide="user-search"></i> Lead Intelligence</a>
+      <a class="nav-item" data-target="#w-visitorid"><i data-lucide="eye"></i> Visitor Identification</a>
+      <a class="nav-item" data-target="#w-competitive"><i data-lucide="radar"></i> Competitor War Room</a>
+      <a class="nav-item" data-target="#w-customer"><i data-lucide="heart-pulse"></i> Customer Intelligence</a>
+      <a class="nav-item" data-target="#w-radar"><i data-lucide="globe"></i> Market Intelligence</a>
+      <a class="nav-item" data-target="#w-radar"><i data-lucide="satellite-dish"></i> Opportunity Radar</a>
+      <a class="nav-item" data-target=".decision-card"><i data-lucide="git-branch"></i> Decision Intelligence</a>
+      <a class="nav-item" data-target="#w-crisis"><i data-lucide="siren"></i> Crisis Detector</a>
+
+      <div class="nav-section-label">Execution</div>
+      <a class="nav-item" data-target="#w-planner"><i data-lucide="calendar-check"></i> Marketing Studio</a>
+      <a class="nav-item" data-target="#w-content"><i data-lucide="pen-line"></i> Content Studio</a>
+      <a class="nav-item" data-target="#crm-section"><i data-lucide="briefcase"></i> CRM &amp; Sales</a>
+      <a class="nav-item" data-target="#w-proposal"><i data-lucide="file-text"></i> Proposal Studio</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="file-signature"></i> Contract Review</a>
+      <a class="nav-item" data-target="#w-seo"><i data-lucide="search"></i> SEO Intelligence</a>
+      <a class="nav-item" data-target="#w-social"><i data-lucide="share-2"></i> Social Publishing</a>
+      <a class="nav-item" data-target="#w-reviews"><i data-lucide="star"></i> Review Management</a>
+      <a class="nav-item" data-target="#w-hr"><i data-lucide="shield-check"></i> HR Policies &amp; SOPs</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="user-check"></i> AI Recruiter</a>
+      <a class="nav-item" data-target="#w-comms"><i data-lucide="message-circle"></i> Communication Intelligence</a>
+      <a class="nav-item" data-target="#w-meetingprep"><i data-lucide="target"></i> Meeting &amp; Deal Prep Coach</a>
+
+      <div class="nav-section-label">Autonomous Agents</div>
+      <a class="nav-item" data-target="#w-adsmanager"><i data-lucide="megaphone"></i> AI Ad Manager</a>
+      <a class="nav-item" data-target="#w-voiceagent"><i data-lucide="phone-call"></i> AI Voice Agent</a>
+      <a class="nav-item" data-target="#w-supportbot"><i data-lucide="message-square-text"></i> Support Chatbot</a>
+      <a class="nav-item" data-target="#w-socialinquiry"><i data-lucide="at-sign"></i> Social Inquiry AI</a>
+      <a class="nav-item" data-target="#w-meetingbot"><i data-lucide="mic"></i> AI Meeting Bot</a>
+      <a class="nav-item" data-target="#w-outreach"><i data-lucide="send"></i> Outreach Sequences</a>
+      <a class="nav-item" data-target="#w-lpagent"><i data-lucide="layout-template"></i> Landing Page Agent</a>
+
+      <div class="nav-section-label">Finance &amp; Ops Automation</div>
+      <a class="nav-item" data-target="#w-bookkeeping"><i data-lucide="receipt"></i> AI Bookkeeping</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="tag"></i> Dynamic Pricing</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="package"></i> Procurement &amp; Inventory</a>
+      <a class="nav-item" data-target="#w-loyalty"><i data-lucide="gift"></i> Loyalty &amp; Referrals</a>
+
+      <div class="nav-section-label">Compliance &amp; Governance</div>
+      <a class="nav-item" data-target="#w-governance"><i data-lucide="shield-alert"></i> Agent Governance</a>
+      <a class="nav-item" data-target="#w-einvoice"><i data-lucide="file-check-2"></i> VAT &amp; e-Invoicing</a>
+
+      <div class="nav-section-label">Industry Packs <span style="opacity:.6;font-weight:500">· Inactive</span></div>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="wrench"></i> Service &amp; Warranty</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="store"></i> Dealer Portal</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="calculator"></i> Quote Builder</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="hard-hat"></i> Job Costing</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="smartphone"></i> Field Mobile Capture</a>
+
+      <div class="nav-section-label">Prediction</div>
+      <a class="nav-item" data-target="#w-simulator"><i data-lucide="flask-conical"></i> Business Simulator</a>
+      <a class="nav-item" data-target="#w-kpi"><i data-lucide="trending-up"></i> Forecast Center</a>
+      <a class="nav-item" data-target="#w-kpi"><i data-lucide="bar-chart-3"></i> Revenue Intelligence</a>
+      <a class="nav-item" data-target="#w-reportbuilder"><i data-lucide="file-bar-chart"></i> Report Builder</a>
+      <a class="nav-item" data-target="#beta-lab"><i data-lucide="sparkles"></i> NEXUS Labs</a>
+
+      <div class="nav-section-label">Settings</div>
+      <a class="nav-item" data-target="#w-social"><i data-lucide="plug"></i> Integrations</a>
+      <a class="nav-item pack-inactive" data-target="#w-industrypacks"><i data-lucide="languages"></i> Multi-language AI</a>
+      <a class="nav-item" data-target="#w-workspaces"><i data-lucide="layers"></i> Workspaces &amp; Entities</a>
+      <a class="nav-item" data-target="#w-industryprofiles"><i data-lucide="building-2"></i> Industry Profiles</a>
+      <a class="nav-item" data-target="#dash-top"><i data-lucide="users"></i> Team &amp; Permissions</a>
+      <a class="nav-item" data-target="#dash-top"><i data-lucide="sliders"></i> AI Configuration</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <div class="plan-card">
+      <div class="p-label">Current Plan</div>
+      <div class="p-name">Professional</div>
+      <div class="p-renew">Renews on May 15, 2025</div>
+      <button class="btn btn-primary btn-block btn-sm">Upgrade Plan</button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main" id="dash-top">
+    <div class="topbar">
+      <div class="search-box"><i data-lucide="search" class="icon" style="width:16px;height:16px"></i> Search anything... <kbd>&#8984; K</kbd></div>
+      <div class="top-actions">
+        <button class="icon-btn"><i data-lucide="bell" class="icon"></i><span class="dot"></span></button>
+        <button class="icon-btn"><i data-lucide="help-circle" class="icon"></i></button>
+        <div class="user-chip">
+          <div class="avatar" style="display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">AA</div>
+          <div><div class="u-name">Alaa Ali</div><div class="u-role">Owner</div></div>
+          <i data-lucide="chevron-down" class="icon" style="width:14px;height:14px;color:var(--gray-400)"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-head">
+      <div><h1>Good Morning, Alaa! 👋</h1><p>Here is what requires your attention today.</p></div>
+      <div class="date-range"><i data-lucide="calendar" class="icon" style="width:15px;height:15px"></i> May 12 – May 18, 2025</div>
+    </div>
+
+    <div class="card card-pad brief-card" style="margin-bottom:20px">
+      <div class="card-head"><h3>Morning Brief</h3><span style="font-size:11.5px;color:var(--gray-500)">3 critical · 3 opportunities · 3 positive developments</span></div>
+      <div class="brief-grid">
+        <div class="brief-item"><i data-lucide="trending-up" style="color:var(--green-500)"></i><div><b>Revenue movement</b><span>Up 12.7% this week — driven by 2 closed deals</span></div></div>
+        <div class="brief-item"><i data-lucide="user-plus" style="color:var(--indigo-500)"></i><div><b>New leads</b><span>12 new leads added, 3 from Lead Intelligence</span></div></div>
+        <div class="brief-item"><i data-lucide="alert-triangle" style="color:var(--orange-500)"></i><div><b>Pipeline risk</b><span>Muscat Fit-Out LLC proposal has had no activity in 6 days</span></div></div>
+        <div class="brief-item"><i data-lucide="activity" style="color:var(--purple-500)"></i><div><b>Website movement</b><span>Traffic up 22.1%, but conversion rate dipped slightly</span></div></div>
+        <div class="brief-item"><i data-lucide="clock" style="color:var(--red-500)"></i><div><b>Overdue tasks</b><span>1 task overdue — reviewing marketing strategy</span></div></div>
+        <div class="brief-item"><i data-lucide="radar" style="color:var(--gray-500)"></i><div><b>Competitor change</b><span>Galfar Engineering launched a new service page this week</span></div></div>
+      </div>
+      <div class="nexus-recommend">
+        <i data-lucide="sparkles"></i>
+        <div>
+          <b>Top recommended action</b><span>Your website traffic increased, but lead conversion declined. Review the landing page and launch a retargeting campaign.</span>
+          <div class="ai-actions">
+            <span class="ai-action-chip"><i data-lucide="layout-template"></i> Improve Landing Page</span>
+            <span class="ai-action-chip"><i data-lucide="target"></i> Launch Retargeting Campaign</span>
+            <span class="ai-action-chip"><i data-lucide="bar-chart-2"></i> Show Me Why</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px">
+      <div class="card card-pad">
+        <div class="card-head"><h3>Company Health Score</h3><span class="health-overall">82<span style="font-size:12px;color:var(--gray-400)">/100</span></span></div>
+        <div class="health-grid">
+          <div class="health-item"><span>Revenue</span><div class="health-bar"><div style="width:78%;background:var(--indigo-500)"></div></div><b>78</b></div>
+          <div class="health-item"><span>Sales</span><div class="health-bar"><div style="width:74%;background:var(--indigo-500)"></div></div><b>74</b></div>
+          <div class="health-item"><span>Marketing</span><div class="health-bar"><div style="width:86%;background:var(--green-500)"></div></div><b>86</b></div>
+          <div class="health-item"><span>Customers</span><div class="health-bar"><div style="width:81%;background:var(--green-500)"></div></div><b>81</b></div>
+          <div class="health-item"><span>Finance</span><div class="health-bar"><div style="width:79%;background:var(--indigo-500)"></div></div><b>79</b></div>
+          <div class="health-item"><span>Operations</span><div class="health-bar"><div style="width:88%;background:var(--green-500)"></div></div><b>88</b></div>
+          <div class="health-item"><span>People</span><div class="health-bar"><div style="width:84%;background:var(--green-500)"></div></div><b>84</b></div>
+        </div>
+        <p class="health-note"><i data-lucide="info"></i> Sales dipped 4 points this week — 3 qualified leads went quiet. Follow up before Friday.</p>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3>Executive Recommendations</h3></div>
+        <div class="sales-detail-card">
+          <b class="sales-headline">14 leads have not been contacted</b>
+          <div class="sales-figures">
+            <span>Average delay<b>11 days</b></span>
+            <span>Expected lost revenue<b>OMR 18,000</b></span>
+          </div>
+          <p class="sales-ai-note"><i data-lucide="sparkles" style="width:12px;height:12px;vertical-align:-1px"></i> AI believes 8 leads can still be recovered.</p>
+          <div class="ai-actions">
+            <span class="ai-action-chip"><i data-lucide="mail"></i> Email All Leads</span>
+            <span class="ai-action-chip"><i data-lucide="message-circle"></i> Send WhatsApp</span>
+            <span class="ai-action-chip"><i data-lucide="phone"></i> Call Script</span>
+            <span class="ai-action-chip"><i data-lucide="calendar-clock"></i> Schedule Follow-up</span>
+            <span class="ai-action-chip"><i data-lucide="file-text"></i> Personalized Proposal</span>
+            <span class="ai-action-chip"><i data-lucide="tag"></i> Create Discount Offer</span>
+          </div>
+        </div>
+        <ol class="exec-rec-list" start="2">
+          <li>Review declining landing-page conversion. <span class="ai-action-chip" style="margin-left:6px"><i data-lucide="wand-2"></i> Fix with AI</span></li>
+          <li>Respond to competitor's new pricing offer. <span class="ai-action-chip" style="margin-left:6px"><i data-lucide="wand-2"></i> Fix with AI</span></li>
+          <li>Prepare renewal campaign for at-risk customers. <span class="ai-action-chip" style="margin-left:6px"><i data-lucide="wand-2"></i> Fix with AI</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="w-crisis" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="siren" style="width:16px;height:16px;color:var(--red-500);vertical-align:-2px"></i> Crisis Detector</h3><span style="font-size:11.5px;color:var(--gray-500)">Flags compounding risk signals before they become a crisis</span></div>
+      <div class="nexus-recommend" style="border-color:var(--red-500)">
+        <i data-lucide="siren" style="color:var(--red-500)"></i>
+        <div>
+          <b>Compounding risk detected</b><span>3 signals are reinforcing each other: overdue leads are rising, landing-page conversion is falling, and your top competitor just dropped prices. Left unaddressed, NEXUS estimates this compounds into an 18% pipeline shortfall within 3 weeks.</span>
+          <div class="ai-actions">
+            <span class="ai-action-chip"><i data-lucide="wand-2"></i> Run Recovery Plan</span>
+            <span class="ai-action-chip"><i data-lucide="bell"></i> Alert the Team</span>
+            <span class="ai-action-chip"><i data-lucide="bar-chart-2"></i> Show Me the Signals</span>
+          </div>
+        </div>
+      </div>
+      <div class="mini-kpi-grid" style="margin-top:14px">
+        <div class="mini-kpi">Signals Monitored<b>27</b></div>
+        <div class="mini-kpi">Active Warnings<b style="color:var(--orange-500)">3</b></div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px">
+      <div class="card card-pad">
+        <div class="card-head"><h3 style="color:var(--red-500)"><i data-lucide="alert-triangle" style="width:15px;height:15px;vertical-align:-2px"></i> Risks</h3></div>
+        <div class="risk-detail-card">
+          <b class="risk-headline">68% of revenue comes from only two customers</b>
+          <div class="risk-figures">
+            <span>If one leaves, monthly revenue could decline by<b>34%</b></span>
+            <span>Estimated annual exposure<b>OMR 220,000</b></span>
+          </div>
+          <div class="ai-actions">
+            <span class="ai-action-chip"><i data-lucide="shuffle"></i> Diversification Strategy</span>
+            <span class="ai-action-chip"><i data-lucide="search"></i> Find New Industries</span>
+            <span class="ai-action-chip"><i data-lucide="user-search"></i> Prospect Similar Customers</span>
+            <span class="ai-action-chip"><i data-lucide="mail"></i> Generate Outreach Emails</span>
+            <span class="ai-action-chip"><i data-lucide="linkedin"></i> LinkedIn Campaign</span>
+          </div>
+        </div>
+        <div class="risk-opp-row"><i data-lucide="trending-down"></i> Pipeline slowdown in Qualified stage <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="wand-2"></i> Fix</span></div>
+        <div class="risk-opp-row"><i data-lucide="thumbs-down"></i> Negative review trend detected <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="wand-2"></i> Fix</span></div>
+        <div class="risk-opp-row"><i data-lucide="trending-up"></i> Rising acquisition costs on paid search <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="wand-2"></i> Fix</span></div>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3 style="color:var(--green-500)"><i data-lucide="sparkle" style="width:15px;height:15px;vertical-align:-2px"></i> Opportunities</h3></div>
+        <div class="risk-opp-row"><i data-lucide="radar"></i> New tender detected — 12 in Oman construction <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="file-text"></i> Prepare Proposal</span></div>
+        <div class="risk-opp-row"><i data-lucide="mouse-pointer-click"></i> High-intent website traffic not yet converted <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="target"></i> Launch Retargeting</span></div>
+        <div class="risk-opp-row"><i data-lucide="target"></i> Competitor content gap — customer evidence <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="video"></i> Generate Testimonial Campaign</span></div>
+        <div class="risk-opp-row"><i data-lucide="arrow-up-right"></i> Upsell opportunity — Sohar Industrial Park <span class="ai-action-chip" style="margin-left:auto"><i data-lucide="mail"></i> Draft Upsell Email</span></div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-bottom:20px">
+      <div class="card-head"><h3>Department Briefings</h3></div>
+      <div class="dept-grid">
+        <div class="dept-card"><b>Marketing</b><span class="dept-status good">On track</span><p>Traffic up 22.1% this week.</p><a href="#w-planner">Open report →</a></div>
+        <div class="dept-card"><b>Sales</b><span class="dept-status warn">Needs attention</span><p>14 leads overdue for follow-up.</p><a href="#crm-section">Open report →</a></div>
+        <div class="dept-card"><b>Finance</b><span class="dept-status good">On track</span><p>Margins stable at 79/100.</p><a href="#w-finance">Open report →</a></div>
+        <div class="dept-card"><b>HR</b><span class="dept-status good">On track</span><p>Team capacity healthy.</p><a href="#w-hr">Open report →</a></div>
+        <div class="dept-card"><b>Operations</b><span class="dept-status good">On track</span><p>No open bottlenecks.</p><a href="#w-hr">Open report →</a></div>
+        <div class="dept-card"><b>Customers</b><span class="dept-status warn">Needs attention</span><p>1 negative review trend flagged.</p><a href="#w-customer">Open report →</a></div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="card stat-card">
+        <div class="stat-top"><div class="stat-ic" style="background:#EEF0FF"><i data-lucide="users" style="color:var(--indigo-500)"></i></div></div>
+        <p class="stat-val">1,247</p><p class="stat-label">Total Leads</p>
+        <span class="stat-delta up"><i data-lucide="arrow-up" style="width:12px;height:12px"></i> 18.5% <span>vs last 7 days</span></span>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top"><div class="stat-ic" style="background:#EAFBF1"><i data-lucide="dollar-sign" style="color:var(--green-500)"></i></div></div>
+        <p class="stat-val">OMR 32,940</p><p class="stat-label">Sales Revenue</p>
+        <span class="stat-delta up"><i data-lucide="arrow-up" style="width:12px;height:12px"></i> 12.7% <span>vs last 7 days</span></span>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top"><div class="stat-ic" style="background:#F1ECFE"><i data-lucide="bar-chart-2" style="color:var(--purple-500)"></i></div></div>
+        <p class="stat-val">8,653</p><p class="stat-label">Website Traffic</p>
+        <span class="stat-delta up"><i data-lucide="arrow-up" style="width:12px;height:12px"></i> 22.1% <span>vs last 7 days</span></span>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-top"><div class="stat-ic" style="background:#FFF3E9"><i data-lucide="target" style="color:var(--orange-500)"></i></div></div>
+        <p class="stat-val">312%</p><p class="stat-label">ROI</p>
+        <span class="stat-delta up"><i data-lucide="arrow-up" style="width:12px;height:12px"></i> 16.3% <span>vs last 7 days</span></span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card card-pad">
+        <div class="card-head"><h3>Leads &amp; Sales Overview</h3><select class="select-sm"><option>Last 7 days</option><option>Last 30 days</option></select></div>
+        <div style="position:relative;height:220px"><canvas id="perfChart"></canvas></div>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3>Marketing Funnel</h3></div>
+        <div class="funnel-bars">
+          <div class="funnel-bar" style="width:100%;background:#4F46E5"></div>
+          <div class="funnel-bar" style="width:80%;background:#6D64EE"></div>
+          <div class="funnel-bar" style="width:55%;background:#22C3A6"></div>
+          <div class="funnel-bar" style="width:32%;background:#F59E0B"></div>
+          <div class="funnel-bar" style="width:14%;background:#8B5CF6"></div>
+        </div>
+        <div class="funnel-row"><span>Visitors</span><b>8,653</b></div>
+        <div class="funnel-row"><span>Leads</span><b>1,247</b></div>
+        <div class="funnel-row"><span>Qualified Leads</span><b>623</b></div>
+        <div class="funnel-row"><span>Proposals</span><b>156</b></div>
+        <div class="funnel-row"><span>Customers</span><b>47</b></div>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="card card-pad">
+        <div class="card-head"><h3>Upcoming Calendar</h3><a class="link-sm" href="#w-calendar">View calendar</a></div>
+        <div class="cal-item"><div class="cal-date"><span class="mo">May</span><span class="day">13</span></div><div><div class="cal-title">Social Media Campaign Launch</div><div class="cal-time">May 13, 2025 · 10:00 AM</div></div></div>
+        <div class="cal-item"><div class="cal-date"><span class="mo">May</span><span class="day">15</span></div><div><div class="cal-title">Client Meeting</div><div class="cal-time">May 15, 2025 · 02:00 PM</div></div></div>
+        <div class="cal-item"><div class="cal-date"><span class="mo">May</span><span class="day">18</span></div><div><div class="cal-title">Monthly Report Due</div><div class="cal-time">May 18, 2025 · 11:59 PM</div></div></div>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3>Top Performing Channels</h3><select class="select-sm"><option>Last 7 days</option></select></div>
+        <div class="chan-row"><span class="chan-name">Google Search</span><div class="chan-bar-track"><div class="chan-bar-fill" style="width:100%"></div></div><span class="chan-val">2,456</span></div>
+        <div class="chan-row"><span class="chan-name">Facebook Ads</span><div class="chan-bar-track"><div class="chan-bar-fill" style="width:81%"></div></div><span class="chan-val">1,987</span></div>
+        <div class="chan-row"><span class="chan-name">Instagram</span><div class="chan-bar-track"><div class="chan-bar-fill" style="width:51%"></div></div><span class="chan-val">1,256</span></div>
+        <div class="chan-row"><span class="chan-name">LinkedIn</span><div class="chan-bar-track"><div class="chan-bar-fill" style="width:39%"></div></div><span class="chan-val">956</span></div>
+        <div class="chan-row"><span class="chan-name">Email Marketing</span><div class="chan-bar-track"><div class="chan-bar-fill" style="width:24%"></div></div><span class="chan-val">598</span></div>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3>Recent Activity</h3></div>
+        <div class="activity-row"><div class="activity-ic" style="background:#EEF0FF"><i data-lucide="user-plus" style="width:15px;height:15px;color:var(--indigo-500)"></i></div><div><div class="activity-title">New lead from website</div><div class="activity-time">2 min ago</div></div></div>
+        <div class="activity-row"><div class="activity-ic" style="background:#FDECEC"><i data-lucide="file-text" style="width:15px;height:15px;color:var(--red-500)"></i></div><div><div class="activity-title">Proposal sent to ABC Group</div><div class="activity-time">1 hour ago</div></div></div>
+        <div class="activity-row"><div class="activity-ic" style="background:#EAFBF1"><i data-lucide="check" style="width:15px;height:15px;color:var(--green-500)"></i></div><div><div class="activity-title">New client onboarded</div><div class="activity-time">3 hours ago</div></div></div>
+        <div class="activity-row"><div class="activity-ic" style="background:#FFF3E9"><i data-lucide="search" style="width:15px;height:15px;color:var(--orange-500)"></i></div><div><div class="activity-title">SEO audit completed</div><div class="activity-time">5 hours ago</div></div></div>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="w-leadgen" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="user-search" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> NEXUS Lead Intelligence</h3><span style="font-size:11.5px;color:var(--gray-500)">Find. Score. Approach.</span></div>
+      <div class="leadgen-input-row" style="margin-bottom:16px">
+        <input type="text" value="Companies expanding into Oman, 20-200 employees, weak local digital presence">
+        <button class="btn btn-primary btn-sm" style="padding:8px 16px;font-size:12px">Find Leads</button>
+      </div>
+      <div class="lead-card">
+        <div class="lead-card-top">
+          <div><b>Gulf Flow Systems</b><span class="lead-sub">Industrial Distribution · Muscat, Oman · 40-60 employees</span></div>
+          <span class="lead-score">Match 92%</span>
+        </div>
+        <p class="lead-why"><b>Why this lead matters:</b> The company recently expanded into Oman, is actively recruiting marketing staff, and has a weak local digital presence. Your service may help with its market-entry strategy.</p>
+        <div class="lead-meta-row">
+          <span><i data-lucide="user-round"></i> Decision-maker: Regional Sales Director</span>
+          <span><i data-lucide="tag"></i> Recommended offer: Market-entry marketing package</span>
+        </div>
+        <div class="lead-message"><b>Suggested opening message</b>"Congratulations on Gulf Flow Systems' Oman expansion — noticed you're building out the local team. We help newly-entered distributors establish digital presence and generate qualified leads in their first 6 months. Worth a short call?"</div>
+        <div class="lead-actions">
+          <button class="btn btn-primary btn-sm">Add to CRM</button>
+          <button class="btn btn-outline btn-sm">Send Message</button>
+          <span class="lead-next"><i data-lucide="arrow-right-circle"></i> Next action: Connect on LinkedIn, then follow up in 3 days</span>
+        </div>
+      </div>
+      <div class="lead-more-list">
+        <div class="lead-result"><span class="lr-name">Al Amerat Pumps Co.</span><span class="lr-site">alamerat-pumps.om</span><span class="lead-score-sm">87%</span></div>
+        <div class="lead-result"><span class="lr-name">Oman Hydro Trading</span><span class="lr-site">omanhydro.com</span><span class="lead-score-sm">79%</span></div>
+      </div>
+      <button class="btn btn-outline btn-sm btn-block" style="margin-top:12px">View All 12 Leads</button>
+    </div>
+
+    <div class="card card-pad" id="w-visitorid" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="eye" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> Visitor Identification</h3><span style="font-size:11.5px;color:var(--gray-500)">De-anonymizes your website traffic — no form fill required</span></div>
+      <div class="mini-kpi-grid" style="margin-bottom:14px">
+        <div class="mini-kpi">Identified This Week<b>34 companies</b></div>
+        <div class="mini-kpi">On Site Right Now<b style="color:var(--green-500)">3 companies</b></div>
+      </div>
+      <div class="lead-card">
+        <div class="lead-card-top">
+          <div><b>Gulf Steel Trading</b><span class="lead-sub">Construction · Muscat, Oman · viewed Pricing + Suzuki Marine page</span></div>
+          <span class="lead-score" style="background:var(--green-50);color:var(--green-500)">On site now</span>
+        </div>
+        <p class="lead-why"><b>Why this matters:</b> Already a "New Lead" in your CRM — this is their 3rd visit this week, and the first time they've viewed the pricing page. High buying intent.</p>
+        <div class="lead-actions">
+          <button class="btn btn-primary btn-sm">Notify Sales</button>
+          <button class="btn btn-outline btn-sm">Add to Outreach Sequence</button>
+        </div>
+      </div>
+      <div class="lead-more-list">
+        <div class="lead-result"><span class="lr-name">Nizwa Retail Group</span><span class="lr-site">3 pages · 4 min</span><span class="lead-score-sm">New visitor</span></div>
+        <div class="lead-result"><span class="lr-name">Batinah Engineering</span><span class="lr-site">Returning · 6th visit</span><span class="lead-score-sm" style="color:var(--orange-500)">Proposal stage</span></div>
+      </div>
+      <button class="btn btn-outline btn-sm btn-block" style="margin-top:12px">View All Identified Visitors</button>
+    </div>
+
+    <div class="card card-pad" id="w-competitive" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="radar" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> NEXUS Competitor War Room</h3><span style="font-size:11.5px;color:var(--gray-500)">Monitoring 12 competitors</span></div>
+      <div class="competitor-dash">
+        <div class="comp-dash-head"><b>Competitor: Galfar Engineering</b><span class="mini-tag">Direct competitor</span></div>
+        <div class="comp-stat-row">
+          <div class="comp-stat"><span>Active Meta ads</span><b>7</b></div>
+          <div class="comp-stat"><span>Google ads found</span><b>4</b></div>
+          <div class="comp-stat"><span>First detected</span><b>18 days ago</b></div>
+          <div class="comp-stat"><span>Recent change</span><b>+15% promo</b></div>
+        </div>
+        <div class="comp-detail-row">
+          <span><b>Main offer:</b> Free consultation</span>
+          <span><b>Most common hook:</b> Reduce project costs</span>
+          <span><b>Primary CTA:</b> Request a quote</span>
+          <span><b>Creative formats:</b> 4 videos, 2 images, 1 carousel</span>
+        </div>
+        <div class="nexus-recommend" style="margin-top:14px">
+          <i data-lucide="sparkles"></i>
+          <div>
+            <b>Nexus interpretation</b><span>Galfar appears to be prioritizing lead generation over awareness. Its ads focus heavily on cost reduction but provide little proof of quality. NEXUS recommends testing an expertise-led campaign supported by customer evidence.</span>
+            <div class="ai-actions">
+              <span class="ai-action-chip"><i data-lucide="megaphone"></i> Create Stronger Competing Campaign</span>
+              <span class="ai-action-chip"><i data-lucide="images"></i> Generate 10 Meta Ad Creatives</span>
+              <span class="ai-action-chip"><i data-lucide="pen-line"></i> Write Better Ad Copy</span>
+              <span class="ai-action-chip"><i data-lucide="layout-template"></i> Build Landing Page</span>
+              <span class="ai-action-chip"><i data-lucide="columns-3"></i> Generate Comparison Page</span>
+              <span class="ai-action-chip"><i data-lucide="search"></i> Find Messaging Weaknesses</span>
+              <span class="ai-action-chip"><i data-lucide="rocket"></i> Launch This Campaign</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alerts-list">
+        <div class="alert-row"><i data-lucide="megaphone" style="color:var(--orange-500)"></i>
+          <div><b>Advertising alert:</b> Three new Meta advertisements detected from Galfar Engineering this week
+            <div class="ai-actions"><span class="ai-action-chip"><i data-lucide="megaphone"></i> Create Competing Ad</span></div>
+          </div>
+        </div>
+        <div class="alert-row"><i data-lucide="file-text" style="color:var(--indigo-500)"></i>
+          <div><b>SEO alert:</b> Muscat Builders published 5 pages targeting "construction company oman"
+            <div class="ai-actions">
+              <span class="ai-action-chip"><i data-lucide="file-text"></i> Create Better SEO Article</span>
+              <span class="ai-action-chip"><i data-lucide="layers"></i> Create Cluster Pages</span>
+              <span class="ai-action-chip"><i data-lucide="search"></i> Find Keyword Gaps</span>
+              <span class="ai-action-chip"><i data-lucide="refresh-cw"></i> Rewrite Our Page</span>
+              <span class="ai-action-chip"><i data-lucide="help-circle"></i> Generate FAQ</span>
+              <span class="ai-action-chip"><i data-lucide="upload"></i> Publish to WordPress</span>
+            </div>
+          </div>
+        </div>
+        <div class="alert-row"><i data-lucide="lightbulb" style="color:var(--nexus-gold-dark,#B78103)"></i>
+          <div><b>Opportunity alert:</b> None of your monitored competitors currently advertise real customer evidence — your strongest differentiator
+            <div class="ai-actions">
+              <span class="ai-action-chip"><i data-lucide="video"></i> Generate Testimonial Campaign</span>
+              <span class="ai-action-chip"><i data-lucide="message-square"></i> Create Interview Questions</span>
+              <span class="ai-action-chip"><i data-lucide="clapperboard"></i> Produce Video Script</span>
+              <span class="ai-action-chip"><i data-lucide="share-2"></i> Create Social Campaign</span>
+              <span class="ai-action-chip"><i data-lucide="layout-template"></i> Build Landing Page</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="crm-section" style="margin-bottom:20px">
+      <div class="card-head"><h3>CRM &amp; Sales Pipeline</h3><a class="link-sm" href="#w-leadgen">+ Add leads via AI</a></div>
+      <div class="crm-board">
+        <div class="crm-col">
+          <div class="crm-col-head">New Leads <span class="count">12</span></div>
+          <div class="crm-card"><div class="cc-name">Gulf Steel Trading</div><div class="cc-meta"><span>Construction</span><span class="cc-val">OMR 8,500</span></div></div>
+          <div class="crm-card"><div class="cc-name">Nizwa Retail Group</div><div class="cc-meta"><span>Retail</span><span class="cc-val">OMR 3,200</span></div></div>
+          <div class="crm-card"><div class="cc-name">Al Amerat Pumps Co.</div><div class="cc-meta"><span>Industrial</span><span class="cc-val">OMR 6,000</span></div></div>
+        </div>
+        <div class="crm-col">
+          <div class="crm-col-head">Qualified <span class="count">7</span></div>
+          <div class="crm-card"><div class="cc-name">Batinah Engineering</div><div class="cc-meta"><span>Construction</span><span class="cc-val">OMR 14,000</span></div></div>
+          <div class="crm-card"><div class="cc-name">Salalah Marine Supplies</div><div class="cc-meta"><span>Marine</span><span class="cc-val">OMR 9,750</span></div></div>
+        </div>
+        <div class="crm-col">
+          <div class="crm-col-head">Proposal Sent <span class="count">4</span></div>
+          <div class="crm-card"><div class="cc-name">ABC Group</div><div class="cc-meta"><span>Construction</span><span class="cc-val">OMR 22,000</span></div></div>
+          <div class="crm-card"><div class="cc-name">Muscat Fit-Out LLC</div><div class="cc-meta"><span>Interiors</span><span class="cc-val">OMR 11,300</span></div></div>
+        </div>
+        <div class="crm-col">
+          <div class="crm-col-head">Won <span class="count">2</span></div>
+          <div class="crm-card"><div class="cc-name">Sohar Industrial Park</div><div class="cc-meta"><span>Industrial</span><span class="cc-val">OMR 31,500</span></div></div>
+        </div>
+      </div>
+      <div class="crm-contacts">
+        <div class="card-head" style="margin-bottom:10px"><h3 style="font-size:13.5px">Recent Contacts</h3></div>
+        <div class="contact-row"><span class="c-avatar">GS</span><div><div style="font-weight:600">Ghassan Al Sinani</div><div class="c-co">Gulf Steel Trading</div></div><span class="c-stage stage-new">New Lead</span></div>
+        <div class="contact-row"><span class="c-avatar">BE</span><div><div style="font-weight:600">Badr Al Balushi</div><div class="c-co">Batinah Engineering</div></div><span class="c-stage stage-qualified">Qualified</span></div>
+        <div class="contact-row"><span class="c-avatar">SI</span><div><div style="font-weight:600">Salim Al Ismaili</div><div class="c-co">Sohar Industrial Park</div></div><span class="c-stage stage-won">Won</span></div>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="w-meetingprep" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="target" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> Meeting &amp; Deal Prep Coach</h3><span style="font-size:11.5px;color:var(--gray-500)">Walk in knowing exactly what to say</span></div>
+      <p style="font-size:12.5px;color:var(--gray-500);margin:-4px 0 16px">Tell NEXUS about the meeting — it pulls the deal history, the contact's communication style, and competitor context to build your talking points before you walk in.</p>
+      <div class="field-row" style="margin-bottom:14px">
+        <div class="field" style="margin-bottom:0">
+          <label>Meeting type</label>
+          <select><option>Client negotiation</option><option>Conference / pitch</option><option>Discovery call</option><option>Board presentation</option></select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Client / Account</label>
+          <select><option>Muscat Fit-Out LLC — Proposal Sent</option><option>Batinah Engineering — Qualified</option><option>Gulf Steel Trading — New Lead</option></select>
+        </div>
+      </div>
+      <div class="field-row" style="margin-bottom:16px">
+        <div class="field" style="margin-bottom:0">
+          <label>Subject / Goal of the meeting</label>
+          <input type="text" value="Close the Muscat Fit-Out proposal — address pricing pushback">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Deal value</label>
+          <input type="text" value="OMR 11,300">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="margin-bottom:16px">Generate Prep Brief</button>
+
+      <div class="nexus-recommend">
+        <i data-lucide="sparkles"></i>
+        <div>
+          <b>Prep brief — Muscat Fit-Out LLC</b><span>No activity in 6 days after your proposal. Their comms style (Communication Intelligence) is evidence-led, not narrative — lead with numbers, not story. Last objection on record was timeline, not price.</span>
+          <div class="ai-actions">
+            <span class="ai-action-chip"><i data-lucide="message-square"></i> Opening Line</span>
+            <span class="ai-action-chip"><i data-lucide="shield"></i> Likely Objections</span>
+            <span class="ai-action-chip"><i data-lucide="check-circle"></i> Closing Script</span>
+            <span class="ai-action-chip"><i data-lucide="mic"></i> Practice Out Loud</span>
+          </div>
+        </div>
+      </div>
+      <div class="mini-kpi-grid" style="margin-top:14px">
+        <div class="mini-kpi">Deal Readiness Score<b style="color:var(--green-500)">84/100</b></div>
+        <div class="mini-kpi">Est. Close Probability<b>67%</b></div>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="w-industryprofiles" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="building-2" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> Industry Profiles</h3><span style="font-size:11.5px;color:var(--gray-500)">What's relevant for your type of business</span></div>
+      <p style="font-size:12.5px;color:var(--gray-500);margin:-4px 0 16px">Every industry gets the full Core platform. Pick an industry below to see which additional modules NEXUS recommends on top of it — and why.</p>
+
+      <div class="industry-pills" id="profilePills" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">
+        <button class="industry-pill active" data-industry="distribution">Distribution &amp; Dealer Network</button>
+        <button class="industry-pill" data-industry="contracting">Contracting &amp; Field Services</button>
+        <button class="industry-pill" data-industry="retail">Retail &amp; Product Sales</button>
+        <button class="industry-pill" data-industry="services">Professional Services / Agency</button>
+        <button class="industry-pill" data-industry="group">Multi-Division Group</button>
+        <button class="industry-pill" data-industry="general">General Business</button>
+      </div>
+
+      <div class="brain-item" style="margin-bottom:14px">
+        <h5><i data-lucide="check-circle"></i> Core Platform — included for every industry (30 modules)</h5>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">
+          <span class="mini-tag">Morning Brief</span><span class="mini-tag">Company Health Score</span><span class="mini-tag">Nexus Assistant</span><span class="mini-tag">Voice CEO</span><span class="mini-tag">Company Brain</span>
+          <span class="mini-tag">Growth Planner</span><span class="mini-tag">CRM &amp; Sales Pipeline</span><span class="mini-tag">Finance Advisor</span><span class="mini-tag">HR Policies &amp; SOPs</span><span class="mini-tag">Business Simulator</span>
+          <span class="mini-tag">Lead Intelligence</span><span class="mini-tag">Visitor Identification</span><span class="mini-tag">Competitor War Room</span><span class="mini-tag">Customer Intelligence</span><span class="mini-tag">Opportunity Radar</span>
+          <span class="mini-tag">Decision Intelligence</span><span class="mini-tag">Content Studio</span><span class="mini-tag">Proposal Studio</span><span class="mini-tag">SEO Intelligence</span><span class="mini-tag">Social Publishing</span>
+          <span class="mini-tag">Social Inquiry AI</span><span class="mini-tag">Communication Intelligence</span><span class="mini-tag">Meeting &amp; Deal Prep Coach</span><span class="mini-tag">AI Ad Manager</span><span class="mini-tag">AI Voice Agent</span>
+          <span class="mini-tag">Support Chatbot</span><span class="mini-tag">AI Meeting Bot</span><span class="mini-tag">Outreach Sequences</span><span class="mini-tag">Landing Page Agent</span><span class="mini-tag">AI Bookkeeping</span>
+          <span class="mini-tag">AI Review Responder</span><span class="mini-tag">Crisis Detector</span><span class="mini-tag">Report Builder</span><span class="mini-tag">Agent Governance</span><span class="mini-tag">VAT &amp; e-Invoicing</span>
+          <span class="mini-tag">Loyalty &amp; Referrals</span><span class="mini-tag">Workspace Switching</span>
+        </div>
+      </div>
+
+      <div class="brain-item">
+        <h5><i data-lucide="sparkles"></i> Recommended add-ons for <span id="profileIndustryLabel">Distribution &amp; Dealer Network</span></h5>
+        <div id="profileRecs" style="display:flex;flex-direction:column;gap:6px;margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div class="card card-pad" id="company-brain" style="margin-bottom:20px">
+      <div class="card-head"><h3><i data-lucide="brain-circuit" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> Company Brain</h3><a class="link-sm" href="#">Edit in Settings</a></div>
+      <p style="font-size:12.5px;color:var(--gray-500);margin:-6px 0 16px">Everything NEXUS currently knows about your business — reviewed each time your data changes.</p>
+      <div class="brain-grid">
+        <div class="brain-item"><h5><i data-lucide="building-2"></i> Company Profile</h5><p>ABC Construction LLC — Construction &amp; Engineering, 50–100 employees, Oman.</p></div>
+        <div class="brain-item"><h5><i data-lucide="package"></i> Products &amp; Services</h5><p>Design-build construction, structural engineering, industrial fit-out. OMR 10,000–200,000 per project.</p></div>
+        <div class="brain-item"><h5><i data-lucide="users"></i> Target Customers</h5><p>Contractors, developers, government and private companies across Muscat, Sohar and Salalah.</p></div>
+        <div class="brain-item"><h5><i data-lucide="mic"></i> Brand Voice</h5><p>Professional, technical, and direct — no casual or playful language.</p></div>
+        <div class="brain-item"><h5><i data-lucide="swords"></i> Competitors</h5><p>Oman Construction, Muscat Builders, Galfar Engineering, Al Turki Enterprises.</p></div>
+        <div class="brain-item"><h5><i data-lucide="target"></i> Business Goals</h5><p>Generate more leads, increase sales, improve website traffic.</p></div>
+        <div class="brain-item"><h5><i data-lucide="file-stack"></i> Uploaded Knowledge</h5><p>5 documents indexed — company profile, price list, brand guidelines, and 2 more.</p></div>
+        <div class="brain-item"><h5><i data-lucide="plug"></i> Connected Platforms</h5><p>Website, Google Analytics, Search Console, Instagram, Facebook.</p></div>
+        <div class="brain-item brain-confirm" style="grid-column:1/-1"><h5><i data-lucide="alert-circle"></i> Assumptions requiring confirmation</h5><p>NEXUS assumed Oman is your only market and English is your primary content language — confirm or correct these in Settings.</p></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="assistant-card" id="assistant-panel">
+        <div class="assistant-head"><h3 style="font-size:15px;margin:0;display:flex;align-items:center;gap:8px">Nexus Assistant <span class="beta-tag">Beta</span></h3><i data-lucide="maximize-2" class="icon" style="width:15px;height:15px;color:var(--gray-400)"></i></div>
+        <div class="assistant-msg">👋 Hi Alaa! I'm Nexus, your AI business assistant. I know your business and your connected data — ask me anything, in plain language.</div>
+        <div id="w-voiceceo" class="doc-preview" style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--indigo-500);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i data-lucide="mic" style="width:16px;height:16px;color:#fff"></i></div>
+          <div><b>Voice CEO</b> — Ask Nexus out loud, hands-free, from your phone or car</div>
+        </div>
+        <div class="quick-actions">
+          <button class="qa-btn">Why are sales down?</button>
+          <button class="qa-btn">Prepare today's priorities</button>
+          <button class="qa-btn">Create a recovery plan</button>
+          <button class="qa-btn">Compare our competitors</button>
+          <button class="qa-btn">What should I discuss with sales?</button>
+          <button class="qa-btn">Simulate a price increase</button>
+        </div>
+        <div class="ask-row"><input type="text" placeholder="Ask me anything about your business..."><button class="ask-send"><i data-lucide="mic" style="width:15px;height:15px"></i></button><button class="ask-send"><i data-lucide="send" style="width:15px;height:15px"></i></button></div>
+      </div>
+      <div class="card card-pad">
+        <div class="card-head"><h3>Tasks</h3><a class="link-sm" href="#">View all</a></div>
+        <div class="task-row"><span class="task-check"></span><span class="task-name">Review marketing strategy</span><span class="task-due today">Due today</span></div>
+        <div class="task-row"><span class="task-check"></span><span class="task-name">Approve content calendar</span><span class="task-due tomorrow">Due tomorrow</span></div>
+        <div class="task-row"><span class="task-check"></span><span class="task-name">Follow up with 5 leads</span><span class="task-due">Due May 15</span></div>
+        <div class="task-row"><span class="task-check done"></span><span class="task-name">Prepare monthly report</span><span class="task-due">Due May 18</span></div>
+      </div>
+    </div>
+
+    <div class="tools-section-title">Your NEXUS Modules</div>
+    <div class="tools-grid">
+
+      <div class="card tool-widget" id="w-planner">
+        <h4><i data-lucide="calendar-check"></i> Growth Planner</h4>
+        <div class="mini-list">
+          <span class="sel">Marketing Strategy for Real Estate Company</span>
+          <span>Target Audience</span><span>Market Analysis</span>
+          <span>Goals &amp; Objectives</span><span>Strategy Generation</span>
+        </div>
+        <div>
+          <span class="mini-tag">Target Audience</span><span class="mini-tag">Marketing Goals</span><span class="mini-tag">Key Strategies</span>
+        </div>
+        <button class="btn btn-primary btn-sm btn-block">Generate Strategy</button>
+      </div>
+
+      <div class="card tool-widget" id="w-calendar">
+        <h4><i data-lucide="calendar-days"></i> Content &amp; Campaign Calendar</h4>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--gray-500)"><span>May 2025</span><span>Week · Month</span></div>
+        <div class="mini-calendar">
+          <span class="mc-cell">S</span><span class="mc-cell">M</span><span class="mc-cell">T</span><span class="mc-cell">W</span><span class="mc-cell">T</span><span class="mc-cell">F</span><span class="mc-cell">S</span>
+          <span class="mc-cell">27</span><span class="mc-cell">28</span><span class="mc-cell">29</span><span class="mc-cell has">1</span><span class="mc-cell">2</span><span class="mc-cell">3</span><span class="mc-cell">4</span>
+          <span class="mc-cell">5</span><span class="mc-cell has">6</span><span class="mc-cell">7</span><span class="mc-cell">8</span><span class="mc-cell has">9</span><span class="mc-cell">10</span><span class="mc-cell">11</span>
+          <span class="mc-cell has">12</span><span class="mc-cell">13</span><span class="mc-cell">14</span><span class="mc-cell">15</span><span class="mc-cell">16</span><span class="mc-cell has">17</span><span class="mc-cell">18</span>
+        </div>
+        <div><span class="mini-tag">Post</span><span class="mini-tag">Reel</span><span class="mini-tag">Blog Post</span></div>
+      </div>
+
+      <div class="card tool-widget" id="w-seo">
+        <h4><i data-lucide="search"></i> SEO Intelligence</h4>
+        <div style="display:flex;gap:6px">
+          <input type="text" value="construction company oman" readonly style="flex:1;font-size:10.5px;border:1px solid var(--gray-200);border-radius:6px;padding:5px 7px;color:var(--gray-600)">
+          <button class="btn btn-primary btn-sm" style="padding:5px 9px;font-size:11px">Generate</button>
+        </div>
+        <table class="mini-table">
+          <tr><th>Keyword</th><th>Vol</th><th>KD</th></tr>
+          <tr><td>construction company oman</td><td>1,600</td><td>23</td></tr>
+          <tr><td>best construction company muscat</td><td>880</td><td>18</td></tr>
+          <tr><td>construction companies in oman</td><td>720</td><td>20</td></tr>
+        </table>
+      </div>
+
+      <div class="card tool-widget" id="w-proposal">
+        <h4><i data-lucide="file-text"></i> Proposal Studio</h4>
+        <select class="select-sm" style="width:100%"><option>Digital Marketing Proposal</option></select>
+        <div class="doc-preview"><b>Digital Marketing Proposal</b>Prepared for ABC Group<br>May 12, 2025</div>
+        <button class="btn btn-outline btn-sm btn-block">Preview</button>
+      </div>
+
+      <div class="card tool-widget" id="w-hr">
+        <h4><i data-lucide="shield-check"></i> HR Policies &amp; SOPs</h4>
+        <div class="sop-row"><i data-lucide="file-text"></i> Leave &amp; Attendance Policy</div>
+        <div class="sop-row"><i data-lucide="file-text"></i> Code of Conduct</div>
+        <div class="sop-row"><i data-lucide="file-text"></i> Site Safety SOP</div>
+        <div class="sop-row"><i data-lucide="file-text"></i> Procurement SOP</div>
+        <button class="btn btn-outline btn-sm btn-block">Generate New Policy</button>
+        <button class="btn btn-ghost btn-sm btn-block" style="margin-top:4px"><i data-lucide="mic" style="width:13px;height:13px"></i> Automatic SOP Builder — Interview Me</button>
+      </div>
+
+      <div class="card tool-widget" id="w-comms">
+        <h4><i data-lucide="message-circle"></i> Communication Intelligence</h4>
+        <div class="comms-profile">
+          <b>Gulf Flow Systems — Regional Sales Director</b><br>
+          Suggested communication style based on the available profile: concise, evidence-led, prefers data over narrative. Confirm through your own interaction.
+        </div>
+        <div class="comms-disclaimer">Personality insights powered through an optional Crystal integration. Treat as a starting point, not a fact — never use for hiring decisions.</div>
+        <button class="btn btn-outline btn-sm btn-block">View Full Guidance</button>
+      </div>
+
+      <div class="card tool-widget" id="w-social">
+        <h4><i data-lucide="share-2"></i> Social Publishing</h4>
+        <div style="display:flex;gap:6px">
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> Instagram</span>
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> Facebook</span>
+        </div>
+        <div class="social-post-preview"><b>Scheduled — May 13, 10:00 AM</b>"Proud to break ground on the Sohar Industrial Park project 🏗️"</div>
+        <button class="btn btn-outline btn-sm btn-block">Schedule Post</button>
+      </div>
+
+      <div class="card tool-widget" id="w-kpi">
+        <h4><i data-lucide="bar-chart-3"></i> Executive Intelligence</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Total Revenue<b>OMR 32,940</b></div>
+          <div class="mini-kpi">Total Leads<b>1,247</b></div>
+          <div class="mini-kpi">Conversion Rate<b>3.77%</b></div>
+          <div class="mini-kpi">Customer LTV<b>OMR 2,340</b></div>
+        </div>
+        <canvas id="miniDonut" class="mini-donut"></canvas>
+      </div>
+
+      <div class="card tool-widget" id="w-radar">
+        <h4><i data-lucide="radar"></i> Opportunity Radar</h4>
+        <div class="doc-preview"><b>12 construction tenders published in Oman</b>Relevance: High · Fit: Commercial contracting</div>
+        <button class="btn btn-outline btn-sm btn-block">Prepare Proposal</button>
+      </div>
+
+      <div class="card tool-widget" id="w-simulator">
+        <h4><i data-lucide="flask-conical"></i> Business Simulator</h4>
+        <div class="leadgen-input-row">
+          <input type="text" value="What if we increase prices by 10%?" readonly>
+          <button class="btn btn-primary btn-sm" style="padding:5px 9px;font-size:11px">Run</button>
+        </div>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Revenue<b style="color:var(--green-500)">+6.2%</b></div>
+          <div class="mini-kpi">Profit<b style="color:var(--green-500)">+11.4%</b></div>
+        </div>
+      </div>
+
+      <div class="card tool-widget" id="w-finance">
+        <h4><i data-lucide="calculator"></i> Finance Advisor</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Cash Flow<b style="color:var(--green-500)">Healthy</b></div>
+          <div class="mini-kpi">Margin<b>34.2%</b></div>
+        </div>
+        <div class="doc-preview"><b>Can I hire another salesperson?</b>Yes — projected payback in 4.2 months at current close rate.</div>
+        <button class="btn btn-outline btn-sm btn-block">Ask Finance Advisor</button>
+      </div>
+
+      <div class="card tool-widget" id="w-customer">
+        <h4><i data-lucide="heart-pulse"></i> Customer Intelligence</h4>
+        <div class="lead-result"><span class="lr-name">Sohar Industrial Park</span><span class="lead-score-sm" style="color:var(--green-500)">Health 91</span></div>
+        <div class="lead-result"><span class="lr-name">ABC Group</span><span class="lead-score-sm" style="color:var(--red-500)">Churn risk 87%</span></div>
+        <div class="doc-preview"><b>ABC Group — no purchase in 6 months</b>Email engagement down, one late payment. Similar complaints up 21% this month.</div>
+        <div class="ai-actions">
+          <span class="ai-action-chip"><i data-lucide="mail"></i> Recovery Email</span>
+          <span class="ai-action-chip"><i data-lucide="tag"></i> Recovery Offer</span>
+          <span class="ai-action-chip"><i data-lucide="phone"></i> Schedule Call</span>
+          <span class="ai-action-chip"><i data-lucide="message-square-reply"></i> Draft Review Response</span>
+        </div>
+      </div>
+
+      <div class="card tool-widget" id="w-content">
+        <h4><i data-lucide="pen-line"></i> Content Studio</h4>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <span class="mini-tag">Blog</span><span class="mini-tag">Ad Copy</span><span class="mini-tag">Email</span><span class="mini-tag">Video Script</span><span class="mini-tag">Social Caption</span>
+        </div>
+        <div class="doc-preview"><b>Blog: "5 Signs Your Warehouse Needs a New Pump System"</b>Intro drafted, SEO title + meta description ready, targets "water pump maintenance oman".</div>
+        <button class="btn btn-primary btn-sm btn-block">Write New Content</button>
+      </div>
+
+      <div class="card tool-widget" id="w-adsmanager">
+        <h4><i data-lucide="megaphone"></i> AI Ad Manager <span class="beta-tag" style="margin-left:6px">Autopilot</span></h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Active Campaigns<b>6</b></div>
+          <div class="mini-kpi">Avg. CPA<b style="color:var(--green-500)">-14%</b></div>
+        </div>
+        <div class="doc-preview"><b>Autopilot action taken</b>Shifted OMR 340 from underperforming Facebook set to Google Search (higher intent) — 2 hours ago.</div>
+        <div class="ai-actions">
+          <span class="ai-action-chip"><i data-lucide="rocket"></i> Launch New Campaign</span>
+          <span class="ai-action-chip"><i data-lucide="sliders"></i> Adjust Guardrails</span>
+        </div>
+      </div>
+
+      <div class="card tool-widget" id="w-voiceagent">
+        <h4><i data-lucide="phone-call"></i> AI Voice Agent <span class="beta-tag" style="margin-left:6px">Autopilot</span></h4>
+        <div class="lead-result"><span class="lr-name">Muscat Fit-Out LLC</span><span class="lead-score-sm" style="color:var(--orange-500)">Follow-up call queued</span></div>
+        <div class="lead-result"><span class="lr-name">ABC Group</span><span class="lead-score-sm" style="color:var(--green-500)">Call completed</span></div>
+        <div class="doc-preview"><b>Call summary — ABC Group</b>Confirmed interest, requested revised pricing. Logged to CRM automatically.</div>
+        <button class="btn btn-primary btn-sm btn-block">Launch Call Campaign</button>
+      </div>
+
+      <div class="card tool-widget" id="w-supportbot">
+        <h4><i data-lucide="message-square-text"></i> Support Chatbot</h4>
+        <div style="display:flex;gap:6px">
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> Website</span>
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> WhatsApp</span>
+        </div>
+        <div class="doc-preview"><b>Live now</b>142 conversations this week · 78% resolved without a human · 34 handed off to Sales</div>
+        <button class="btn btn-outline btn-sm btn-block">Review Conversations</button>
+      </div>
+
+      <div class="card tool-widget" id="w-socialinquiry">
+        <h4><i data-lucide="at-sign"></i> Social Inquiry AI <span class="beta-tag" style="margin-left:6px">Autopilot</span></h4>
+        <div style="display:flex;gap:6px;margin-bottom:2px">
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> Instagram</span>
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> Facebook</span>
+          <span class="connected-pill"><i data-lucide="check" style="width:10px;height:10px"></i> LinkedIn</span>
+        </div>
+        <div class="doc-preview"><b>Comment — Instagram post</b>"Do you have the DF25 in stock and what's the price?" <span style="color:var(--gray-500)">→ Replied publicly + moved to DM</span></div>
+        <div class="doc-preview"><b>DM — LinkedIn</b>"Interested in becoming a dealer for Batinah region." <span style="color:var(--gray-500)">→ Qualifying questions sent</span></div>
+        <div class="sop-row" style="font-size:11px;font-weight:600;color:var(--gray-500);margin-top:4px">SPANCOP Pipeline Stage</div>
+        <div class="funnel-row"><span>Suspect (new inquiries)</span><b>23</b></div>
+        <div class="funnel-row"><span>Prospect (qualified)</span><b>14</b></div>
+        <div class="funnel-row"><span>Approach (message sent)</span><b>9</b></div>
+        <div class="funnel-row"><span>Negotiate</span><b>4</b></div>
+        <div class="funnel-row"><span>Close</span><b>2</b></div>
+        <div class="funnel-row"><span>Order &amp; Payment</span><b>1</b></div>
+        <div class="ai-actions">
+          <span class="ai-action-chip"><i data-lucide="reply"></i> Reply to Inquiry</span>
+          <span class="ai-action-chip"><i data-lucide="git-branch"></i> Push to CRM Stage</span>
+          <span class="ai-action-chip"><i data-lucide="sliders"></i> Edit Reply Rules</span>
+        </div>
+      </div>
+
+      <div class="card tool-widget" id="w-meetingbot">
+        <h4><i data-lucide="mic"></i> AI Meeting Bot</h4>
+        <div class="doc-preview"><b>Client call — Sohar Industrial Park</b>Summary + 3 action items generated, synced to Tasks and CRM.</div>
+        <div class="ai-actions">
+          <span class="ai-action-chip"><i data-lucide="file-text"></i> View Transcript</span>
+          <span class="ai-action-chip"><i data-lucide="check-square"></i> Sync Action Items</span>
+        </div>
+        <div class="ask-row" style="margin-top:10px"><input type="text" placeholder="Company Memory: what was decided about..."><button class="ask-send"><i data-lucide="brain" style="width:15px;height:15px"></i></button></div>
+      </div>
+
+      <div class="card tool-widget" id="w-outreach">
+        <h4><i data-lucide="send"></i> Outreach Sequences</h4>
+        <div class="mini-list">
+          <span class="sel">Gulf Steel Trading — Step 2 of 4</span>
+          <span>Email sent</span><span>WhatsApp queued (Day 3)</span>
+          <span>LinkedIn connect (Day 5)</span>
+        </div>
+        <button class="btn btn-primary btn-sm btn-block">New Sequence</button>
+      </div>
+
+      <div class="card tool-widget" id="w-lpagent">
+        <h4><i data-lucide="layout-template"></i> Landing Page Agent</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Variant A<b>3.1% CVR</b></div>
+          <div class="mini-kpi">Variant B<b style="color:var(--green-500)">4.6% CVR</b></div>
+        </div>
+        <div class="doc-preview"><b>Auto-decision</b>Variant B promoted to 100% traffic — statistically significant after 1,240 visits.</div>
+      </div>
+
+      <div class="card tool-widget" id="w-bookkeeping">
+        <h4><i data-lucide="receipt"></i> AI Bookkeeping</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Overdue Invoices<b style="color:var(--red-500)">3</b></div>
+          <div class="mini-kpi">Auto-reconciled<b>96%</b></div>
+        </div>
+        <div class="doc-preview"><b>Muscat Fit-Out LLC — 14 days overdue</b>Payment reminder drafted and ready to send.</div>
+        <button class="btn btn-outline btn-sm btn-block">Send Reminder</button>
+      </div>
+
+      <div class="card tool-widget" id="w-reviews">
+        <h4><i data-lucide="star"></i> AI Review Responder</h4>
+        <div class="doc-preview"><b>Google Review — ★★★★☆</b>"Good service but delivery took longer than expected."</div>
+        <div class="doc-preview"><b>Drafted response</b>Thanks the customer, acknowledges the delay, offers a direct contact for future orders.</div>
+        <button class="btn btn-outline btn-sm btn-block">Post Response</button>
+      </div>
+
+      <div class="card tool-widget" id="w-industrypacks" style="grid-column:span 2">
+        <h4><i data-lucide="puzzle"></i> Industry Modules <span style="font-size:11px;font-weight:500;color:var(--gray-500);margin-left:6px">Choose your industry — NEXUS recommends what to turn on</span></h4>
+        <p style="font-size:12px;color:var(--gray-500);margin:-2px 0 14px">Every module stays in your sidebar so you can activate anything, anytime. Picking your industry below just tells NEXUS which ones to recommend first — nothing is hidden or removed.</p>
+
+        <div class="industry-pills" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+          <button class="industry-pill active" data-industry="distribution">Distribution &amp; Dealer Network</button>
+          <button class="industry-pill" data-industry="contracting">Contracting &amp; Field Services</button>
+          <button class="industry-pill" data-industry="retail">Retail &amp; Product Sales</button>
+          <button class="industry-pill" data-industry="services">Professional Services / Agency</button>
+          <button class="industry-pill" data-industry="group">Multi-Division Group</button>
+          <button class="industry-pill" data-industry="general">General Business</button>
+        </div>
+
+        <div class="sop-row" data-industries="distribution,contracting"><i data-lucide="wrench"></i> Service &amp; Warranty Management <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="distribution"><i data-lucide="store"></i> Dealer / Partner Portal <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="distribution,retail,contracting"><i data-lucide="calculator"></i> Quote / Estimate Builder (SKU-level) <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="contracting,group"><i data-lucide="hard-hat"></i> Project / Job Costing <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="contracting,distribution"><i data-lucide="smartphone"></i> Field Service Mobile Capture <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="distribution,retail"><i data-lucide="tag"></i> Dynamic Pricing Engine <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="distribution,retail"><i data-lucide="package"></i> Procurement &amp; Inventory AI <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="group,services"><i data-lucide="user-check"></i> AI Recruiter <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="services,distribution,group"><i data-lucide="file-signature"></i> AI Contract Review <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <div class="sop-row" data-industries="group,services,retail"><i data-lucide="languages"></i> Multi-language AI <span class="mini-tag industry-tag" style="margin-left:auto">Inactive</span> <button class="btn btn-outline btn-sm" style="margin-left:8px">Activate</button></div>
+        <button class="btn btn-primary btn-sm btn-block" style="margin-top:14px">Activate All Recommended for This Industry</button>
+      </div>
+
+      <div class="card tool-widget" id="w-loyalty">
+        <h4><i data-lucide="gift"></i> Loyalty &amp; Referrals</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">Enrolled Customers<b>312</b></div>
+          <div class="mini-kpi">Referrals This Month<b style="color:var(--green-500)">9</b></div>
+        </div>
+        <button class="btn btn-outline btn-sm btn-block">Launch Referral Offer</button>
+      </div>
+
+      <div class="card tool-widget" id="w-governance">
+        <h4><i data-lucide="shield-alert"></i> Agent Governance</h4>
+        <div class="doc-preview"><b>Autopilot spend limit</b>Ad Manager capped at OMR 500/day auto-reallocation; anything above requires approval.</div>
+        <div class="doc-preview"><b>Audit trail</b>47 autonomous actions logged this week · 0 overrides needed.</div>
+        <button class="btn btn-outline btn-sm btn-block">Manage Approval Rules</button>
+      </div>
+
+      <div class="card tool-widget" id="w-einvoice">
+        <h4><i data-lucide="file-check-2"></i> VAT &amp; e-Invoicing</h4>
+        <div class="mini-kpi-grid">
+          <div class="mini-kpi">VAT Filed<b style="color:var(--green-500)">Up to date</b></div>
+          <div class="mini-kpi">e-Invoices Issued<b>128</b></div>
+        </div>
+        <div class="doc-preview"><b>Oman e-invoicing compliance</b>All invoices structured and archived per current requirements.</div>
+      </div>
+
+      <div class="card tool-widget" id="w-reportbuilder">
+        <h4><i data-lucide="file-bar-chart"></i> Report Builder</h4>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <span class="mini-tag">Board Pack</span><span class="mini-tag">Investor Update</span><span class="mini-tag">Monthly Summary</span>
+        </div>
+        <div class="doc-preview"><b>White-label ready</b>Reports branded with your logo and colors, exportable as PDF or slides.</div>
+        <button class="btn btn-primary btn-sm btn-block">Build Custom Report</button>
+        <button class="btn btn-outline btn-sm btn-block" style="margin-top:4px"><i data-lucide="zap" style="width:13px;height:13px"></i> One-Click Board Pack</button>
+      </div>
+
+    </div>
+
+    <div class="card card-pad decision-card" style="margin-top:20px">
+      <div class="card-head"><h3><i data-lucide="git-branch" style="width:16px;height:16px;color:var(--indigo-500);vertical-align:-2px"></i> Decision Intelligence</h3></div>
+      <div class="decision-box">
+        <b>Decision Required: Increase Google Ads budget by 15%.</b>
+        <div class="decision-meta-row">
+          <span><b>Confidence:</b> 89%</span>
+          <span><b>Est. additional monthly revenue:</b> OMR 8,400</span>
+          <span><b>Risk:</b> Low</span>
+        </div>
+        <p class="decision-reasoning">Lead quality is increasing while cost per acquisition has fallen 12%.</p>
+        <div class="lead-actions">
+          <button class="btn btn-primary btn-sm">Approve</button>
+          <button class="btn btn-outline btn-sm">Ask Nexus Why</button>
+          <button class="btn btn-outline btn-sm">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="beta-lab-panel" id="beta-lab" style="margin-top:20px">
+      <div class="card-head"><h3><i data-lucide="sparkles" style="width:15px;height:15px;color:var(--nexus-gold);vertical-align:-2px"></i> NEXUS Labs <span class="beta-tag" style="margin-left:8px">Beta</span></h3></div>
+      <p style="font-size:12px;color:var(--gray-500);margin:-4px 0 14px">Early-access capabilities, already live for select workspaces.</p>
+      <div class="beta-grid">
+        <div class="beta-item"><i data-lucide="brain"></i><b>Company Memory</b><span>Ask what was decided in any past meeting</span></div>
+        <div class="beta-item"><i data-lucide="presentation"></i><b>Board Packs</b><span>One-click board presentation generation</span></div>
+        <div class="beta-item"><i data-lucide="workflow"></i><b>Automatic SOP Builder</b><span>Interviews you, builds the SOP</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+</div>
+<div id="devNav">
+  <button data-v="landing" class="active" onclick="showView('landing')">🏠 Landing</button>
+  <button data-v="onboarding" onclick="showView('onboarding')">🧭 Onboarding</button>
+  <button data-v="dashboard" onclick="showView('dashboard')">📊 Dashboard</button>
+</div>
+<script>
+lucide.createIcons();
+function showView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('#devNav button').forEach(b=>b.classList.toggle('active', b.dataset.v===name));
+  window.scrollTo({top:0});
+  if(name==='onboarding'){ resetOnboarding(); }
+  if(name==='dashboard'){ setTimeout(initDashboardCharts, 30); }
+  setTimeout(()=>lucide.createIcons(), 10);
+}
+
+lucide.createIcons();
+const TOTAL = 13;
+let current = 1;
+
+function render(){
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="'+current+'"]').classList.add('active');
+  document.getElementById('stepCounter').textContent = 'Step '+current+' of '+TOTAL;
+  document.getElementById('progressFill').style.width = Math.round(current/TOTAL*100)+'%';
+  document.getElementById('backBtn').style.visibility = current===1 ? 'hidden':'visible';
+  const nextBtn = document.getElementById('nextBtn');
+  if(current===TOTAL){
+    document.getElementById('footActions').style.display='none';
+    runBuildSequence();
+  } else {
+    document.getElementById('footActions').style.display='flex';
+    nextBtn.innerHTML = current===TOTAL-1 ? 'Build My OS <i data-lucide="sparkles" class="icon" style="width:15px;height:15px"></i>' : 'Next <i data-lucide="arrow-right" class="icon" style="width:15px;height:15px"></i>';
+    lucide.createIcons();
+  }
+  if(current===3) runScanSequence();
+}
+
+function nextStep(){ if(current<TOTAL){ current++; render(); window.scrollTo({top:0,behavior:'smooth'}); if(current===12) populateModuleChoice(); } }
+function prevStep(){ if(current>1){ current--; render(); window.scrollTo({top:0,behavior:'smooth'}); } }
+
+// selectable option lists (goals & brand voice)
+document.querySelectorAll('.option-list').forEach(list=>{
+  const multi = list.id === 'goalsList';
+  list.querySelectorAll('.option').forEach((opt, idx)=>{
+    opt.addEventListener('click', ()=>{
+      if(multi){ opt.classList.toggle('selected'); }
+      else { list.querySelectorAll('.option').forEach(o=>o.classList.remove('selected')); opt.classList.add('selected'); }
+      if(list.id === 'competitorModeList'){
+        const manual = document.getElementById('manualCompetitors');
+        const auto = document.getElementById('autoCompetitors');
+        if(idx === 0){ manual.style.display = 'block'; auto.style.display = 'none'; }
+        else { manual.style.display = 'none'; auto.style.display = 'block'; }
+      }
+    });
+  });
+});
+
+// website scan animation
+let scanRan = false;
+function runScanSequence(){
+  if(scanRan) return; scanRan = true;
+  const items = document.querySelectorAll('#scanList .scan-check-item');
+  const arc = document.getElementById('scanArc');
+  const pctLabel = document.getElementById('scanPct');
+  const circumference = 490;
+  let pct = 0;
+  const step = ()=>{
+    pct += 2;
+    if(pct>100) pct = 100;
+    pctLabel.textContent = pct+'%';
+    arc.style.strokeDashoffset = circumference - (circumference*pct/100);
+    const doneCount = Math.floor(pct/100*items.length);
+    items.forEach((it,i)=>{
+      it.classList.toggle('done', i<doneCount);
+      it.classList.toggle('active', i===doneCount);
+    });
+    if(pct<100) requestAnimationFrame(()=>setTimeout(step,40));
+    else {
+      const findings = document.getElementById('scanFindings');
+      if(findings) findings.style.display = 'block';
+    }
+  };
+  step();
+}
+
+// final build animation
+let buildRan = false;
+function runBuildSequence(){
+  if(buildRan) return; buildRan = true;
+  const items = document.querySelectorAll('#buildList .build-item');
+  const fill = document.getElementById('buildFill');
+  const pctLabel = document.getElementById('buildPct');
+  let pct = 0;
+  const step = ()=>{
+    pct += 1.2;
+    if(pct>100) pct=100;
+    fill.style.width = pct+'%';
+    pctLabel.textContent = pct<100 ? 'Almost done! This may take a few seconds.' : 'Your NEXUS OS is ready.';
+    const doneCount = Math.floor(pct/100*items.length);
+    items.forEach((it,i)=>{
+      it.classList.toggle('done', i<doneCount);
+      it.classList.toggle('active', i===doneCount);
+      if(i<doneCount){ it.querySelector('i').setAttribute('data-lucide','check-circle-2'); }
+    });
+    lucide.createIcons();
+    if(pct<100){ requestAnimationFrame(()=>setTimeout(step,45)); }
+    else {
+      const briefing = document.getElementById('nexusBriefing');
+      if(briefing) briefing.style.display = 'block';
+      const btn = document.getElementById('enterWorkspaceBtn');
+      if(btn){ btn.style.display = 'inline-flex'; lucide.createIcons(); }
+    }
+  };
+  step();
+}
+
+function goToDashboard(){
+  showView('dashboard');
+}
+
+render();
+
+function resetOnboarding(){
+  current = 1; scanRan = false; buildRan = false;
+  const findings = document.getElementById('scanFindings'); if(findings) findings.style.display = 'none';
+  const briefing = document.getElementById('nexusBriefing'); if(briefing) briefing.style.display = 'none';
+  const enterBtn = document.getElementById('enterWorkspaceBtn'); if(enterBtn) enterBtn.style.display = 'none';
+  render();
+}
+render();
+
+lucide.createIcons();
+
+document.querySelectorAll('.nav-item').forEach(item=>{
+  item.addEventListener('click', e=>{
+    e.preventDefault();
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    item.classList.add('active');
+    const t = document.querySelector(item.dataset.target);
+    if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+});
+
+function applyIndustryFilter(industry){
+  document.querySelectorAll('#w-industrypacks .sop-row').forEach(row=>{
+    const list = (row.dataset.industries||'').split(',');
+    const tag = row.querySelector('.industry-tag');
+    if(list.includes(industry)){
+      row.classList.add('recommended');
+      if(tag) tag.textContent = 'Recommended · Inactive';
+    } else {
+      row.classList.remove('recommended');
+      if(tag) tag.textContent = 'Inactive';
+    }
+  });
+}
+document.querySelectorAll('.industry-pill').forEach(pill=>{
+  pill.addEventListener('click', ()=>{
+    document.querySelectorAll('.industry-pill').forEach(p=>p.classList.remove('active'));
+    pill.classList.add('active');
+    applyIndustryFilter(pill.dataset.industry);
+  });
+});
+applyIndustryFilter('distribution');
+
+const industryLabels = {
+  distribution:"Distribution &amp; Dealer Network", contracting:"Contracting &amp; Field Services",
+  retail:"Retail &amp; Product Sales", services:"Professional Services / Agency",
+  group:"Multi-Division Group", general:"General Business"
+};
+const industryRecs = {
+  distribution: [
+    ["Dealer / Partner Portal","You sell through sub-dealers or agents who need their own limited access"],
+    ["Service & Warranty Management","You sell physical equipment that needs service scheduling and warranty tracking"],
+    ["Quote / Estimate Builder (SKU-level)","You quote from a product catalog with pricing tiers, not hourly scope"],
+    ["Field Service Mobile Capture","Technicians visit sites and need to log photos/reports from their phone"],
+    ["Dynamic Pricing Engine","Demand and competitor pricing shift often enough to justify auto-adjustment"],
+    ["Procurement & Inventory AI","You carry stock and need reorder-point forecasting"],
+    ["AI Contract Review","Distributorship and supplier agreements are a recurring part of the business"],
+  ],
+  contracting: [
+    ["Project / Job Costing","Profitability is tracked per project, not per product line"],
+    ["Service & Warranty Management","Installed work often carries a warranty period to track"],
+    ["Field Service Mobile Capture","Crews on-site need to log progress, photos, and quotes from mobile"],
+    ["Quote / Estimate Builder (SKU-level)","Estimates are built from materials + labor line items"],
+  ],
+  retail: [
+    ["Dynamic Pricing Engine","Retail margins are sensitive to demand and competitor price moves"],
+    ["Procurement & Inventory AI","Stock turnover and reorder timing directly affect revenue"],
+    ["Quote / Estimate Builder (SKU-level)","Pricing is catalog-driven with tiered discounts"],
+    ["Multi-language AI","Retail customers often shop across more than one language market"],
+  ],
+  services: [
+    ["AI Contract Review","Client engagement and vendor contracts recur regularly"],
+    ["AI Recruiter","Growth depends on hiring billable staff efficiently"],
+    ["Multi-language AI","Client-facing work often spans multiple languages or regions"],
+  ],
+  group: [
+    ["Project / Job Costing","Cross-division profitability tracking matters at group level"],
+    ["AI Recruiter","Hiring happens across multiple business units"],
+    ["AI Contract Review","Inter-division and supplier agreements recur across the group"],
+    ["Multi-language AI","A group spanning multiple markets needs consistent bilingual output"],
+  ],
+  general: [
+    ["Quote / Estimate Builder (SKU-level)","Useful once pricing needs to move beyond ad hoc quoting"],
+  ],
+};
+function renderProfile(industry){
+  document.getElementById('profileIndustryLabel').innerHTML = industryLabels[industry];
+  const wrap = document.getElementById('profileRecs');
+  wrap.innerHTML = (industryRecs[industry]||[]).map(([name, why])=>
+    `<div class="doc-preview"><b>${name}</b>${why}</div>`
+  ).join('');
+}
+document.querySelectorAll('#profilePills .industry-pill').forEach(pill=>{
+  pill.addEventListener('click', ()=>{
+    document.querySelectorAll('#profilePills .industry-pill').forEach(p=>p.classList.remove('active'));
+    pill.classList.add('active');
+    renderProfile(pill.dataset.industry);
+  });
+});
+renderProfile('distribution');
+
+function populateModuleChoice(){
+  const sel = document.getElementById('onbIndustrySelect');
+  const industry = sel ? sel.value : 'distribution';
+  const nameEl = document.getElementById('onbIndustryName');
+  if(nameEl) nameEl.innerHTML = industryLabels[industry] || industry;
+  const wrap = document.getElementById('onbModuleChecklist');
+  if(!wrap) return;
+  wrap.innerHTML = (industryRecs[industry]||[]).map(([name])=>
+    `<label class="module-check"><input type="checkbox" checked> ${name}</label>`
+  ).join('');
+}
+
+
+function initDashboardCharts(){
+if(window.__dashChartsInited) return;
+if(typeof Chart === 'undefined'){ setTimeout(initDashboardCharts, 100); return; }
+window.__dashChartsInited = true;
+const ctx = document.getElementById('perfChart');
+new Chart(ctx, {
+  type:'line',
+  data:{
+    labels:['May 12','May 13','May 14','May 15','May 16','May 17','May 18'],
+    datasets:[
+      {label:'Leads', data:[900,1400,1150,1600,1350,1750,1600], borderColor:'#4F46E5', backgroundColor:'transparent', tension:.35, pointRadius:0, borderWidth:2.5},
+      {label:'Sales', data:[400,900,700,1150,950,1350,1200], borderColor:'#16A34A', backgroundColor:'transparent', tension:.35, pointRadius:0, borderWidth:2.5}
+    ]
+  },
+  options:{
+    plugins:{legend:{position:'top', align:'end', labels:{boxWidth:8,usePointStyle:true,font:{size:11}}}},
+    scales:{ y:{ grid:{color:'#F1F2F6'}, ticks:{font:{size:10.5}} }, x:{ grid:{display:false}, ticks:{font:{size:10.5}} } },
+    maintainAspectRatio:false
+  }
+});
+
+new Chart(document.getElementById('miniDonut'), {
+  type:'doughnut',
+  data:{ labels:['Google','Facebook','Instagram','LinkedIn','Other'],
+    datasets:[{data:[45,25,15,10,5], backgroundColor:['#4F46E5','#F59E0B','#EC4899','#0EA5E9','#D3D6E0'], borderWidth:0}]},
+  options:{ plugins:{legend:{display:false}}, cutout:'65%' }
+});
+}
+
+</script>
+</body>
+</html>

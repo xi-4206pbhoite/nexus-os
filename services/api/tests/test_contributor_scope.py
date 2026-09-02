@@ -242,5 +242,10 @@ def test_locked_is_distinguishable_from_denied() -> None:
     LOCKED renders "requires a manager role" and names the capability. DENY
     returns nothing at all — the caller must not learn the thing exists.
     """
-    assert AccessDecision.LOCKED is not AccessDecision.DENY
-    assert AccessDecision.LOCKED is not AccessDecision.ALLOW
+    # Held in a variable typed as the enum rather than compared member to
+    # member: mypy narrows `AccessDecision.LOCKED` to its literal type and then
+    # reports the comparison as one that cannot be true, which is the opposite
+    # of what this test is checking.
+    locked: AccessDecision = AccessDecision.LOCKED
+    assert locked is not AccessDecision.DENY
+    assert locked is not AccessDecision.ALLOW

@@ -70,6 +70,9 @@ dev = [
   "mypy>=1.13",
   "types-python-dateutil",
   "types-openpyxl",
+  # Coverage with a floor. The floor exists to make a deletion of tests visible;
+  # it starts at the measured number and is never lowered to make a build pass.
+  "pytest-cov>=6.0",
 ]
 
 [build-system]
@@ -137,3 +140,33 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["error"]
+
+# --strict-markers: a misspelled marker is an error, not a silent no-op. Nine
+#   modules previously kept `requires_db` as a local `skipif` variable, so a
+#   tenth misspelling it would have applied nothing at all.
+# --strict-config: an unknown key in this table is an error too.
+# --cov-fail-under: the floor, set to the measured figure (74.2% at Phase 0,
+#   branch coverage) and
+#   rounded down so it cannot flake on a fraction. It exists to make a deleted
+#   test visible, so it goes up and never down. A coverage figure is not a
+#   quality claim - 74% here sits beside four of ten invariants proved - it is
+#   only a ratchet.
+addopts = "--strict-markers --strict-config --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=74"
+
+# Skipped only when no database is configured — and conftest.py fails the
+# session when that happens, because a database test that does not run proves
+# nothing. tests/test_ci_contract.py asserts the other half.
+markers = [
+  "requires_db: needs a real PostgreSQL, connected as the unprivileged app role",
+]
+
+[tool.coverage.run]
+source = ["app"]
+# Both halves of every branch, not just every line. A permission predicate with
+# only its allow path exercised is the failure mode this guards against, and
+# line coverage cannot see it.
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

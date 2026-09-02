@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 
 from app.domain.session import ScopedSession
 from tests.dburl import database_url
@@ -77,14 +77,25 @@ def test_access_decisions_ignore_everything_but_role_and_department() -> None:
     from app.domain.access import Aggregate, decide_l3_access
     from app.domain.scopes import Department, Role
 
-    common = {
-        "tenant_id": uuid4(),
-        "workspace_id": uuid4(),
-        "role": Role.CONTRIBUTOR,
-        "departments": frozenset({Department.SALES}),
-    }
-    a = ScopedSession(user_id=uuid4(), **common)
-    b = ScopedSession(user_id=uuid4(), **common)
+    # A builder rather than a dict splatted twice: `**common` is typed
+    # dict[str, object], so every keyword arrives as `object` and mypy rejects
+    # all four. The point of the test - two callers differing only in user_id -
+    # is unchanged.
+    tenant_id = uuid4()
+    workspace_id = uuid4()
+    departments = frozenset({Department.SALES})
+
+    def caller() -> ScopedSession:
+        return ScopedSession(
+            user_id=uuid4(),
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            role=Role.CONTRIBUTOR,
+            departments=departments,
+        )
+
+    a = caller()
+    b = caller()
 
     aggregate = Aggregate("sum", Department.SALES)
     assert decide_l3_access(a, aggregate=aggregate) == decide_l3_access(b, aggregate=aggregate)
@@ -94,20 +105,26 @@ def test_access_decisions_ignore_everything_but_role_and_department() -> None:
 
 
 DB_URL = database_url()
-requires_db = pytest.mark.skipif(DB_URL is None, reason="No NEXUS_DATABASE_URL")
+# The real marker, declared in pyproject.toml. Previously a local
+# `pytest.mark.skipif` — nine copies of it, so nine places a database suite
+# could silently vanish from a green run. The skip decision now lives in
+# conftest.py, which fails the session if it ever fires.
+requires_db = pytest.mark.requires_db
 
 
 @pytest.fixture(scope="module")
-def engine():  # type: ignore[no-untyped-def]
-    if DB_URL is None:
-        pytest.skip("no database")
+def engine() -> Iterator[Engine]:
+    # `requires_db` guarantees a database, so a missing URL here is a broken
+    # harness rather than an absent one. Assert loudly instead of skipping —
+    # a skip is what tests/test_ci_contract.py exists to make impossible.
+    assert DB_URL is not None
     eng = create_engine(DB_URL, poolclass=sa.pool.NullPool)
     yield eng
     eng.dispose()
 
 
 @pytest.fixture
-def conn(engine) -> Iterator[Connection]:  # type: ignore[no-untyped-def]
+def conn(engine: Engine) -> Iterator[Connection]:
     connection = engine.connect()
     trans = connection.begin()
     try:

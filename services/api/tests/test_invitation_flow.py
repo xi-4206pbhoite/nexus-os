@@ -37,7 +37,11 @@ from app.routes.setup import store_answer
 from tests.dburl import async_database_url
 
 ASYNC_DB_URL = async_database_url()
-requires_db = pytest.mark.skipif(ASYNC_DB_URL is None, reason="No NEXUS_DATABASE_URL")
+# The real marker, declared in pyproject.toml. Previously a local
+# `pytest.mark.skipif` — nine copies of it, so nine places a database suite
+# could silently vanish from a green run. The skip decision now lives in
+# conftest.py, which fails the session if it ever fires.
+requires_db = pytest.mark.requires_db
 
 pytestmark = requires_db
 
@@ -45,8 +49,8 @@ pytestmark = requires_db
 @pytest.fixture
 async def db() -> AsyncIterator[AsyncSession]:
     """A session inside a transaction that never commits."""
-    if ASYNC_DB_URL is None:
-        pytest.skip("no database")
+    # `requires_db` guarantees a database; see the note beside the marker above.
+    assert ASYNC_DB_URL is not None
 
     engine = create_async_engine(ASYNC_DB_URL, poolclass=NullPool)
     async with engine.connect() as connection:

@@ -43,13 +43,10 @@ async def test_matching_header_passes_the_csrf_gate() -> None:
     from app.auth.csrf import require_csrf
 
     request = Request({"type": "http", "method": "POST", "headers": [], "query_string": b""})
-    # Returns None rather than raising: the gate is satisfied.
-    assert (
-        await require_csrf(
-            request, nexus_csrf="a-known-csrf-value", x_csrf_token="a-known-csrf-value"
-        )
-        is None
-    )
+    # Awaited for the side effect of *not* raising: the gate is satisfied when
+    # it returns. Not compared to None - `require_csrf` is annotated as
+    # returning None, and mypy rejects testing the value of such a call.
+    await require_csrf(request, nexus_csrf="a-known-csrf-value", x_csrf_token="a-known-csrf-value")
 
 
 async def test_an_absent_csrf_cookie_is_rejected_not_waved_through() -> None:

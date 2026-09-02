@@ -116,7 +116,7 @@ async def test_it_writes_the_vector_with_its_model_and_dimension() -> None:
     session = _FakeSession(_pending(2))
     embedder = DeterministicEmbedder(dimension=1024, model_id="test-model")
 
-    report = await embed_pending(session, embedder)
+    report = await embed_pending(session, embedder)  # type: ignore[arg-type]
 
     updates = [(sql, p) for sql, p in session.statements if "UPDATE" in sql]
     assert report.embedded == 2
@@ -132,7 +132,7 @@ async def test_it_never_touches_scope_or_review_state() -> None:
     chunk. There would be no review record of it if it could."""
     session = _FakeSession(_pending(1))
 
-    await embed_pending(session, DeterministicEmbedder())
+    await embed_pending(session, DeterministicEmbedder())  # type: ignore[arg-type]
 
     for sql, _ in session.statements:
         if "UPDATE" not in sql:
@@ -148,7 +148,7 @@ async def test_the_update_is_guarded_so_a_concurrent_pass_cannot_overwrite() -> 
     `embedding_model_id` correct only by luck."""
     session = _FakeSession(_pending(1))
 
-    await embed_pending(session, DeterministicEmbedder())
+    await embed_pending(session, DeterministicEmbedder())  # type: ignore[arg-type]
 
     update = next(sql for sql, _ in session.statements if "UPDATE" in sql)
     assert "embedding IS NULL" in update
@@ -157,7 +157,7 @@ async def test_the_update_is_guarded_so_a_concurrent_pass_cannot_overwrite() -> 
 async def test_it_records_when_the_vector_was_produced() -> None:
     session = _FakeSession(_pending(1))
 
-    await embed_pending(session, DeterministicEmbedder())
+    await embed_pending(session, DeterministicEmbedder())  # type: ignore[arg-type]
 
     update = next(sql for sql, _ in session.statements if "UPDATE" in sql)
     assert "embedded_at" in update
@@ -166,7 +166,7 @@ async def test_it_records_when_the_vector_was_produced() -> None:
 async def test_only_unembedded_non_empty_chunks_are_selected() -> None:
     session = _FakeSession(_pending(1))
 
-    await embed_pending(session, DeterministicEmbedder())
+    await embed_pending(session, DeterministicEmbedder())  # type: ignore[arg-type]
 
     select = next(sql for sql, _ in session.statements if sql.strip().upper().startswith("SELECT"))
     assert "embedding IS NULL" in select
@@ -176,7 +176,7 @@ async def test_only_unembedded_non_empty_chunks_are_selected() -> None:
 async def test_nothing_pending_is_a_clean_no_op() -> None:
     session = _FakeSession([])
 
-    report = await embed_pending(session, DeterministicEmbedder())
+    report = await embed_pending(session, DeterministicEmbedder())  # type: ignore[arg-type]
 
     assert (report.considered, report.embedded, report.failed) == (0, 0, 0)
     assert report.skipped_reason is None, "having nothing to do is not being skipped"

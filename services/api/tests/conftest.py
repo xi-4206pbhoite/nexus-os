@@ -14,12 +14,14 @@ test that wants a configured dependency opts in explicitly.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterator
 
 import pytest
 
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
+from tests.dburl import database_url
 
 _PINNED = (
     "NEXUS_DATABASE_URL",
@@ -57,3 +59,57 @@ def hermetic_settings(
     _clear_caches()
     yield
     _clear_caches()
+
+
+# ── The database contract ─────────────────────────────────────
+#
+# Nine test modules each carried their own
+# `pytest.mark.skipif(DB_URL is None, ...)`. Nine copies meant nine places a DB
+# suite could quietly vanish from a run, and the run still reported green: 92
+# tests skipped, row-level security unproved, exit code 0. The whole point of
+# `test_tenant_isolation.py` is that it *executes*.
+#
+# So the skip decision lives here, once, and it is paired with a guard that
+# fails the session if it ever fires. `tests/test_ci_contract.py` asserts the
+# other half — that a database is configured at all.
+
+_skipped_requires_db: set[str] = set()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip `requires_db` tests only when no database is configured.
+
+    With a database configured, nothing here fires and every marked test runs.
+    Without one, `test_ci_contract.py::test_a_database_is_configured` fails, so
+    the skips are never the only signal.
+    """
+    if database_url() is not None:
+        return
+
+    skip = pytest.mark.skip(
+        reason="no database configured — see tests/test_ci_contract.py",
+    )
+    for item in items:
+        if item.get_closest_marker("requires_db") is not None:
+            item.add_marker(skip)
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Record any `requires_db` test that skipped, wherever the skip came from."""
+    if report.skipped and "requires_db" in report.keywords:
+        _skipped_requires_db.add(report.nodeid)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """A skipped database test fails the build. A silent skip proves nothing."""
+    if not _skipped_requires_db:
+        return
+
+    sys.stderr.write(
+        f"\nFAILED: {len(_skipped_requires_db)} requires_db test(s) were skipped. "
+        "A database test that does not run proves nothing.\n"
+    )
+    for node_id in sorted(_skipped_requires_db):
+        sys.stderr.write(f"  skipped: {node_id}\n")
+
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED

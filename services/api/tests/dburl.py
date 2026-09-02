@@ -3,6 +3,15 @@
 Shared because seven test modules had their own copy, and the moment a real
 managed Postgres arrived every one of them was wrong in the same way.
 
+**The URL is resolved once, at import.** `conftest.py` pins
+`NEXUS_DATABASE_URL` to empty for hermeticity, so a *runtime* read of the
+environment sees that blank and falls through to the `.env` fallback below —
+which exists on a developer's machine and never in CI. A test calling
+`database_url()` inside a test body would therefore get Neon locally and `None`
+in CI, on the same code, which is precisely the machine-state dependence this
+module was written to remove. Import happens during collection, before any
+fixture runs, so the snapshot is the environment as configured.
+
 Two translations, both non-obvious:
 
 - **driver** — the application uses `postgresql+asyncpg://`. These suites are
@@ -23,11 +32,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _configured_url() -> str | None:
+def _resolve() -> str | None:
     """The URL exactly as configured, in the application's asyncpg spelling.
 
-    `conftest` pins `NEXUS_DATABASE_URL` to empty so no test depends on machine
-    state by accident, so the `.env` fallback is how a suite opts back in.
+    Called once, at import. The `.env` fallback is how a local run opts in
+    without exporting anything; CI sets the variable instead.
     """
     url = os.environ.get("NEXUS_DATABASE_URL") or ""
 
@@ -46,6 +55,9 @@ def _configured_url() -> str | None:
     return url
 
 
+_CONFIGURED_URL = _resolve()
+
+
 def async_database_url() -> str | None:
     """The asyncpg DSN, for the few suites that exercise application code paths.
 
@@ -54,12 +66,12 @@ def async_database_url() -> str | None:
     must not be handed the psycopg2 translation below — asyncpg rejects
     `sslmode` outright.
     """
-    return _configured_url()
+    return _CONFIGURED_URL
 
 
 def database_url() -> str | None:
     """A psycopg2-compatible DSN, or None when no database is configured."""
-    url = _configured_url()
+    url = _CONFIGURED_URL
     if url is None:
         return None
 

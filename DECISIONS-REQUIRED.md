@@ -2,7 +2,7 @@
 
 Per doc 07 §1: *"If the spec is ambiguous or two documents disagree, stop and ask. Do not invent a resolution and proceed."*
 
-I have invented no resolutions. Conflicts that doc 07's own precedence rule settles are listed in `ARCHITECTURE.md` §0 and need no answer from you — only the items below do.
+I have invented no resolutions. Conflicts that the precedence rule settles are listed in `ARCHITECTURE-HLD.md` §2 and need no answer from you — only the items below do.
 
 **Only §1 and §2 block M0.** Everything in §3 blocks a later milestone and can be answered when we reach it.
 
@@ -209,9 +209,175 @@ Doc 08 describes itself as extracted from `prototype/nexus-os-prototype.html` an
 
 ## 5. What I need from you to start M0
 
-1. **E1 / E2** — install Docker Desktop (recommended), or tell me to drop Compose
-2. **E3** — confirm `git init` at the repo root, and whether there is a remote
-3. **D1** — embedding provider (recommendation: Voyage `voyage-3`, 1024d)
-4. Approval of `ARCHITECTURE.md` and `TASKS.md`
+*Historical — all four were answered and M0 shipped. Kept because the ADRs that
+resolved them cite this list.*
 
-Everything else can wait for the milestone that needs it.
+1. ~~**E1 / E2**~~ — resolved as ADR 0001, then ADR 0006/0007
+2. ~~**E3**~~ — `git init` done, and the remote now exists
+   (`github.com/parul-bhoite/nexus-os`), so Phase 0's one external prerequisite
+   is met
+3. ~~**D1**~~ — resolved as ADR 0003: local `multilingual-e5-large`, 1024d
+4. ~~Approval of `ARCHITECTURE.md` and `TASKS.md`~~ — both retired to `doc/archive/`
+   and replaced by `ARCHITECTURE-HLD.md`, `ARCHITECTURE-LLD.md` and
+   `VISION-AND-PLAN.md`
+
+---
+
+## 5b. Raised by the new application flow (doc 09), 25 August 2026
+
+Parul's flow sketch of 25 August answers two long-open decisions and raises five
+new ones. Full analysis in `doc/09-NEW-APPLICATION-FLOW.md`.
+
+### Answered by the sketch, pending ratification
+
+- **D15** — member onboarding is **per-department**, for invited members. The
+  sketch places invitations after the dashboard, which also settles what happens
+  on a department change: the flow is re-run per member rather than once per company.
+- **D17** — **doc 08 outranks doc 06 §2.5** on the question set and the department
+  model. The sketch matches doc 08 §0 almost word for word: the owner selects which
+  departments the company runs, and an invited member answers only their own set.
+
+### D18 — Does the pre-signup Preview audit survive? *(blocks the landing page and doc 09 stage 0)*
+
+The new flow starts at sign-up, so the unauthenticated audit has no place in it.
+That audit is 90% of a finished feature — the SSRF guard with 89 cases, the pinned
+crawler, the extractor, three scoring calculators, the Postgres rate limiter, the
+preview cache — and it is the only flow that works end to end today.
+
+**The engine survives either way**, because "do a full Research" needs all of it.
+What is in question is only the unauthenticated entry point.
+
+**My recommendation: a signup lead-in.** Keep the URL field on the landing page,
+start the crawl the moment it is entered, and show the audit *after* registration
+as the first thing in the Brain. Better conversion than a standalone audit, and it
+pre-warms the research the flow depends on.
+
+### D19 — Where exactly does domain verification gate? *(blocks doc 09 stage 2)*
+
+You confirmed that a verified domain still gates workspace creation. The sketch
+creates the company immediately after register. `auth/domains.py:229` makes these
+mutually exclusive, and DNS TXT propagation takes minutes to hours — so as drawn,
+the user stops mid-flow and returns tomorrow.
+
+**My recommendation: move the gate, keep the guarantee.** Verification stops gating
+*whether a workspace exists* and starts gating *what it may do* — the exclusive
+domain claim, inviting members, and connecting any tool holding company data. That
+preserves what the invariant is for (nobody occupies a domain they do not own,
+nobody invites strangers into a company they do not control) and lands the gate
+exactly where the sketch already puts invitations. `workspace.domain_verified_at`
+is already nullable and the partial unique index already implements
+first-verified-wins, so the change is small.
+
+**If you want the strict gate instead:** keep verification before company creation
+but default to same-domain email, which verifies in seconds. That needs email
+delivery wired, and accepts a *weak* proof that flags `owner_claim_review`.
+
+### D20 — What is the research budget? *(blocks doc 09 stage 7)*
+
+Max pages crawled, max duration, and what happens when one source fails while
+others succeed. This decides whether stage 7 is a brief settling step or a wall,
+and it is a recurring cost line.
+
+**My recommendation:** 20 pages, a 5-minute soft cap, every source's failure
+surfaced individually, and the Brain built from whatever succeeded. The stage must
+be resumable — a founder will close the tab.
+
+### D21 — Does department selection restrict which directors exist, or only order them? *(blocks doc 09 stage 9)*
+
+If a company does not select Finance, can anyone ever open it?
+
+**My recommendation: restrict, with an explicit "add a department" action.** Seven
+half-empty directors is precisely what the new flow exists to avoid, and ADR 0010's
+"all seven get a dashboard" was about *capability*, not about forcing all seven onto
+every company.
+
+### D22 — Can a member's answer bind their whole department, or only themselves? *(blocks doc 09 stage 10)*
+
+This is D15's first question, now live because member onboarding is in the flow.
+Two Sales managers can disagree about the average deal size, and the Brain's
+conflict precedence puts user-confirmed above crawl but says nothing about one user
+above another.
+
+**My recommendation:** a Department Manager binds the department; a Contributor
+confirms rather than asserts. This is what `decide_l3_access` already implements,
+so it is written and tested rather than remembered later.
+
+---
+
+## 5c. Raised by Phase 0, 3 September 2026
+
+### D23 — The developer database is five migrations ahead of the repository *(blocks trusting any local run)*
+
+`tests/test_ci_contract.py::test_the_schema_is_migrated_to_head`, written in Phase 0,
+failed on its first run against the Neon instance in `.env`:
+
+```
+the database is at ['0014'] but the migrations on disk head at ['0009']
+```
+
+The Neon database also holds `company_brain`, `question` and `question_choice`,
+which no migration in this repository creates, and its `ck_document_status`
+already permits `'superseded'` — the value Phase 1's migration 0010 is scheduled
+to add, and which `BUILD-STATUS.md` §5.2 records as *missing and causing a
+raise*. So five migrations were applied to it from a working tree that is in no
+commit, no branch, no stash and no other worktree. I checked all four.
+
+**Why this is not cosmetic.** A local run against that database proves something
+other than what the repository contains, in both directions: a defect the repo
+still has can pass, and a fix the repo has made can fail. Two of the three
+🔴 items in `BUILD-STATUS.md` §5 concern exactly the constraints that differ.
+
+**Options:**
+
+- **(a) Reset it to the repository's head.** `alembic downgrade base` then
+  `upgrade head`, or drop and recreate the database. Destroys the three extra
+  tables — all three are currently **empty**, and I have not checked row counts
+  in the other sixteen. Cheapest, and loses the only surviving trace of those
+  five migrations.
+- **(b) Reconstruct `0010`–`0014` from the live schema and commit them.** Keeps
+  the work, at the cost of authoring five migrations from a diff rather than from
+  intent, and they would arrive with no tests and no ADRs. They also collide with
+  Phase 1's migration 0010 by number.
+- **(c) Leave it, and treat Neon as a scratch environment.** Nothing local is
+  trustworthy, which is the state Phase 0 exists to end.
+
+**My recommendation: (a).** The three extra tables are empty, Phase 1 and Phase
+12/13 will build that schema deliberately and with tests, and `db-ci.ps1` now
+gives a reproducible database in one command so nothing depends on Neon's
+contents. **But I have not done it** — resetting a database I did not create is
+not mine to decide, and `.env` is your configuration. Say the word and it is one
+command.
+
+**Also worth knowing before answering:** the extra schema may indicate a parallel
+session working this repository whose commits were lost, in which case there may
+be application code missing too, not only migrations.
+
+---
+
+## 6. What I need from you now — Phase 0
+
+Per `VISION-AND-PLAN.md` §6, four decisions block current work and two more block
+Phase 8 planning:
+
+| # | Decision | Blocks |
+|---|---|---|
+| **D14** | Login rate-limiting shape — key, response, and whether to lock | Phase 3, and a live unprotected sign-in form today |
+| **D17** | Where doc 08 sits in the precedence order | Any further onboarding work |
+| **D4** | Production email provider | Phase 2 reaching a real inbox (`FileMailer` unblocks development) |
+| **D13** | Anthropic access and model tier per execution mode | Phase 7 entirely |
+| **D7** | Finance: structure-plus-unlocks, bring accounting in, or manual entry labelled self-reported | Phase 8 planning |
+| **D8** | Capability count — 21 or 24, or a derived registry | Phase 8 planning |
+| **D18** | Does the pre-signup Preview audit survive, and in what form | The landing page and doc 09 stage 0 |
+| **D19** | Where domain verification gates, now that the company is created immediately | doc 09 stage 2 — **the one real conflict in the new flow** |
+| **D20** | The research budget: pages, duration, per-source failure | doc 09 stage 7 |
+| **D21** | Whether department selection restricts the directors or only orders them | doc 09 stage 9 |
+| **D22** | Whether a member's answer binds their department or only themselves | doc 09 stage 10 |
+| **D23** | What to do about the Neon instance being five migrations ahead of the repository | Trusting any local run — see §5c |
+
+**The git remote now exists** (`github.com/parul-bhoite/nexus-os`, `origin/main`
+at `ca819d3`), so Phase 0's one external prerequisite is met. What remains
+external is **watching the Actions run**: `gh` is not installed on this machine,
+so the workflow can be written and proved locally but its green run on the remote
+has to be confirmed by you.
+
+Everything else can wait for the phase that needs it.

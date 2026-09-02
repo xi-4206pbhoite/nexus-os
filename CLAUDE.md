@@ -27,22 +27,46 @@ Two PowerShell 5.1 traps already hit in this repo:
   `$LASTEXITCODE`.
 - `&&`, `||`, ternary and `??` do not exist.
 
+## The documents, and which one to trust
+
+| Document | What it governs |
+|---|---|
+| `VISION-AND-PLAN.md` | **The build contract.** Vision, invariants, the nine phases and their acceptance tests |
+| `doc/09-NEW-APPLICATION-FLOW.md` | **The new flow.** The nine-stage journey. Supersedes doc 06 §0 and doc 04 §5 |
+| `doc/11-FLOW-DECISIONS.md` | **Every flow decision Parul has made**, and the four still open. Answers `doc/10` |
+| `doc/12-IMPLEMENTATION-PLAN.md` | **The executable plan.** Twenty-two phases, each with an acceptance test. Supersedes `VISION-AND-PLAN.md` §6 |
+| `ARCHITECTURE-HLD.md` | System shape, trust model, untrusted boundary, execution modes, deployment |
+| `ARCHITECTURE-LLD.md` | Modules, schema, RLS, endpoint contracts, sequences, failure paths |
+| `BUILD-STATUS.md` | Where the code actually stands, with the prioritised work list. Regenerated per phase |
+| `DECISIONS-REQUIRED.md` | Open decisions, most of them external. **D23 blocks trusting any local run** |
+| `AUDIT-FINDINGS.md` | What audits found and what was done about each |
+| `doc/01`–`doc/08` | The specification. Read-only |
+| `doc/adr/` | Every decision Parul has made |
+| `doc/archive/` | Retired: `ARCHITECTURE.md`, `TASKS.md`, `MILESTONE-0…5.md`. Historical only |
+
 ## Process
 
-Doc 07 is the build contract. **One milestone at a time; stop at the end of each
-and wait for validation.** Every milestone ends with passing tests, a
-`MILESTONE-N.md`, and an updated `TASKS.md`.
+`VISION-AND-PLAN.md` is the build contract. **One phase at a time; stop at the end
+of each and wait for validation.**
 
-Where documents conflict: doc 07 > doc 06 > doc 05 > doc 04 > doc 03/01.
-Conflicts settled by that rule are listed in `ARCHITECTURE.md` §0. Anything not
-settled by it goes to `DECISIONS-REQUIRED.md` — **never invent a resolution.**
+**A phase is complete when its acceptance test has run green in CI against a real
+Postgres, driven through the application rather than around it.** Not when the
+code exists, and not when a unit test passes over a monkeypatched write. This rule
+replaced the `MILESTONE-N.md` note, which produced six documents that agreed with
+each other and disagreed with the database.
+
+Where documents conflict: `VISION-AND-PLAN.md` (plan) > doc 07 §2/§8 (invariants,
+out-of-scope) > doc 06 > doc 05 > doc 04 > doc 03/01. Conflicts settled by that
+rule are listed in `ARCHITECTURE-HLD.md` §2. Anything not settled by it goes to
+`DECISIONS-REQUIRED.md` — **never invent a resolution.**
 
 Every decision the user makes is recorded in `doc/adr/NNNN-title.md`.
 
 ## Invariants
 
-The ten in doc 07 §2 are the reason the product exists. `ARCHITECTURE.md` §1
-explains how the layering makes each structurally true rather than policy-true.
+The ten in doc 07 §2 are the reason the product exists. `ARCHITECTURE-HLD.md` §3
+explains how the layering makes each structurally true rather than policy-true;
+`VISION-AND-PLAN.md` §3 tracks which are currently proved. **Four of ten are.**
 The two that shape almost every file:
 
 - **I1** — every number is fetched or computed in code. `calculators/` is pure
@@ -73,10 +97,25 @@ settable). It does **not** need to own the schema.
 TLS spelling is per-driver: `.env` carries asyncpg's `ssl=require`;
 `tests/dburl.py` rewrites it to libpq's `sslmode=require`. Each driver rejects
 the other's spelling. Never add a second `_database_url()` to a test module —
-import `database_url()` from `tests/dburl.py`.
+import `database_url()` from `tests/dburl.py`. It resolves the URL **once, at
+import**, because `conftest.py` pins `NEXUS_DATABASE_URL` to empty for
+hermeticity — so a read at call time falls through to the `.env` fallback, which
+exists here and never in CI, and the same code then reads Neon locally and
+`None` in CI.
 
-The suite takes **~5 minutes** against Neon versus ~8 seconds locally; every
-statement is a round trip to `us-east-2`. That is expected, not a hang.
+The suite takes **~5 minutes** against Neon versus ~25 seconds against the local
+container; every statement is a round trip to `us-east-2`. That is expected, not
+a hang.
+
+**The Neon instance is five migrations ahead of this repository.**
+`alembic_version` reads `0014`; the migrations on disk head at `0009`. It holds
+`company_brain`, `question` and `question_choice`, which no migration here
+creates, and its `ck_document_status` already permits `'superseded'` — the value
+Phase 1's migration 0010 is scheduled to add. Nothing in git, on any branch, in
+any stash or worktree produced that schema. So a run against it can pass a defect
+the repository still has, and fail a fix it has made. **D23 in
+`DECISIONS-REQUIRED.md`; nothing was reset.** Run the gate against
+`scripts\db-ci.ps1` until that is answered.
 
 ## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the offline fallback)
 
@@ -117,6 +156,7 @@ connects as it.
 ```powershell
 .\scripts\setup.ps1      # one-time: venv, npm, .env
 .\scripts\api.ps1        # the API; add -Reload to watch services\api\app
+.\scripts\db-ci.ps1      # the database the gate needs; -RunGate to run ci.ps1 after it
 .\scripts\ci.ps1         # the gate: parse, ruff, mypy --strict, pytest, tsc, lint, build
 .\scripts\smoke.ps1      # every endpoint, asserting refusals as well as successes
 .\scripts\verify.ps1     # gate + health probes, for milestone validation
@@ -124,6 +164,28 @@ connects as it.
 ```
 
 Web: `npm run dev --prefix apps\web`
+
+**The gate needs a database, and refuses to run without one** (ADR 0013).
+Ninety-four tests assert database behaviour; before Phase 0 they skipped and CI
+reported green with row-level security never exercised. Now
+`tests/test_ci_contract.py` fails when no database is configured, and
+`conftest.py` fails the session naming every `requires_db` test that skipped.
+`requires_db` is a real marker under `--strict-markers`; the skip decision lives
+in exactly one place.
+
+**Use `db-ci.ps1` for the gate, not the URL in `.env`** (ADR 0014). It builds a
+throwaway database from the CI image and this repository's own `bootstrap.sql`
+and migrations, on port 55432, and points that shell at it without touching
+`.env`. `-Action down` removes it. Two reasons it exists: the native cluster has
+no pgvector, and the Neon instance in `.env` is five migrations ahead of the
+repository (see the Neon section above).
+
+Three WSL traps it works around, each invisible in the failure it produces: a
+port published to `127.0.0.1` **inside** WSL is unreachable from Windows, while
+`docker exec` connects fine — so the bootstrap succeeds and only the suite fails;
+WSL shuts the distribution down when idle, taking the database with it mid-run;
+and `pg_ctl start` hangs when its output is piped, because the `postgres` it
+spawns inherits the pipeline's stdout handle.
 
 **Stop the web dev server before running `ci.ps1`.** Both write `apps\web\.next`,
 and a concurrent `next build` fails with `PageNotFoundError: Cannot find module

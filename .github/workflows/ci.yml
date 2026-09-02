@@ -2,9 +2,14 @@ name: CI
 
 # Doc 07 §3: "Type checking and linting must pass in CI from milestone 0."
 #
-# Per ADR 0002 there is no remote yet, so nothing executes this workflow.
-# It is committed now so the gate exists the moment a remote is added, and
-# `make ci` runs the identical checks locally in the meantime.
+# Until Phase 0 this workflow ran the suite with **no database**, so 92 tests
+# skipped and the job reported green — row-level security, the product's central
+# claim, was never exercised anywhere. The `postgres` service below is the whole
+# point of this file: the api job now boots a real PostgreSQL, bootstraps the
+# unprivileged application role, migrates in both directions, and refuses to
+# pass if a database test skips (`tests/test_ci_contract.py`).
+#
+# `.\scripts\ci.ps1` runs the same checks locally.
 
 on:
   push:
@@ -23,6 +28,30 @@ jobs:
     defaults:
       run:
         working-directory: services/api
+
+    services:
+      postgres:
+        # pgvector, not plain postgres. `db/bootstrap.sql` runs
+        # `CREATE EXTENSION vector` and the official image does not ship it, so
+        # the bootstrap would fail on the first statement. ADR 0006 chose this
+        # image for the same reason locally.
+        #
+        # POSTGRES_USER is a superuser in this image — which is exactly why the
+        # bootstrap creates a separate `nexus_app`. A superuser, or any role
+        # with BYPASSRLS, ignores every policy in migration 0002 while the
+        # isolation suite passes.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nexus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +59,39 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: services/api/pyproject.toml
 
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+
+      - name: Install the postgres client
+        working-directory: .
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends postgresql-client
+
+      - name: Bootstrap the database and the application role
+        working-directory: .
+        env:
+          PGPASSWORD: postgres
+        run: |
+          APP_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$APP_PASSWORD"
+          psql -h localhost -U postgres -d nexus \
+               -v app_password="$APP_PASSWORD" -f db/bootstrap.sql
+          echo "NEXUS_DATABASE_URL=postgresql+asyncpg://nexus_app:$APP_PASSWORD@localhost:5432/nexus" \
+               >> "$GITHUB_ENV"
+
+      - name: Migrations, both directions
+        # upgrade → downgrade base → upgrade, on a clean database. A downgrade
+        # that has never run is not a downgrade; it is a function that has never
+        # been called, and the first person to need it will be mid-incident.
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
 
       - name: Lint (ruff)
         run: ruff check .
@@ -43,9 +100,14 @@ jobs:
         run: ruff format --check .
 
       - name: Types (mypy --strict)
-        run: mypy app
+        # `tests` as well as `app`. The suite is what proves the invariants, so
+        # untyped test code is untyped proof.
+        run: mypy app tests
 
       - name: Tests
+        # `pytest -q` fails if NEXUS_DATABASE_URL is missing, if any
+        # `requires_db` test skips, or if coverage falls below the floor. See
+        # tests/test_ci_contract.py and [tool.pytest.ini_options].
         run: pytest -q
 
   web:

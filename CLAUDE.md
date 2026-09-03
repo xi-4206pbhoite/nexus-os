@@ -38,7 +38,7 @@ Two PowerShell 5.1 traps already hit in this repo:
 | `ARCHITECTURE-HLD.md` | System shape, trust model, untrusted boundary, execution modes, deployment |
 | `ARCHITECTURE-LLD.md` | Modules, schema, RLS, endpoint contracts, sequences, failure paths |
 | `BUILD-STATUS.md` | Where the code actually stands, with the prioritised work list. Regenerated per phase |
-| `DECISIONS-REQUIRED.md` | Open decisions, most of them external. **D23 blocks trusting any local run** |
+| `DECISIONS-REQUIRED.md` | Open decisions, most of them now external — D3, D10, D13 |
 | `AUDIT-FINDINGS.md` | What audits found and what was done about each |
 | `doc/01`–`doc/08` | The specification. Read-only |
 | `doc/adr/` | Every decision Parul has made |
@@ -107,15 +107,24 @@ The suite takes **~5 minutes** against Neon versus ~25 seconds against the local
 container; every statement is a round trip to `us-east-2`. That is expected, not
 a hang.
 
-**The Neon instance is five migrations ahead of this repository.**
-`alembic_version` reads `0014`; the migrations on disk head at `0009`. It holds
-`company_brain`, `question` and `question_choice`, which no migration here
-creates, and its `ck_document_status` already permits `'superseded'` — the value
-Phase 1's migration 0010 is scheduled to add. Nothing in git, on any branch, in
-any stash or worktree produced that schema. So a run against it can pass a defect
-the repository still has, and fail a fix it has made. **D23 in
-`DECISIONS-REQUIRED.md`; nothing was reset.** Run the gate against
-`scripts\db-ci.ps1` until that is answered.
+**The Neon instance was found five migrations ahead of this repository** and has
+been reset to its head (D23, 3 September 2026). `alembic_version` read `0014`
+against a head of `0009`, with `company_brain`, `question` and `question_choice`
+— tables no migration here creates — and a `ck_document_status` that already
+permitted `'superseded'`, the value Phase 1 is scheduled to add. Nothing in git,
+on any branch, in any stash or worktree produced that schema.
+
+The lesson rather than the incident: **a run against a drifted database can pass
+a defect the repository still has, and fail a fix it has made.**
+`test_the_schema_is_migrated_to_head` now catches that on every run, and it is
+the test that found this. The schema was recorded before the reset in
+`doc/archive/neon-schema-before-the-d23-reset.md` — `company_brain` is Phase
+13's central table and `question`/`question_choice` are Phase 7's catalogue, so
+read it before designing either.
+
+**Still prefer `scripts\db-ci.ps1` for the gate.** Neon and the repository agree
+again, but the container is ~25 seconds against Neon's ~5 minutes, and it is
+rebuilt from `bootstrap.sql` every run, so it cannot drift at all.
 
 ## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the offline fallback)
 

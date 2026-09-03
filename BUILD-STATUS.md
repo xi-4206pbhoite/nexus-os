@@ -46,7 +46,7 @@ are the same ones, and Phase 1 is where they get fixed.
 | Phase | State | Note |
 |---|---|---|
 | **P0 — CI and the remote** | **code complete — remote verification deferred** | Everything proved locally against the CI image. `gh` is not installed on this machine, so the green Actions run has to be confirmed by Parul. See §6 |
-| P1 — Correctness | next | Fixes §4.1, §4.2, §4.6. Its migration `0010` collides in number with the Neon drift — see §5 |
+| P1 — Correctness | next | Fixes §4.1, §4.2, §4.6. Its migration is `0010`, and that number is free again since the D23 reset — see §5 |
 | P2 — Retire the preview product | pending | |
 | P3 — Identity | pending | |
 | P4 — Security | pending | |
@@ -137,8 +137,9 @@ in the allowed set. Every chunk of every upload violates
 The review queue compounds it: both queue queries and the partial index
 `ix_chunk_pending_review` filter on `'pending_review'`, which nothing writes.
 
-**Note for Phase 1:** the Neon instance in `.env` already has the four-value SQL
-vocabulary, so it would not reproduce half of this. The CI database does. See §5.
+**Note for Phase 1:** this one never differed between the two databases — both
+carry the four-value SQL vocabulary, and the drift is between that constraint and
+the Python enum. The D23 reset changed nothing here.
 
 ### 4.2 🔴 The supersede path raises a CheckViolation
 
@@ -146,7 +147,9 @@ vocabulary, so it would not reproduce half of this. The CI database does. See §
 permits only `('pending','parsing','parsed','indexed','failed','quarantined')`.
 Any upload carrying `supersedes_id` fails.
 
-**The Neon instance already permits `'superseded'`.** The repository does not.
+The lost migrations had already fixed this — `doc/archive/neon-schema-before-the-d23-reset.md`
+§3 records the widened constraint — and the D23 reset took that fix away with
+them, correctly: it belongs in a migration in this repository, with a test.
 
 ### 4.3 🔴 A new customer cannot create a workspace through the web app
 
@@ -180,31 +183,51 @@ prevent exactly this, `_required_in_deployed_envs`, has the body `return v`.
 
 ---
 
-## 5. The developer database is five migrations ahead of the repository
+## 5. The developer database was five migrations ahead — D23, resolved
 
-Found by `test_the_schema_is_migrated_to_head` on its first run, and recorded as
-**D23** in `DECISIONS-REQUIRED.md` §5c.
+Found by `test_the_schema_is_migrated_to_head` on its first run:
 
 ```
 the database is at ['0014'] but the migrations on disk head at ['0009']
 ```
 
-The Neon instance in `.env` also holds `company_brain`, `question` and
-`question_choice` — no migration here creates them — and its `ck_document_status`
-already permits `'superseded'`. Five migrations were applied to it from a working
-tree that is in no commit, no branch, no stash and no other worktree; all four
-were checked.
+The Neon instance in `.env` also held `company_brain`, `question` and
+`question_choice` — no migration here creates them — and a `ck_document_status`
+that already permitted `'superseded'`. Five migrations had been applied to it
+from a working tree that is in no commit, no branch, no stash and no worktree;
+all four were checked.
 
-**Why it matters beyond tidiness.** A local run against that database proves
-something other than what the repository contains, in both directions: a defect
-the repo still has can pass (§4.2 is exactly that), and a fix the repo has made
-can fail. Two of the 🔴 items above concern precisely the constraints that differ.
-It also means Phase 1's migration `0010` collides by number with one already
-applied there.
+**Why it mattered beyond tidiness.** A run against that database proved something
+other than what the repository contains, in both directions: a defect the repo
+still has could pass — §4.2 is exactly that case — and a fix the repo had made
+could fail.
 
-`scripts/db-ci.ps1` sidesteps it entirely — the gate no longer depends on Neon's
-contents — but what to do with those five migrations is Parul's call.
-**Nothing was reset.**
+**Resolved on Parul's instruction: the database was reset to the repository's
+head.** Its schema was recorded first, in
+`doc/archive/neon-schema-before-the-d23-reset.md`, because the work is not
+throwaway — `company_brain` is Phase 13's central table and
+`question`/`question_choice` are Phase 7's catalogue. `pg_dump` could not be used
+(client 17.11, server 18.4), so both schemas were introspected and diffed
+structurally. 241 rows went with it: 68 `app_user`, 93 `user_session`, 48
+`tenant`, 17 `domain_claim`, 14 `preview_session`, and **no `workspace` or
+`membership` row at all** — walkthrough residue, nothing that had ever completed
+registration.
+
+Verified after: columns, indexes, policies and row-security flags are identical
+to a database built from `bootstrap.sql` and migrations 0001–0009, as are all 65
+constraints once the `NOT NULL` rows Postgres 18 exposes and 17 does not are set
+aside. The full suite runs green against Neon.
+
+**Two consequences for Phase 1.** Migration numbers `0010`–`0014` are free, so
+its migration is `0010` as `doc/12` assumes. And the drift was masking three
+findings that are real again: **C1** never differed between the two databases and
+is still broken against the Python enum; **C2** is missing once more; and **M5**
+— somebody had chosen *use the persona table* and added three columns, which is a
+decision for Parul rather than an inheritance.
+
+Still open and not answerable from here: whether application code was lost with
+those five migrations. Nothing in `app/` references the three tables, so if there
+was code, it went with the tree.
 
 ---
 
@@ -213,7 +236,7 @@ contents — but what to do with those five migrations is Parul's call.
 | # | What | Blocks |
 |---|---|---|
 | **The Actions run** | Push, confirm CI is green on the remote, then confirm it goes red with `workspace_isolation` commented out of migration 0002. `gh` is not installed here, so this is the one part of Phase 0's acceptance test that could not be watched from this machine | Marking P0 complete rather than *code complete* |
-| **D23** | Reset the Neon instance to the repository's head, reconstruct `0010`–`0014`, or accept it as scratch. Recommendation: reset — the three extra tables are empty | Trusting any local run; Phase 1's migration number |
+| ~~**D23**~~ | ✅ Answered and done — Neon reset to the repository's head, schema recorded first in `doc/archive/` | — |
 | **D3** | Google API credentials | P18 (GA4, Search Console), Google sign-in |
 | **D10** | Confirm Zoho as the CRM with the first design partner | P18, P19 |
 | **D13** | Anthropic access and model tier per execution mode | P14, P20 |
@@ -232,7 +255,7 @@ directions), **M9** (coverage, `--strict-markers`, type-check `tests/`).
 
 | P | ID | Task | Phase | Current status | Dependencies | Effort |
 |---|---|---|---|---|---|---|
-| 🔴 | C1 | Reconcile `ReviewState` with `ck_chunk_review_state`; migration 0010 | P1 | §4.1 — every upload rolls back | D23 for the number | 0.5 d |
+| 🔴 | C1 | Reconcile `ReviewState` with `ck_chunk_review_state`; migration 0010 | P1 | §4.1 — every upload rolls back | none | 0.5 d |
 | 🔴 | C2 | Add `'superseded'` to `ck_document_status` | P1 | §4.2 — raises | C1 | 0.25 d |
 | 🔴 | C7 | Replace the no-op secret validator with a startup refusal | P1 | `config.py` returns `v` | none | 0.5 d |
 | 🔴 | C8 | Make `NEXUS_ENV` fail closed | P1 | §4.6 | C7 | 0.5 d |
@@ -273,7 +296,7 @@ company. ~2 days saved.
 | 🟡 | M1 | Dashboard shell + first real widgets | P15, P16 | H1, H12, D7 ✅, D8 ✅ | 12 d |
 | 🟡 | M3 | Domain claim lifecycle — recheck job, ownership transfer, revocation | P3 | none | 2 d |
 | 🟡 | M4 | Document list + signed download | P8 | H4 | 1.5 d |
-| 🟡 | M5 | Persona: use it or drop it | P4 | none | 1 d |
+| 🟡 | M5 | Persona: use it or drop it. The lost migrations had chosen *use it* — three columns and a check, recorded in `doc/archive/neon-schema-before-the-d23-reset.md` §3 | P4 | none | 1 d |
 | 🟡 | M6 | Alembic drift detection — every CHECK constraint against the enum that feeds it | P1 | C5 ✅ | 1 d |
 | 🟡 | M7 | Config hygiene — seven dead settings, `.env.example` drift | P1 | C7 | 0.5 d |
 | 🟡 | M8 | One scoping primitive — route the five implementations through `retrieval/scoped.py` | P10 | H1 | 1 d |
@@ -332,5 +355,6 @@ database timeouts, a global exception handler preserving `x-request-id`, and a C
 test comparing every `CHECK` constraint against the Python enum that feeds it —
 the exact class of §4.1 and §4.2.
 
-**Answer D23 first.** Phase 1's migration is numbered `0010`, and so is one of
-the five already applied to the Neon instance.
+Nothing blocks it. D23 is answered, the migration number is free, and
+`doc/archive/neon-schema-before-the-d23-reset.md` already contains a designed
+`'superseded'` constraint to compare against for **C2**.

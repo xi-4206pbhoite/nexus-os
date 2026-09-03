@@ -306,7 +306,11 @@ so it is written and tested rather than remembered later.
 
 ## 5c. Raised by Phase 0, 3 September 2026
 
-### D23 — The developer database is five migrations ahead of the repository *(blocks trusting any local run)*
+### ~~D23 — The developer database is five migrations ahead of the repository~~ · RESOLVED 3 September 2026
+
+**Parul: override the Neon database to match the repository.** Done, and verified
+— see *What was done* at the end of this entry. Original text kept below, because
+the schema record it produced is cited from `doc/archive/`.
 
 `tests/test_ci_contract.py::test_the_schema_is_migrated_to_head`, written in Phase 0,
 failed on its first run against the Neon instance in `.env`:
@@ -352,6 +356,47 @@ command.
 session working this repository whose commits were lost, in which case there may
 be application code missing too, not only migrations.
 
+### What was done
+
+Option (a), on Parul's instruction. In this order, so that nothing was destroyed
+before it was recorded:
+
+1. **Recorded first.** `pg_dump` was unusable — the local client is 17.11 and
+   Neon runs 18.4, and it refuses to dump from a newer server — so both schemas
+   were introspected and diffed structurally: columns, constraints, indexes,
+   policies, row-security flags. The result is
+   `doc/archive/neon-schema-before-the-d23-reset.md`, kept because the work is
+   not throwaway: `company_brain` is Phase 13's central table and
+   `question` / `question_choice` are Phase 7's question catalogue, and whoever
+   builds them should see a prior attempt rather than design it twice.
+2. **Counted what would go.** 241 rows: `app_user` 68, `user_session` 93,
+   `tenant` 48, `domain_claim` 17, `preview_session` 14, everything else zero.
+   **No `workspace` row and no `membership` row**, so no company had ever been
+   fully registered — all of it was walkthrough and smoke-run residue.
+3. **Dropped every table** in `public` with `CASCADE`, as `nexus_app`, including
+   `alembic_version`. `alembic downgrade base` was not an option: there is no
+   script for `0014`, so alembic cannot walk back from a revision it has never
+   seen.
+4. **`alembic upgrade head`** — nine migrations, exit 0.
+5. **Verified.** Columns, indexes, policies and row-security flags are now
+   *identical* to a database built from `db/bootstrap.sql` and the repository's
+   migrations; so are all 65 constraints once the `NOT NULL` rows that Postgres
+   18 exposes in `pg_constraint` and 17 does not are set aside.
+   `test_the_schema_is_migrated_to_head` passes against Neon, and the full suite
+   runs green there.
+
+**Consequences.** Migration numbers `0010`–`0014` are free again, so Phase 1's
+migration is `0010` as `doc/12` assumes. The three findings this drift had been
+masking are back to being real defects in both databases: **C1** (`review_state`
+never differed between them and is still broken against the Python enum), **C2**
+(`'superseded'` is missing again, as the repository always had it), and **M5**
+(somebody had chosen "use the persona table" and added three columns; that is a
+decision for Parul, not an inheritance).
+
+**Still open, and not answerable from here:** whether application code was lost
+along with those five migrations. Nothing in `app/` references `company_brain`,
+`question` or `question_choice`, so if there was code it went with the tree.
+
 ---
 
 ## 6. What I need from you now — Phase 0
@@ -372,7 +417,7 @@ Phase 8 planning:
 | **D20** | The research budget: pages, duration, per-source failure | doc 09 stage 7 |
 | **D21** | Whether department selection restricts the directors or only orders them | doc 09 stage 9 |
 | **D22** | Whether a member's answer binds their department or only themselves | doc 09 stage 10 |
-| **D23** | What to do about the Neon instance being five migrations ahead of the repository | Trusting any local run — see §5c |
+| ~~**D23**~~ | ✅ **Resolved** — the Neon instance was reset to the repository's head, its schema recorded first in `doc/archive/neon-schema-before-the-d23-reset.md` | — |
 
 **The git remote now exists** (`github.com/parul-bhoite/nexus-os`, `origin/main`
 at `ca819d3`), so Phase 0's one external prerequisite is met. What remains

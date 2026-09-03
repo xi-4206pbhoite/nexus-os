@@ -18,6 +18,7 @@ visible state at upload instead.
 
 from __future__ import annotations
 
+import csv
 import io
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -36,6 +37,7 @@ class DocumentKind(StrEnum):
     DOCX = "docx"
     PPTX = "pptx"
     XLSX = "xlsx"
+    CSV = "csv"
     TXT = "txt"
 
 
@@ -54,7 +56,10 @@ class ParseOutcome(StrEnum):
 OUTCOME_MESSAGE: dict[ParseOutcome, str] = {
     ParseOutcome.OK: "",
     ParseOutcome.TOO_LARGE: "This file is over 50 MB. Split it and upload the parts.",
-    ParseOutcome.UNSUPPORTED_TYPE: "Only PDF, Word, PowerPoint, Excel and text files can be read.",
+    ParseOutcome.UNSUPPORTED_TYPE: (
+        "Only PDF, Word, PowerPoint, Excel, CSV and text files can be read. "
+        "Images and scans are not read at all, so there is no point converting one."
+    ),
     ParseOutcome.CORRUPT: "This file could not be opened. It may be damaged.",
     ParseOutcome.ENCRYPTED: "This file is password-protected. Remove the password and re-upload.",
     ParseOutcome.NO_TEXT_LAYER: (
@@ -70,6 +75,7 @@ EXTENSION_KIND: dict[str, DocumentKind] = {
     ".pptx": DocumentKind.PPTX,
     ".xlsx": DocumentKind.XLSX,
     ".xlsm": DocumentKind.XLSX,
+    ".csv": DocumentKind.CSV,
     ".txt": DocumentKind.TXT,
     ".md": DocumentKind.TXT,
 }
@@ -244,6 +250,80 @@ def _parse_xlsx(data: bytes) -> list[Page]:
     return pages
 
 
+# Rows per page. A citation points at a page, so one page of ten thousand rows
+# cites as "page 1" and tells a founder checking a number nothing at all. Small
+# enough to be a useful pointer, large enough that a page keeps related rows
+# together.
+CSV_ROWS_PER_PAGE = 200
+
+
+def _parse_csv(data: bytes) -> list[Page]:
+    """Rows rendered so each value keeps its header.
+
+    **Not `_parse_txt` with a different extension.** Decoded as plain text a CSV
+    is one page of comma soup: `Muscat Trading, 4500` retrieves badly and cites
+    worse, because a chunk is shown to a human on its own and has to mean
+    something there. `Customer: Muscat Trading | Amount: 4500` does.
+
+    Two encoding details are load-bearing rather than pedantic, and both come
+    from the tool most likely to have written the file. Excel on Windows emits a
+    **UTF-8 BOM**, which unstripped corrupts the first header — silently, since
+    the file parses and only one column is wrong. And Excel in this region
+    writes **semicolons**, which read as commas give one column whose name is
+    every header: no error, no retrieval.
+    """
+    text = data.decode("utf-8-sig", errors="replace")
+    if "\x00" in text:
+        # Decoded, but not text. Better named as corrupt than indexed as
+        # replacement characters, which would retrieve as noise.
+        raise ValueError("not text")
+
+    sample = text[:4096]
+    try:
+        dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    rows = [row for row in csv.reader(io.StringIO(text), dialect) if any(c.strip() for c in row)]
+    if not rows:
+        return []
+
+    # A header row is used when there is one to use. Not every export has one,
+    # and refusing those would make the product fussier than the tooling its
+    # customers already run.
+    header = [c.strip() for c in rows[0]]
+    looks_like_header = all(h and not h.replace(".", "", 1).isdigit() for h in header)
+
+    # A header row alone is an export with no data in it. Rendering it as one
+    # row would index the column names as though they were a fact, which is the
+    # kind of content-free chunk that dilutes every retrieval it appears in.
+    if looks_like_header and len(rows) == 1:
+        return []
+
+    has_header = looks_like_header and len(rows) > 1
+    body = rows[1:] if has_header else rows
+
+    def render(row: list[str]) -> str:
+        cells = [c.strip() for c in row]
+        if not has_header:
+            return " | ".join(c for c in cells if c)
+        pairs = zip(header, cells, strict=False)
+        return " | ".join(f"{name}: {value}" for name, value in pairs if value)
+
+    pages: list[Page] = []
+    for start in range(0, len(body), CSV_ROWS_PER_PAGE):
+        block = body[start : start + CSV_ROWS_PER_PAGE]
+        number = len(pages) + 1
+        pages.append(
+            Page(
+                number=number,
+                text="\n".join(render(row) for row in block),
+                label=f"rows {start + 1}-{start + len(block)}",
+            )
+        )
+    return pages
+
+
 def _parse_txt(data: bytes) -> list[Page]:
     return [Page(number=1, text=data.decode("utf-8", errors="replace"), label="document")]
 
@@ -253,5 +333,6 @@ _PARSERS = {
     DocumentKind.DOCX: _parse_docx,
     DocumentKind.PPTX: _parse_pptx,
     DocumentKind.XLSX: _parse_xlsx,
+    DocumentKind.CSV: _parse_csv,
     DocumentKind.TXT: _parse_txt,
 }

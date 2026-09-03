@@ -245,6 +245,20 @@ jobs:
       # `migrate` is a job: it runs and exits. `api` and `worker` wait on it
       # completing successfully, so if it failed they never started and the wait
       # below is what surfaces it.
+      # Separately from the site, because the BFF returning 503 tells you the
+      # web app is up and the API is not — and that is a different problem from
+      # nothing being up at all.
+      - name: Wait for the API
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+                 exec -T api curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "the API answered"; exit 0
+            fi
+            sleep 5
+          done
+          echo "the API never answered its own health check"; exit 1
+
       - name: Wait for the site
         run: |
           for i in $(seq 1 60); do
@@ -293,9 +307,20 @@ jobs:
           NEXUS_E2E_MAIL_API: http://localhost:8025
         run: npx playwright test
 
+      # The API is the one that matters and the one a shared `--tail` truncates
+      # first, so it gets its own dump. `ps` before logs, because "container is
+      # restarting" and "container is running and refusing" look identical from
+      # the outside and want opposite investigations.
       - name: What the stack said
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --tail=200
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
+          echo "───────── api ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color api
+          echo "───────── web ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color --tail=60 web
+          echo "───────── the rest ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color --tail=60
 
       - uses: actions/upload-artifact@v4
         if: failure()

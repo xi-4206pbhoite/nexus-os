@@ -34,8 +34,27 @@ DEPLOYED = (Env.staging, Env.production)
 UNDEPLOYED = (Env.local, Env.ci)
 
 
+# What a deployed environment must supply beyond its two secrets, since P3.
+# Kept in one place so a test about cookies does not have to know about SMTP —
+# it only has to be *deployable*, which is now a slightly larger claim.
+DEPLOYABLE_EMAIL: dict[str, object] = {
+    "mailer_backend": "smtp",
+    "smtp_host": "smtp.example.invalid",
+    "public_base_url": "https://app.example.invalid",
+}
+
+
 def _settings(**overrides: object) -> Settings:
-    """Settings built from the overrides alone, with no `.env` underneath."""
+    """Settings built from the overrides alone, with no `.env` underneath.
+
+    A deployed `env` gets `DEPLOYABLE_EMAIL` folded in unless the caller
+    overrides it, because P3 made "deployed" mean "can actually send email" —
+    a staging environment left on the file backend writes every verification to
+    a directory nobody reads. Tests about cookies and `/docs` should not have to
+    restate that, and a test that *is* about it passes its own values.
+    """
+    if overrides.get("env") in DEPLOYED:
+        overrides = {**DEPLOYABLE_EMAIL, **overrides}
     return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
 
 
@@ -168,6 +187,11 @@ def test_the_api_docs_are_not_served_outside_local(
     monkeypatch.setenv("NEXUS_ENV", env.value)
     monkeypatch.setenv("NEXUS_DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/nexus")
     monkeypatch.setenv("NEXUS_STORAGE_SIGNING_SECRET", "a-real-secret")
+    # This test builds Settings from the environment rather than through
+    # `_settings`, so it has to state the deployable-email requirement itself.
+    monkeypatch.setenv("NEXUS_MAILER_BACKEND", "smtp")
+    monkeypatch.setenv("NEXUS_SMTP_HOST", "smtp.example.invalid")
+    monkeypatch.setenv("NEXUS_PUBLIC_BASE_URL", "https://app.example.invalid")
     get_settings.cache_clear()
     try:
         app = create_app()
@@ -274,3 +298,103 @@ def test_the_example_database_url_names_the_right_database() -> None:
 
 def test_the_example_file_exists_where_setup_expects_it() -> None:
     assert (Path(REPO_ROOT) / ".env.example").is_file()
+
+
+# ── Email must actually be able to send when deployed (P3) ────
+
+
+@pytest.mark.parametrize("env", DEPLOYED)
+def test_a_deployed_env_refuses_the_file_mailer(env: Env) -> None:
+    """The failure this prevents is silent, which is why it is a refusal.
+
+    `FileMailer` writes `.eml` files and returns a message id. Nothing errors,
+    nothing logs a warning, and `/health/ready` stays green — while every
+    verification email, every password reset and every invitation goes into a
+    directory on a container's ephemeral disk. The first symptom is a customer
+    saying nobody can sign up, weeks later.
+    """
+    with pytest.raises(ValidationError, match="MAILER_BACKEND=file"):
+        _settings(
+            env=env,
+            database_url=SecretStr("postgresql+asyncpg://u:p@h:5432/nexus"),
+            storage_signing_secret=SecretStr("a-real-secret"),
+            mailer_backend="file",
+            public_base_url="https://app.example.invalid",
+        )
+
+
+@pytest.mark.parametrize("env", DEPLOYED)
+def test_a_deployed_env_refuses_smtp_without_a_host(env: Env) -> None:
+    with pytest.raises(ValidationError, match="NEXUS_SMTP_HOST"):
+        _settings(
+            env=env,
+            database_url=SecretStr("postgresql+asyncpg://u:p@h:5432/nexus"),
+            storage_signing_secret=SecretStr("a-real-secret"),
+            smtp_host="",
+        )
+
+
+@pytest.mark.parametrize("env", DEPLOYED)
+def test_a_deployed_env_refuses_smtp_without_tls(env: Env) -> None:
+    """Without STARTTLS the credentials and every single-use token in the body
+    cross the network in clear text. Permitted in local and ci for a relay that
+    has none; not where real addresses are."""
+    with pytest.raises(ValidationError, match="SMTP_TLS"):
+        _settings(
+            env=env,
+            database_url=SecretStr("postgresql+asyncpg://u:p@h:5432/nexus"),
+            storage_signing_secret=SecretStr("a-real-secret"),
+            smtp_tls=False,
+        )
+
+
+@pytest.mark.parametrize("env", DEPLOYED)
+def test_a_deployed_env_refuses_a_plaintext_base_url(env: Env) -> None:
+    """Every verification and reset link is built from this value, so `http://`
+    puts single-use account tokens on the wire — and a reset token *is* the
+    account."""
+    with pytest.raises(ValidationError, match="PUBLIC_BASE_URL"):
+        _settings(
+            env=env,
+            database_url=SecretStr("postgresql+asyncpg://u:p@h:5432/nexus"),
+            storage_signing_secret=SecretStr("a-real-secret"),
+            public_base_url="http://app.example.invalid",
+        )
+
+
+@pytest.mark.parametrize("env", UNDEPLOYED)
+def test_local_and_ci_keep_the_file_mailer(env: Env) -> None:
+    """The other half, and the reason D4 gates deployment rather than
+    development: the whole verification and invitation chain works here with no
+    provider and no account."""
+    settings = _settings(env=env)
+    assert settings.mailer_backend == "file"
+    assert settings.public_base_url.startswith("http://")
+
+
+def test_the_link_base_is_configuration_and_never_the_request_host() -> None:
+    """`Host` is attacker-controlled. A verification link built from it is a
+    working account-takeover primitive: register, receive a link pointing at
+    your own host, harvest the token when the real owner clicks it.
+
+    Asserted as an absence, because the mistake is easy and the symptom is
+    nothing at all until someone exploits it.
+    """
+    from pathlib import Path as _Path
+
+    source = (_Path(__file__).resolve().parents[1] / "app" / "routes" / "auth.py").read_text(
+        encoding="utf-8"
+    )
+    assert "public_base_url" in source, "the links must come from configuration"
+
+    # Narrowly `Host` and its proxy equivalents. `request.headers.get(
+    # "user-agent")` is read one line away and is fine — it is recorded on the
+    # session row, not used to build a URL. A first version of this test
+    # forbade `request.headers` outright and failed on exactly that.
+    for header in ('"host"', "'host'", '"x-forwarded-host"', '"x-forwarded-proto"'):
+        assert header not in source.lower(), (
+            f"an auth route reads {header} — every emailed link built from it is "
+            "attacker-controlled, which is an account-takeover primitive"
+        )
+    assert "request.base_url" not in source
+    assert "request.url_for" not in source

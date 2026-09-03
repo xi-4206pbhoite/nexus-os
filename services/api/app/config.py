@@ -106,8 +106,28 @@ class Settings(BaseSettings):
     storage_signing_secret: SecretStr = Field(default=SecretStr(""))
     signed_url_ttl_seconds: int = 300
 
+    # ── Email (P3) ────────────────────────────────────────────
+    # `file` writes RFC-822 `.eml` files to `mail_root`; `smtp` sends. The file
+    # backend is not a stub — it is what makes the whole verification and
+    # invitation chain testable end to end with no provider and no account, so
+    # **D4 gates deployment rather than development**.
     mailer_backend: str = "file"
     mail_root: Path = REPO_ROOT / ".mail"
+
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = Field(default=SecretStr(""))
+    smtp_from: str = "NEXUS OS <no-reply@nexusos.local>"
+    # STARTTLS on the port above. Off only for a local relay, and the validator
+    # refuses that combination in a deployed environment.
+    smtp_tls: bool = True
+
+    # Where the links in those emails point. Not derived from the request:
+    # `Host` is attacker-controlled, and a verification link built from it is a
+    # working account-takeover primitive — the attacker registers, receives a
+    # link to their own host, and harvests the token when the real owner clicks.
+    public_base_url: str = "http://localhost:3000"
 
     # ── Embeddings (ADR 0003) ─────────────────────────────────
     embedding_model_id: str = "intfloat/multilingual-e5-large"
@@ -193,6 +213,37 @@ class Settings(BaseSettings):
                 f"{'is' if len(missing) == 1 else 'are'} empty or unset. These "
                 "are only optional in local and ci, where the app must boot "
                 "before a database exists."
+            )
+
+        # Email is separate from the secret list because what it requires
+        # depends on which backend is selected, and because getting it wrong is
+        # silent rather than loud: a deployed environment left on the `file`
+        # backend writes verification emails to a directory nobody reads, and
+        # every new account is stuck unverified with no error anywhere.
+        if self.mailer_backend == "file":
+            raise ValueError(
+                f"NEXUS_ENV={self.env.value} cannot use NEXUS_MAILER_BACKEND=file. "
+                "It writes .eml files to disk instead of sending them, so every "
+                "verification and invitation would silently go nowhere. Set "
+                "smtp, or say so explicitly by pointing mail_root at a volume "
+                "someone reads."
+            )
+        if self.mailer_backend == "smtp" and not self.smtp_host:
+            raise ValueError(
+                f"NEXUS_ENV={self.env.value} with NEXUS_MAILER_BACKEND=smtp "
+                "requires NEXUS_SMTP_HOST."
+            )
+        if self.mailer_backend == "smtp" and not self.smtp_tls:
+            raise ValueError(
+                "NEXUS_SMTP_TLS=false sends credentials and every verification "
+                "token in clear text. It is allowed in local and ci for a "
+                f"local relay; NEXUS_ENV={self.env.value} is not."
+            )
+        if self.public_base_url.startswith("http://"):
+            raise ValueError(
+                f"NEXUS_ENV={self.env.value} requires an https NEXUS_PUBLIC_BASE_URL. "
+                "Every verification and password-reset link is built from it, so "
+                "plain http puts single-use account tokens on the wire."
             )
         return self
 

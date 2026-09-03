@@ -43,6 +43,7 @@ from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.domain.access import AccessDecision, Aggregate, decide_l3_access
 from app.domain.invitations import InvitationError, check_invitation, may_administer
+from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.domain.onboarding import (
     BY_KEY,
     CATALOGUE,
@@ -650,7 +651,13 @@ async def accept_invitation(payload: AcceptIn, session: CurrentSession) -> Accep
     stranger.
     """
     async with _unscoped_session() as db:
-        result = await invites.accept(db, token=payload.token, user_id=session.user_id)
+        try:
+            result = await invites.accept(db, token=payload.token, user_id=session.user_id)
+        except UserAlreadyInAWorkspaceError as exc:
+            # `doc/11` §3.2. Raised only after the invitation has been shown to
+            # name this account, so it discloses nothing to somebody holding a
+            # forwarded link.
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
         if result.outcome is invites.AcceptOutcome.ACCEPTED and result.workspace_id:
             # Land them in the workspace they just joined. The session row is the

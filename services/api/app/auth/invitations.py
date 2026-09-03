@@ -26,6 +26,7 @@ from sqlalchemy import CursorResult, RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import hash_token, new_token
+from app.domain.membership import assert_no_live_membership
 from app.domain.scopes import Department, Role
 from app.logging import get_logger
 
@@ -268,6 +269,12 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
 
     if email is None or email != invitation.email.lower():
         return Accepted(outcome=AcceptOutcome.WRONG_ACCOUNT)
+
+    # `doc/11` §3.2. Checked after the address matches, not before: telling
+    # somebody holding a forwarded link that the *invited* account already
+    # belongs to a company would answer a question they were never entitled to
+    # ask. By this line the caller has proved the invitation names them.
+    await assert_no_live_membership(db, user_id=user_id)
 
     await db.execute(
         text("SELECT set_config('nexus.workspace_id', :ws, true)"),

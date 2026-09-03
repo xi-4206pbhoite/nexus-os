@@ -36,6 +36,7 @@ from app.connectors.domain_check import (
     new_challenge,
     normalise_domain,
 )
+from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
 
 log = get_logger(__name__)
@@ -222,6 +223,12 @@ async def create_workspace_for_claim(
     Every precondition is checked here rather than at the route, so there is one
     place to attack and one place to audit.
     """
+    # Before anything else: `doc/11` §3.2, one person one company. Checked
+    # first because it is the cheapest refusal and the one least dependent on
+    # the claim's state — a user who already belongs somewhere cannot create a
+    # workspace no matter how good their domain claim is.
+    await assert_no_live_membership(db, user_id=user_id)
+
     claim = await _load_claim(db, claim_id, user_id)
 
     if claim.state == "disputed":

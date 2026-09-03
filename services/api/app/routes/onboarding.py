@@ -35,6 +35,7 @@ from app.connectors.domain_check import (
     normalise_domain,
 )
 from app.db import _unscoped_session
+from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.logging import get_logger
 
 router = APIRouter(tags=["onboarding"])
@@ -214,6 +215,11 @@ async def create_workspace(
             workspace_id = await create_workspace_for_claim(
                 db, claim_id=claim_id, user_id=user_id, workspace_name=payload.name
             )
+        except UserAlreadyInAWorkspaceError as exc:
+            # 409, and the message is the explanation rather than a status
+            # name. `doc/11` §3.2 is a product rule a user has no way to infer,
+            # so a bare "conflict" leaves them retrying the same button.
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except DomainDisputedError as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except DomainClaimError as exc:

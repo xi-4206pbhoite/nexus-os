@@ -92,7 +92,10 @@ async def test_every_route_guarded_by_csrf_also_requires_a_session() -> None:
 
     csrf_guarded = {
         "/auth/logout",
-        "/auth/workspace",
+        # `/auth/workspace` was here until P3 deleted it — one company per
+        # person means there is never a second workspace to switch to
+        # (`doc/11` §3.2). This test is what noticed, which is the point of
+        # naming the guarded routes rather than counting them.
         "/domains",
         "/domains/{claim_id}/check",
         "/domains/{claim_id}/workspace",

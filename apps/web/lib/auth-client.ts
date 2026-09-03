@@ -51,9 +51,20 @@ export function looksSignedIn(): boolean {
 
 export class AuthError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  /**
+   * The API's `detail`, unflattened.
+   *
+   * `messageFrom` turns whatever arrived into a string for display, which is
+   * right for the common case and lossy for the uncommon one: a 409 from
+   * `/companies` carries an *object* naming the workspace whose domain is
+   * already registered, and that id is what lets the UI offer a join request
+   * instead of asking the user to retype a domain that was correct.
+   */
+  readonly detail: unknown
+  constructor(message: string, status: number, detail?: unknown) {
     super(message)
     this.status = status
+    this.detail = detail
   }
 }
 
@@ -77,7 +88,11 @@ async function post(path: string, body?: unknown): Promise<unknown> {
 
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
-    throw new AuthError(messageFrom(payload, 'Something went wrong.'), response.status)
+    throw new AuthError(
+      messageFrom(payload, 'Something went wrong.'),
+      response.status,
+      (payload as { detail?: unknown } | null)?.detail,
+    )
   }
   return payload
 }
@@ -128,4 +143,67 @@ export async function fetchSession(): Promise<SessionState | null> {
     throw new AuthError(messageFrom(payload, 'Could not load your account.'), response.status)
   }
   return payload as SessionState
+}
+
+
+// ── Company registration (P5) ─────────────────────────────────
+
+export type CompanyDetails = {
+  name: string
+  website_url: string
+  country: string
+  reporting_currency: string
+  headcount_band: string
+}
+
+export type RegisteredCompany = {
+  workspace_id: string
+  domain: string
+  domain_verified: boolean
+}
+
+/**
+ * The shape a 409 carries when the domain is already held by a verified
+ * company. It is an *offer*, not only a refusal — the caller can turn it into a
+ * join request without asking the user to retype anything.
+ */
+export type JoinOffer = {
+  detail: string
+  workspace_id: string
+  join_request_path: string
+}
+
+export class DomainTakenError extends AuthError {
+  readonly offer: JoinOffer
+  constructor(offer: JoinOffer) {
+    super(offer.detail, 409)
+    this.offer = offer
+  }
+}
+
+export async function registerCompany(
+  details: CompanyDetails,
+  { confirmSeparateCompany = false }: { confirmSeparateCompany?: boolean } = {},
+): Promise<RegisteredCompany> {
+  try {
+    return (await post('/api/companies', {
+      ...details,
+      confirm_separate_company: confirmSeparateCompany,
+    })) as RegisteredCompany
+  } catch (error) {
+    // A 409 whose detail is an object is the join offer. FastAPI puts a dict
+    // detail through unchanged, and `messageFrom` would flatten it to a string
+    // — losing the workspace id the offer exists to carry.
+    if (error instanceof AuthError && error.status === 409) {
+      const offer = error.detail
+      if (offer && typeof offer === 'object' && 'join_request_path' in offer) {
+        throw new DomainTakenError(offer as JoinOffer)
+      }
+    }
+    throw error
+  }
+}
+
+export async function requestToJoin(websiteUrl: string, message?: string): Promise<void> {
+  await post('/api/join-requests', { website_url: websiteUrl, message: message ?? null })
 }

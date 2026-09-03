@@ -11,7 +11,7 @@ import { useId, useState } from 'react'
  */
 export function Field({
   label,
-  type,
+  type = 'text',
   value,
   onChange,
   autoComplete,
@@ -22,10 +22,17 @@ export function Field({
   revealable,
 }: {
   label: string
-  type: 'email' | 'password'
+  /**
+   * Defaults to `text`. Widened from `'email' | 'password'` in P5 for the
+   * company-registration form — a company name is not a credential, and
+   * duplicating this component to say so would have meant two places to fix the
+   * `aria-describedby` reasoning below.
+   */
+  type?: 'email' | 'password' | 'text' | 'url'
   value: string
   onChange: (value: string) => void
-  autoComplete: string
+  /** Optional: only credential fields have a meaningful autofill token. */
+  autoComplete?: string
   hint?: string
   error?: string
   disabled?: boolean

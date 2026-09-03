@@ -12,8 +12,19 @@ set -euo pipefail
 
 : "${NEXUS_APP_DB_PASSWORD:?NEXUS_APP_DB_PASSWORD must be set for the app role}"
 
-# The value is quoted twice on purpose: psql substitutes :app_password
-# literally, so the SQL string quotes must be part of the variable itself.
+# The value is passed **raw**, and that is the whole fix.
+#
+# It used to be pre-quoted — `-v app_password="'${...}'"` — with a comment
+# saying psql substitutes `:app_password` literally so the quotes had to be part
+# of the value. True of `:app_password`. `bootstrap.sql` uses `:'app_password'`,
+# the *auto-quoting* form, so the value was quoted twice and the role's actual
+# password became `'ci-app-password'` with the apostrophes in it.
+#
+# Every symptom pointed away from this: CREATE ROLE succeeded, every NOTICE
+# fired, the healthcheck passed, and the first client got "password
+# authentication failed" with no clue why. The composed database has never been
+# usable by the application — nobody noticed, because nothing had ever tried to
+# connect to it until the E2E job did.
 # Refuse an empty password rather than create a role nobody can log in as.
 #
 # `psql -v app_password="''"` is valid SQL and produces a role with an empty
@@ -33,8 +44,8 @@ done
 # unset variable — which is how the composed database went without the
 # `nexus_jobs` role that company registration needs (ADR 0018).
 psql -v ON_ERROR_STOP=1 \
-     -v app_password="'${NEXUS_APP_DB_PASSWORD}'" \
-     -v jobs_password="'${NEXUS_JOBS_DB_PASSWORD:-${NEXUS_APP_DB_PASSWORD}}'" \
+     -v app_password="${NEXUS_APP_DB_PASSWORD}" \
+     -v jobs_password="${NEXUS_JOBS_DB_PASSWORD:-${NEXUS_APP_DB_PASSWORD}}" \
      --username "$POSTGRES_USER" \
      --dbname "$POSTGRES_DB" \
      -f /bootstrap/bootstrap.sql

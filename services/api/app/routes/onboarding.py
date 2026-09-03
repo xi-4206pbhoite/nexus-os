@@ -20,8 +20,10 @@ from app.auth.csrf import require_csrf
 from app.auth.domains import (
     DomainClaimError,
     DomainDisputedError,
-    check_claim,
     create_workspace_for_claim,
+    load_claim_for_check,
+    perform_check,
+    record_check_result,
     start_claim,
 )
 from app.auth.email_verification import consume
@@ -154,6 +156,14 @@ async def check_domain_claim(
 ) -> ClaimOut:
     user_id = await _require_user(nexus_session)
 
+    # Finding #11. Three steps, and the middle one holds no session.
+    #
+    # This was one `async with` around a load, a DNS or HTTP call against a host
+    # the claimant named, and a write. A slow or deliberately tarpitting target
+    # therefore held a pooled connection for its whole timeout — ten concurrent
+    # checks exhausted a pool of five and every other request in the process
+    # queued behind them. The caller chooses the target, so the trigger is not
+    # bad luck.
     async with _unscoped_session() as db:
         email = (
             await db.execute(
@@ -161,12 +171,22 @@ async def check_domain_claim(
                 {"u": str(user_id)},
             )
         ).scalar()
+        loaded = await load_claim_for_check(db, claim_id=claim_id, user_id=user_id)
 
+    if loaded.state == "verified":
+        claim = loaded
+    else:
+        # No session in scope here. Deliberately outside the block above rather
+        # than merely after a commit: a commit ends the transaction and keeps
+        # the connection, which is the resource that runs out.
         try:
-            claim = await check_claim(db, claim_id=claim_id, user_id=user_id, user_email=email)
+            result = await perform_check(loaded, user_email=email)
         except DomainClaimError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        await db.commit()
+
+        async with _unscoped_session() as db:
+            claim = await record_check_result(db, claim_id=claim_id, user_id=user_id, result=result)
+            await db.commit()
 
     return ClaimOut(
         claim_id=claim.id,

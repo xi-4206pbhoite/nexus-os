@@ -155,23 +155,41 @@ async def check_well_known_file(domain: str, challenge: str) -> CheckResult:
     netloc = f"[{target.ip}]" if ":" in target.ip else target.ip
     by_ip = f"https://{netloc}{WELL_KNOWN_PATH}"
 
+    # Finding #3. This was `client.get(...)` followed by
+    # `response.content[:FILE_MAX_BYTES]` — which caps the slice and not the
+    # read. `httpx` had already buffered the **entire** body into memory by the
+    # time the slice ran, so a server answering a domain check with a multi-GB
+    # response takes the API down with it, and the target is a host the *caller*
+    # chose. The cap read like a bound and was a formatting instruction.
+    #
+    # Streamed and capped incrementally instead, the way `research/crawler.py`
+    # has always done it. Nothing above the cap is ever held.
     try:
         async with httpx.AsyncClient(
             follow_redirects=False,  # a redirect could leave the domain entirely
             timeout=httpx.Timeout(FILE_TIMEOUT_SECONDS),
         ) as client:
-            response = await client.get(
+            async with client.stream(
+                "GET",
                 by_ip,
                 headers={"Host": target.host},
                 extensions={"sni_hostname": target.host},
-            )
+            ) as response:
+                if response.status_code != 200:
+                    return CheckResult(False, f"The file returned HTTP {response.status_code}.")
+
+                chunks: list[bytes] = []
+                read = 0
+                async for chunk in response.aiter_bytes():
+                    chunks.append(chunk)
+                    read += len(chunk)
+                    if read >= FILE_MAX_BYTES:
+                        break
+                raw = b"".join(chunks)[:FILE_MAX_BYTES]
     except httpx.HTTPError:
         return CheckResult(False, f"Could not fetch https://{domain}{WELL_KNOWN_PATH}")
 
-    if response.status_code != 200:
-        return CheckResult(False, f"The file returned HTTP {response.status_code}.")
-
-    body = response.content[:FILE_MAX_BYTES].decode("utf-8", errors="replace").strip()
+    body = raw.decode("utf-8", errors="replace").strip()
     if body == challenge or body == expected_txt_value(challenge):
         return CheckResult(True, f"File matched at {domain}{WELL_KNOWN_PATH}")
 

@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import (
@@ -67,13 +68,29 @@ async def register_user(
     if existing.first() is not None:
         raise EmailAlreadyRegisteredError(normalised)
 
-    row = await db.execute(
-        text(
-            "INSERT INTO app_user (email, password_hash, display_name)"
-            " VALUES (:email, :hash, :name) RETURNING id"
-        ),
-        {"email": normalised, "hash": password_hash, "name": display_name},
-    )
+    # Finding #10. The SELECT above is a check-then-act, and between the two a
+    # concurrent registration of the same address wins the unique index — so the
+    # INSERT raised `IntegrityError`, which reached the client as a **500**.
+    #
+    # That is not merely an ugly error. `POST /auth/register` answers identically
+    # for a new and a known address *precisely* so it cannot be used to discover
+    # who has an account; a 500 on exactly the addresses that already exist is
+    # the distinguishable reply that design exists to prevent, handed out under
+    # load. The race is narrow and the oracle is not — an attacker can widen it
+    # by registering the same address twice concurrently on purpose.
+    #
+    # Caught and converted to the same refusal the sequential path raises, so
+    # both orderings produce the one response the route knows how to answer.
+    try:
+        row = await db.execute(
+            text(
+                "INSERT INTO app_user (email, password_hash, display_name)"
+                " VALUES (:email, :hash, :name) RETURNING id"
+            ),
+            {"email": normalised, "hash": password_hash, "name": display_name},
+        )
+    except IntegrityError as exc:
+        raise EmailAlreadyRegisteredError(normalised) from exc
     return UUID(str(row.scalar_one()))
 
 

@@ -67,6 +67,13 @@ class Claim:
     state: str
     evidence: str | None
     verified_at: datetime | None
+    workspace_id: UUID | None
+    """The workspace this claim produced, once it has produced one.
+
+    Written by `create_workspace_for_claim` after the insert. Read back by that
+    same function on a *second* call so a repeat can be told from a genuine
+    dispute — see finding #9.
+    """
 
 
 # ── Starting a claim ──────────────────────────────────────────
@@ -116,6 +123,7 @@ async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, metho
         state="pending",
         evidence=None,
         verified_at=None,
+        workspace_id=None,
     )
 
 
@@ -124,7 +132,7 @@ async def _load_claim(db: AsyncSession, claim_id: UUID, user_id: UUID) -> Claim:
         await db.execute(
             text(
                 "SELECT id, domain, user_id, method, strength, challenge_token,"
-                "       state, evidence, verified_at, expires_at"
+                "       state, evidence, verified_at, expires_at, workspace_id"
                 "  FROM domain_claim WHERE id = :id AND user_id = :u"
             ),
             {"id": str(claim_id), "u": str(user_id)},
@@ -149,20 +157,34 @@ async def _load_claim(db: AsyncSession, claim_id: UUID, user_id: UUID) -> Claim:
         state=row.state,
         evidence=row.evidence,
         verified_at=row.verified_at,
+        workspace_id=UUID(str(row.workspace_id)) if row.workspace_id else None,
     )
 
 
 # ── Checking a claim ──────────────────────────────────────────
 
 
-async def check_claim(
-    db: AsyncSession, *, claim_id: UUID, user_id: UUID, user_email: str | None = None
-) -> Claim:
-    """Run the claim's method and record the outcome."""
-    claim = await _load_claim(db, claim_id, user_id)
-    if claim.state == "verified":
-        return claim
+async def load_claim_for_check(db: AsyncSession, *, claim_id: UUID, user_id: UUID) -> Claim:
+    """The database half, before the network call.
 
+    Split out for finding #11. `check_claim` used to load, then perform DNS or
+    HTTP against a host the *claimant* named, then write — all on one session,
+    so a slow or hostile target held a pooled connection for the duration. Ten
+    concurrent checks against a tarpit exhausted a pool of five, and every other
+    request in the process waited behind them.
+
+    Three calls now, with **no session held across the network I/O**:
+    `load_claim_for_check` → `perform_check` → `record_check_result`.
+    """
+    return await _load_claim(db, claim_id, user_id)
+
+
+async def perform_check(claim: Claim, *, user_email: str | None = None) -> CheckResult:
+    """The network half. Takes no session, and that is the point.
+
+    It cannot hold a connection because it is not given one — the guarantee is
+    structural rather than a comment asking the next caller to be careful.
+    """
     if claim.method is Method.DNS_TXT:
         result = await check_dns_txt(claim.domain, claim.challenge_token)
     elif claim.method is Method.FILE:
@@ -184,6 +206,19 @@ async def check_claim(
         )
     else:
         raise DomainClaimError("This verification method requires support review.")
+
+    return result
+
+
+async def record_check_result(
+    db: AsyncSession, *, claim_id: UUID, user_id: UUID, result: CheckResult
+) -> Claim:
+    """The second database half. Re-reads the claim rather than trusting the
+    one loaded before the network call — it may have expired, been disputed or
+    been verified by another request while the check was in flight."""
+    claim = await _load_claim(db, claim_id, user_id)
+    if claim.state == "verified":
+        return claim
 
     now = datetime.now(UTC)
     if result.verified:
@@ -246,6 +281,23 @@ async def create_workspace_for_claim(
             {"d": claim.domain},
         )
     ).first()
+
+    if existing is not None and existing.id == claim.workspace_id:
+        # Finding #9. The claim already produced *this* workspace, so the
+        # "existing" one is the caller's own — a double-clicked button, a
+        # retried request, a browser replaying a POST.
+        #
+        # Falling through would mark the user's own claim `disputed` against
+        # their own workspace and raise `DomainDisputedError`, which is
+        # permanent: the claim can never be used again, the workspace exists,
+        # and onboarding is stuck with no path forward that does not involve
+        # someone editing the database. The concurrent race was handled; the
+        # sequential one was not, and the sequential one is the likely one.
+        #
+        # Idempotent instead: the workspace they asked for already exists, and
+        # returning it is the honest answer to "create this".
+        log.info("workspace.create.repeat", claim_id=str(claim.id))
+        return UUID(str(existing.id))
 
     if existing is not None:
         # First verified wins. The loser gets a dispute record rather than a

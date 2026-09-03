@@ -61,7 +61,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
-| **P4 — The security surface** | 🟨 **partly done** | **C9 is complete and green in CI** — login and register rate limited per-IP and per-email, exponential backoff, identical 401, argon2 off the event loop. Four items remain: the audit trail, RLS on `domain_claim` (**blocked on D24**), five named audit findings, and session refresh. See §9 |
+| **P4 — The security surface** | 🟨 **mostly done** | C9, the audit trail, and four of the five named findings — all green in CI. **Two items remain**: RLS on `domain_claim` (**blocked on D24**) and session refresh with H9's two mirrors. Finding #5 is re-deferred with a reason. See §9 |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -314,8 +314,10 @@ exception handler), and **M6** (constraint drift detection, as
 between Phase 2's discovery of finding #15 and its fix, and is closed again —
 the three server-side timeouts now apply on Neon, not only in CI.
 
-Cleared in Phase 4 so far: **C9** (credential rate limiting, and argon2 off the
-event loop) — findings #1 and #2 with it.
+Cleared in Phase 4 so far: **C9** (credential rate limiting, argon2 off the
+event loop) and **H5** (the audit trail). Findings **#1, #2, #3, #9, #10 and
+#11** close with them; **#5 is re-deferred** with a reason rather than left
+looking open-but-forgotten.
 
 Cleared in Phase 3: **C10** (wire email delivery) and **M7** (the four config
 settings held back until email existed). `POST /auth/workspace` and
@@ -429,23 +431,30 @@ silent `local` (ADR 0015).
 
 ## 9. Next
 
-**Phase 4 — The security surface, continued.** One of five items is done.
+**Phase 4 — The security surface, continued.** Three of five items are done.
 
-**Done and green in CI** (run [33742762909](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33742762909), 693 passed, coverage 79.23%): **C9**. Login and
-register are rate limited on per-IP *and* per-email counters, with exponential
-backoff and an identical 401 in every case — never a 429, which keyed by email
-would announce that an address has an account, and never a lock, which is a
-denial-of-service vector against a named user. argon2 runs on a worker thread, so
-guessing at a non-existent account no longer stalls `/health`.
+**Done and green in CI:**
 
-**Remaining, in the order I would take them:**
+- **C9.** Login and register rate limited on per-IP *and* per-email counters,
+  exponential backoff, an identical 401 in every case — never a 429, which keyed
+  by email announces that an address has an account, and never a lock, which is a
+  denial-of-service vector against a named user. argon2 runs on a worker thread.
+- **H5, the audit trail.** Eight of nine actions write a row inside the same
+  transaction as the action. `role_changed` has no writer because the product has
+  no way to change a role; it is `UNWIRED` with P17 named, and two tests keep that
+  exemption honest. Owner and Executive read it, through the same
+  `require_executive_surface` the rest of the executive surface uses.
+- **Four of the five named findings** — #3, #9, #10, #11.
+
+**Remaining:**
 
 | Item | Note |
 |---|---|
-| **The audit trail** | The largest of the four. `audit_log` exists and nothing writes to it. One design question falls out immediately: `workspace_id` is `NOT NULL`, so a login by an account that has no workspace yet has no tenant to own the record — and a row with a NULL workspace would be invisible to the very policy that makes the log readable. Either account-level events are out of scope for this log, or they need their own stream |
 | **RLS on `domain_claim`** | **Blocked on D24.** A literal `user_id` predicate silently breaks the expiry sweep and the dispute write — both fail by matching zero rows and reporting success. Three options costed in `DECISIONS-REQUIRED.md` |
-| **Five audit findings** | #3 unbounded response buffering, #5 blocking `getaddrinfo`, #9 the double-click self-dispute, #10 the register race returning 500, #11 network I/O inside an open transaction. None blocked; all self-contained |
-| **Session refresh, and H9's mirrors** | Rolling 12-hour expiry on activity. The mirrors are down to two — `check_and_increment` and `scoped_connection` — since `expire_previews`' died with the preview product |
+| **Session refresh, and H9's mirrors** | Rolling 12-hour expiry on activity. Two mirrors left — `check_and_increment` and `scoped_connection` |
+| ~~Finding #5~~ | **Re-deferred, not skipped.** `validate_url` is synchronous and called from six places including the 89-case SSRF suite; making it `async` ripples through all of them, and `run_in_executor` inside a sync function needs a loop it cannot assume. Its reach shrank in P2 and P4 put a counter in front of the one path that reaches it. Take it with P5's work on those routes |
 
-**Nothing here is blocked except the RLS work**, and that is waiting on a
-decision rather than on engineering.
+**Account-level auditing is a gap this phase created and named.** `audit_log` is
+workspace-scoped, so registering, verifying an email, resetting a password and
+signing in with no membership leave no trail anywhere. It needs its own stream
+and is not in any phase's brief yet.

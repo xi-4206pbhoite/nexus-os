@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.workspaces import find_verified_workspace_for_domain
 from app.connectors.domain_check import (
     STRENGTH_BY_METHOD,
     CheckResult,
@@ -288,17 +289,18 @@ async def create_workspace_for_claim(
     if claim.state != "verified" or claim.verified_at is None:
         raise DomainClaimError("Verify the domain before creating a workspace.")
 
-    existing = (
-        await db.execute(
-            text(
-                "SELECT id FROM workspace"
-                " WHERE lower(domain) = :d AND domain_verified_at IS NOT NULL"
-            ),
-            {"d": claim.domain},
-        )
-    ).first()
+    # Finding #18. This was the same SELECT on `db`, and it has returned
+    # nothing since M3 — `workspace` is row-level secured and a rival claimant
+    # matches neither policy, so "first verified wins" never once executed.
+    #
+    # Nothing was corrupted by it: the partial unique index on
+    # `lower(domain) WHERE domain_verified_at IS NOT NULL` refused the second
+    # verification anyway. But it refused it as a constraint violation, so the
+    # user got a 500 where they should have been told the company already
+    # exists, and no dispute record was ever written for support to look at.
+    existing_id = await find_verified_workspace_for_domain(claim.domain)
 
-    if existing is not None and existing.id == claim.workspace_id:
+    if existing_id is not None and existing_id == claim.workspace_id:
         # Finding #9. The claim already produced *this* workspace, so the
         # "existing" one is the caller's own — a double-clicked button, a
         # retried request, a browser replaying a POST.
@@ -313,9 +315,9 @@ async def create_workspace_for_claim(
         # Idempotent instead: the workspace they asked for already exists, and
         # returning it is the honest answer to "create this".
         log.info("workspace.create.repeat", claim_id=str(claim.id))
-        return UUID(str(existing.id))
+        return existing_id
 
-    if existing is not None:
+    if existing_id is not None:
         # First verified wins. The loser gets a dispute record rather than a
         # silent failure — someone has to be able to resolve this, and a
         # support conversation needs an artefact.
@@ -335,7 +337,7 @@ async def create_workspace_for_claim(
                     "UPDATE domain_claim SET state = 'disputed', disputes_workspace_id = :ws"
                     " WHERE id = :id"
                 ),
-                {"ws": str(existing.id), "id": str(claim.id)},
+                {"ws": str(existing_id), "id": str(claim.id)},
             )
             await jobs_db.commit()
 

@@ -88,3 +88,39 @@ async def require_verified_domain(
     """
     if not await is_domain_verified(db, workspace_id=workspace_id):
         raise UnverifiedWorkspaceError(action)
+
+
+# ── Who already holds a domain (finding #18) ──────────────────
+
+
+async def find_verified_workspace_for_domain(domain: str) -> UUID | None:
+    """The workspace that has **proved** this domain, if any.
+
+    Opens its own `nexus_jobs` session rather than taking one, because the
+    answer must not depend on the caller's scope — which is the entire defect
+    this replaces. `workspace` carries FORCE RLS, so the application role sees
+    only workspaces it belongs to; a second claimant belongs to none of them, so
+    the old query returned nothing every time since M3.
+
+    Migration 0015 grants `nexus_jobs` SELECT and a role-targeted read policy.
+    What crosses back is an **id**, never a row: the caller learns that a domain
+    they just typed is taken, and nothing about the company holding it.
+
+    Only *verified* workspaces count. An unverified one has proved nothing, so
+    letting it reserve a domain would mean typing a name were enough to hold it
+    against its real owner.
+    """
+    from app.db import jobs_session
+
+    async with jobs_session() as jobs:
+        row = (
+            await jobs.execute(
+                text(
+                    "SELECT id FROM workspace"
+                    " WHERE lower(domain) = :d AND domain_verified_at IS NOT NULL"
+                ),
+                {"d": domain.strip().lower()},
+            )
+        ).first()
+
+    return UUID(str(row.id)) if row is not None else None

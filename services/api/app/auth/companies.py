@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.workspaces import find_verified_workspace_for_domain
 from app.connectors.domain_check import normalise_domain
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
@@ -113,20 +114,14 @@ async def create_company(
     domain = domain_of(details.website_url)
 
     if not allow_duplicate:
-        # Only a **verified** workspace claims a domain. An unverified one has
-        # proved nothing, so letting it block a stranger would mean typing a
-        # domain was enough to reserve it against its real owner.
-        existing = (
-            await db.execute(
-                text(
-                    "SELECT id FROM workspace"
-                    " WHERE lower(domain) = :d AND domain_verified_at IS NOT NULL"
-                ),
-                {"d": domain},
-            )
-        ).first()
-        if existing is not None:
-            raise DomainAlreadyRegisteredError(UUID(str(existing.id)), domain)
+        # Through `nexus_jobs`, not this session. `workspace` is row-level
+        # secured, so the application role sees only workspaces the caller
+        # belongs to — and someone registering a *new* company belongs to none.
+        # Asking here would return nothing every time, which is finding #18 and
+        # is exactly the bug this branch was written to avoid inheriting.
+        holder = await find_verified_workspace_for_domain(domain)
+        if holder is not None:
+            raise DomainAlreadyRegisteredError(holder, domain)
 
     tenant_id = UUID(
         str(

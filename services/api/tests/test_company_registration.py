@@ -125,6 +125,14 @@ async def test_workspace_is_created_without_a_verified_claim(app_db: None) -> No
             await db.commit()
 
             assert created.workspace_id is not None
+            # The GUC is transaction-local, so the commit above cleared it and
+            # `workspace` carries FORCE RLS — a read without it matches nothing.
+            # Same lesson `test_audit_log.py` learned: the empty result is the
+            # policy working, not the write failing.
+            await db.execute(
+                sa.text("SELECT set_config('nexus.workspace_id', :w, true)"),
+                {"w": str(created.workspace_id)},
+            )
             row = (
                 await db.execute(
                     sa.text(
@@ -248,6 +256,10 @@ async def test_unverified_workspace_cannot_invite(app_db: None) -> None:
             )
             await db.commit()
 
+            await db.execute(
+                sa.text("SELECT set_config('nexus.workspace_id', :w, true)"),
+                {"w": str(created.workspace_id)},
+            )
             with pytest.raises(UnverifiedWorkspaceError):
                 await require_verified_domain(db, workspace_id=created.workspace_id)
         finally:
@@ -288,6 +300,14 @@ async def test_a_verified_workspace_may_invite(app_db: None) -> None:
             )
             await db.commit()
 
+            # Re-scoped after the commit, for the reason above. Without this the
+            # gate reads no row, concludes "unverified", and refuses — which is
+            # the safe direction to fail and would have made this test pass for
+            # entirely the wrong reason.
+            await db.execute(
+                sa.text("SELECT set_config('nexus.workspace_id', :w, true)"),
+                {"w": str(created.workspace_id)},
+            )
             await require_verified_domain(db, workspace_id=created.workspace_id)
         finally:
             await _cleanup(db, user=user, workspace=created.workspace_id if created else None)

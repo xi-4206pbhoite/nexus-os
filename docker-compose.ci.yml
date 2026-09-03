@@ -1,22 +1,64 @@
 # CI overrides for the end-to-end job.
 #
-# Two differences from the production stack, both so the *test* can see what
-# the stack does — not so the stack behaves differently.
+# Three differences from the production stack, all so the *test* can observe
+# what the stack does — none so the stack behaves differently.
 #
-# **The mail sink is a bind mount.** The journey reads the verification link out
-# of the `.eml` the API actually wrote, which is the point of that step: reading
-# the token from the database instead would skip the delivery it exists to
-# prove. A named volume is invisible to Playwright running on the host, so in CI
-# it is a directory both can see.
+# **A real SMTP sink** (finding #24). `NEXUS_ENV=production` forbids the file
+# mailer, correctly: a production process writing `.eml` files to disk sends no
+# mail. So the journey needs mail to be genuinely sent somewhere it can read it,
+# and Mailpit is that somewhere.
 #
-# **The database is the composed one**, built from this repository's own
-# `bootstrap.sql` and migrations, so the schema under test is the schema this
-# repo produces. The `db` service already does that; this only fixes its
-# credentials to the values the job exports.
+# **With STARTTLS, because production also refuses plaintext SMTP.** That refusal
+# is right — credentials and every verification token travel over that
+# connection — so rather than weaken it for the test, Mailpit is given a
+# certificate and the API is told to trust it. The job generates both.
+#
+# **The mail sink is reachable from the host**, so Playwright can read what
+# arrived. It reads from Mailpit's API rather than the filesystem: the point of
+# that step is to prove delivery, and reading the token from the database would
+# skip the thing being proved.
 services:
+  mail:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_SMTP_TLS_CERT: /certs/mail.crt
+      MP_SMTP_TLS_KEY: /certs/mail.key
+      # Accept the STARTTLS the app offers; do not demand authentication, which
+      # this stack has no credentials for.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - ./.certs:/certs:ro
+    ports:
+      # The web UI and API, for Playwright. SMTP stays on the compose network.
+      - "127.0.0.1:8025:8025"
+
   api:
+    environment:
+      NEXUS_MAILER_BACKEND: smtp
+      NEXUS_SMTP_HOST: mail
+      NEXUS_SMTP_PORT: "1025"
+      NEXUS_SMTP_TLS: "true"
+      NEXUS_SMTP_FROM: NEXUS OS <no-reply@nexusos.test>
+      # Python's `ssl` honours this, and `smtplib.starttls()` with no argument
+      # builds a *verifying* default context — so a self-signed certificate
+      # fails unless the client is told to trust it. Only our CA is listed
+      # because nothing else in this stack speaks TLS outbound.
+      SSL_CERT_FILE: /certs/mail.crt
     volumes:
-      - ./.mail:/app/.mail
+      - ./.certs:/certs:ro
+    depends_on:
+      mail:
+        condition: service_started
+
   worker:
+    environment:
+      NEXUS_MAILER_BACKEND: smtp
+      NEXUS_SMTP_HOST: mail
+      NEXUS_SMTP_PORT: "1025"
+      NEXUS_SMTP_TLS: "true"
+      NEXUS_SMTP_FROM: NEXUS OS <no-reply@nexusos.test>
+      SSL_CERT_FILE: /certs/mail.crt
     volumes:
-      - ./.mail:/app/.mail
+      - ./.certs:/certs:ro

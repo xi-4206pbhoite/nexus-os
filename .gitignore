@@ -47,3 +47,6 @@ desktop.ini
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/blob-report/
+
+# CI-generated, never committed: the SMTP sink certificate for the E2E job.
+.certs/

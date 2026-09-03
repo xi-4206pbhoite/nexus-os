@@ -25,17 +25,54 @@ import { join } from 'node:path'
  */
 
 const MAIL_DIR = process.env.NEXUS_E2E_MAIL_DIR ?? '../../.mail'
+/** Set against the composed stack, where mail is really sent. Unset locally. */
+const MAIL_API = process.env.NEXUS_E2E_MAIL_API
 const PASSWORD = 'correct horse battery staple 9'
 
 const stamp = Date.now()
 const domain = `journey-${stamp}.om`
 const email = `founder+${stamp}@${domain}`
 
-/** The newest verification link in the mail sink.
+/**
+ * The newest verification link in whatever the stack is actually sending to.
  *
- * Decoded as mail rather than read as text: the sink writes quoted-printable,
- * so a raw read soft-wraps the token at column 76 and every regex over it
- * silently captures half a token. */
+ * Two sinks, because the stack has two shapes. Against the **composed
+ * deployment** mail is genuinely sent over SMTP to Mailpit, and is read back
+ * through its API — `NEXUS_ENV=production` forbids the file mailer (finding
+ * #24), so there is no `.eml` on disk to read and that refusal is correct.
+ * Against a **dev server** the file mailer is in use and the `.eml` is right
+ * there.
+ *
+ * Reading the token from the database would be simpler and would skip the
+ * delivery this step exists to prove.
+ */
+async function tokenFromMailApi(base: string, since: number): Promise<string> {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const list = await fetch(`${base}/api/v1/messages?limit=20`).catch(() => null)
+    if (list?.ok) {
+      const { messages = [] } = (await list.json()) as {
+        messages?: { ID: string; Created: string }[]
+      }
+      for (const message of messages) {
+        if (Date.parse(message.Created) < since - 5_000) continue
+        // The source, not the rendered body: Mailpit will happily give HTML,
+        // and the link is easier to find in the raw part than in markup.
+        const raw = await fetch(`${base}/api/v1/message/${message.ID}`).catch(() => null)
+        if (!raw?.ok) continue
+        const body = (await raw.json()) as { Text?: string; HTML?: string }
+        const match = `${body.Text ?? ''}${body.HTML ?? ''}`.match(/token=([A-Za-z0-9_\-.]{16,})/)
+        if (match) return match[1]
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1_000))
+  }
+  throw new Error(`No verification email reached ${base} within 30s`)
+}
+
+/** The file-mailer sink, decoded as mail rather than read as text: it writes
+ *  quoted-printable, so a raw read soft-wraps the token at column 76 and every
+ *  regex over it silently captures half a token. */
 function verificationToken(since: number): string {
   const deadline = Date.now() + 20_000
   while (Date.now() < deadline) {
@@ -76,7 +113,9 @@ test('a founder can go from the landing page to their dashboard', async ({ page 
   })
 
   await test.step('verify by email, using the link that was actually sent', async () => {
-    const token = verificationToken(before)
+    const token = MAIL_API
+      ? await tokenFromMailApi(MAIL_API, before)
+      : verificationToken(before)
     await page.goto(`/verify-email?token=${token}`)
     await expect(page.getByText(/verified|confirmed|signed in/i)).toBeVisible()
   })

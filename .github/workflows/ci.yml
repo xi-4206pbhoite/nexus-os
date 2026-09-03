@@ -178,22 +178,6 @@ jobs:
   e2e:
     name: E2E — the journey, against the composed stack
     runs-on: ubuntu-latest
-    # Not blocking **yet**, and this is a dated promise rather than a shrug.
-    #
-    # The stack builds and the database comes up healthy. `migrate` then refuses
-    # to start, correctly: `NEXUS_ENV=production` forbids `NEXUS_MAILER_BACKEND=file`,
-    # because a production process writing `.eml` files to disk is a production
-    # process sending no mail. The journey reads the verification link out of
-    # exactly those files.
-    #
-    # So the deployed stack needs a **real SMTP sink** — a mail-catcher service
-    # in the CI override, with the journey reading the token from its API. That
-    # is the next piece of work, and until it exists this job reports without
-    # blocking. A permanently red required job teaches people to ignore CI,
-    # which costs more than the job is worth.
-    #
-    # Remove this line the moment the sink lands.
-    continue-on-error: true
     # After the cheap jobs. A browser journey that fails because of a type error
     # wastes four minutes proving something `tsc` proves in forty seconds.
     needs: [api, web]
@@ -234,8 +218,23 @@ jobs:
       # actually wrote. The bind mount in docker-compose.ci.yml needs the
       # directory to exist first, or Docker creates it owned by root and the
       # container cannot write to it.
-      - name: Prepare the mail sink
-        run: mkdir -p .mail && chmod 777 .mail
+      # Mail is really sent over SMTP to Mailpit, because `NEXUS_ENV=production`
+      # forbids the file mailer — a production process writing `.eml` files to
+      # disk sends no mail (finding #24). Production also refuses plaintext
+      # SMTP, and that refusal is right: credentials and every verification
+      # token travel over that connection. So rather than weaken it for the
+      # test, Mailpit gets a certificate and the API is told to trust it.
+      #
+      # `subjectAltName` is not optional — Python has verified hostnames against
+      # the SAN and ignored the Common Name since 3.7, so a cert with only a CN
+      # fails with an error that looks like a trust problem and is not.
+      - name: A certificate the API will actually trust
+        run: |
+          mkdir -p .certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -keyout .certs/mail.key -out .certs/mail.crt \
+            -subj "/CN=mail" -addext "subjectAltName=DNS:mail"
+          chmod 644 .certs/mail.key .certs/mail.crt
 
       - name: Build the images
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
@@ -273,11 +272,25 @@ jobs:
           echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'Secure'
           echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'HttpOnly'
 
+      # Proves the SMTP path before the journey depends on it. If mail is not
+      # being delivered, the journey fails at "verify by email" with a timeout
+      # that says nothing about why — and the answer would be four containers
+      # away.
+      - name: Mail is being delivered
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v1/info >/dev/null 2>&1; then
+              echo "the sink is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Mailpit never answered"; exit 1
+
       - name: The journey
         working-directory: apps/web
         env:
           NEXUS_E2E_BASE_URL: https://localhost
-          NEXUS_E2E_MAIL_DIR: ../../.mail
+          NEXUS_E2E_MAIL_API: http://localhost:8025
         run: npx playwright test
 
       - name: What the stack said

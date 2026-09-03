@@ -56,7 +56,12 @@ from app.documents.classify import (
     classify_chunk,
     review_state_code,
 )
-from app.documents.limits import check_upload
+from app.documents.limits import (
+    MAX_FILE_BYTES,
+    MAX_FILES_AT_ONBOARDING,
+    WORKSPACE_QUOTA_BYTES,
+    check_upload,
+)
 from app.documents.parse import ParseOutcome, parse_document
 from app.documents.status import DocumentStatus
 from app.domain import audit
@@ -522,8 +527,35 @@ class DepartmentAsksOut(BaseModel):
     asks: list[DocumentAskOut]
 
 
-@router.get("/asks", response_model=list[DepartmentAsksOut])
-async def document_asks(scope: CurrentScope) -> list[DepartmentAsksOut]:
+class ConsentOut(BaseModel):
+    text: str
+    version: str
+
+
+class UploadStageOut(BaseModel):
+    """Everything the upload stage renders, in one response.
+
+    The consent wording travels **with** its version because the version alone
+    means nothing: "they consented" is only a defensible claim if we can say
+    what they consented to, and the screen has to show the same words the
+    document row records.
+
+    The limits come too, so the client can say "this file is over 25 MB" before
+    a founder waits for an upload to be refused. Predicting is not enforcing —
+    the server checks again, from the same numbers.
+    """
+
+    consent: ConsentOut
+    departments: list[DepartmentAsksOut]
+    max_file_bytes: int
+    max_files_at_onboarding: int
+    workspace_quota_bytes: int
+    bytes_used: int
+    files_uploaded: int
+
+
+@router.get("/asks", response_model=UploadStageOut)
+async def document_asks(scope: CurrentScope, usage: Usage) -> UploadStageOut:
     """Three named documents per department this company runs (Q35).
 
     Declared **before** `/{document_id}/download` in this module because
@@ -538,13 +570,21 @@ async def document_asks(scope: CurrentScope) -> list[DepartmentAsksOut]:
     async with _unscoped_session() as db:
         chosen = await selected_departments(db, workspace_id=scope.workspace_id)
 
-    return [
-        DepartmentAsksOut(
-            department=department.value,
-            asks=[DocumentAskOut(name=a.name, unlocks=a.unlocks) for a in asks],
-        )
-        for department, asks in asks_for(chosen).items()
-    ]
+    return UploadStageOut(
+        consent=ConsentOut(text=CONSENT_WARRANTY, version=CONSENT_TEXT_VERSION),
+        departments=[
+            DepartmentAsksOut(
+                department=department.value,
+                asks=[DocumentAskOut(name=a.name, unlocks=a.unlocks) for a in asks],
+            )
+            for department, asks in asks_for(chosen).items()
+        ],
+        max_file_bytes=MAX_FILE_BYTES,
+        max_files_at_onboarding=MAX_FILES_AT_ONBOARDING,
+        workspace_quota_bytes=WORKSPACE_QUOTA_BYTES,
+        bytes_used=usage.bytes_used,
+        files_uploaded=usage.files,
+    )
 
 
 @router.get("/{document_id}/download", response_model=DownloadOut)

@@ -143,7 +143,7 @@ def test_a_missing_file_and_a_bad_signature_answer_identically(
     """Otherwise this is an oracle for which keys exist — and a key contains
     the workspace id that owns it."""
     client, store = served
-    path, expires, sig = _parts(store.signed_url("ws/documents/one", ttl_seconds=300))
+    path, expires, _ = _parts(store.signed_url("ws/documents/one", ttl_seconds=300))
 
     tampered = client.get(path, params={"expires": expires, "sig": "not-the-signature"})
     absent_path, absent_expires, absent_sig = _parts(

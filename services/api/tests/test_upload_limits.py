@@ -18,6 +18,8 @@ a limit that is too generous refuses nothing, so no test could have caught it.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from app.documents.limits import (
@@ -167,3 +169,123 @@ def test_the_route_actually_consults_the_limits() -> None:
     assert "500 MB" in response.json()["detail"], "the refusal must name the limit that was hit"
 
     app.dependency_overrides.clear()
+
+
+def test_the_phase_acceptance_three_files_in_one_go() -> None:
+    """`doc/12` P8's acceptance test, as a test.
+
+    > Upload a price list, a scanned PDF and a 30 MB file in one go. The first
+    > indexes; the second fails with "this looks like a scanned document and
+    > cannot be read"; the third is refused before upload.
+
+    The point is that the three outcomes are **different and each is named**. A
+    batch that reports "1 of 3 uploaded" tells a founder nothing about which one
+    to fix; a batch that reports "3 uploaded" while one was a scan is the
+    product quietly losing a document the customer believes it holds.
+    """
+    from uuid import UUID, uuid4
+
+    from fastapi.testclient import TestClient
+
+    from app.deps import current_scope
+    from app.domain.scopes import Department, Role
+    from app.domain.session import ScopedSession
+    from app.main import create_app
+    from app.routes.documents import WorkspaceUsage, workspace_usage
+    from app.storage import ObjectStore, StoredObject
+
+    app = create_app()
+    app.dependency_overrides[current_scope] = lambda: ScopedSession(
+        user_id=UUID("11111111-1111-1111-1111-111111111111"),
+        workspace_id=UUID("22222222-2222-2222-2222-222222222222"),
+        tenant_id=uuid4(),
+        role=Role.OWNER,
+        departments=frozenset({Department.FINANCE}),
+    )
+    app.dependency_overrides[workspace_usage] = lambda: WorkspaceUsage(0, 0, True)
+    written: list[dict[str, object]] = []
+
+    async def capture(**kwargs: object) -> None:
+        written.append(kwargs)
+
+    import app.routes.documents as documents
+
+    class FakeStore(ObjectStore):
+        """The bytes go nowhere. This test is about which of the three files
+        reach storage at all, not about the driver — `test_document_list_and_
+        download.py` owns that."""
+
+        def put(self, key: str, data: bytes, *, content_type: str) -> StoredObject:
+            stored.append(key)
+            return StoredObject(key=key, size_bytes=len(data), content_type=content_type)
+
+        def get(self, key: str) -> bytes:
+            raise NotImplementedError
+
+        def delete(self, key: str) -> None:
+            raise NotImplementedError
+
+        def exists(self, key: str) -> bool:
+            return key in stored
+
+        def signed_url(self, key: str, *, ttl_seconds: int) -> str:
+            raise NotImplementedError
+
+    stored: list[str] = []
+    original = documents._record
+    original_store = documents._object_store
+    documents._record = capture
+    documents._object_store = lambda settings: FakeStore()
+
+    def post(name: str, payload: bytes) -> Any:
+        with TestClient(app) as client:
+            client.cookies.set("nexus_csrf", "csrf")
+            return client.post(
+                "/documents",
+                headers={"X-CSRF-Token": "csrf"},
+                files={"file": (name, payload, "application/octet-stream")},
+                data={"consent": "true"},
+            )
+
+    try:
+        # 1 — a readable price list indexes.
+        priced = post("prices.csv", b"Item,Price\nWidget,12.500\nGadget,8.250\n")
+        assert priced.status_code == 201, priced.text
+        assert priced.json()["status"] == "indexed"
+
+        # 2 — a PDF with no text layer is stored and named, not silently lost.
+        # A one-page PDF whose only content stream draws nothing: it parses, and
+        # there is nothing to read, which is exactly what a scan looks like.
+        scan = post("scan.pdf", _blank_pdf())
+        assert scan.status_code == 201, scan.text
+        body = scan.json()
+        assert body["status"] != "indexed"
+        assert "scan" in body["message"].lower(), body
+
+        # 3 — 30 MB is refused, and the refusal names the limit.
+        too_big = post("huge.pdf", b"%PDF-1.4\n" + b"0" * (30 * MB))
+        assert too_big.status_code == 413
+        assert "25 MB" in too_big.json()["detail"]
+
+        # The refused file was never stored. "Refused before upload" has to mean
+        # no row and no bytes, or the quota it protects is already spent.
+        assert [w["filename"] for w in written] == ["prices.csv", "scan.pdf"]
+        # And nothing was written to storage for it either.
+        assert len(stored) == 2
+    finally:
+        documents._record = original
+        documents._object_store = original_store
+        app.dependency_overrides.clear()
+
+
+def _blank_pdf() -> bytes:
+    """A valid one-page PDF with no text — what a scan parses as."""
+    import pypdf
+
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    import io
+
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()

@@ -32,6 +32,11 @@ const API_BASE = process.env.NEXUS_API_BASE_URL ?? 'http://127.0.0.1:8000'
 /** Comfortably above a round trip to a managed database, well below a hang. */
 const TIMEOUT_MS = 15_000
 
+/** Uploads get longer. A 25 MB file on a slow connection is a slow request,
+ *  not a broken one, and the JSON budget would refuse the uploads most worth
+ *  waiting for. */
+const UPLOAD_TIMEOUT_MS = 120_000
+
 /**
  * Headers copied from the browser to the API. An allowlist rather than a
  * pass-through: forwarding whatever arrives would let a caller set
@@ -118,5 +123,60 @@ export async function readJson(request: Request): Promise<Record<string, unknown
     return body && typeof body === 'object' ? (body as Record<string, unknown>) : null
   } catch {
     return null
+  }
+}
+
+/**
+ * Forwards a multipart upload to the API, body untouched.
+ *
+ * `proxyToApi` cannot do this: it JSON-stringifies whatever it is given, which
+ * turns a file into the string `[object Object]` and loses the boundary the
+ * multipart parser needs. So the body streams through as-is and the API's own
+ * `UploadFile` parser sees exactly what the browser sent.
+ *
+ * **`Content-Type` is copied from the request, not set here.** It carries the
+ * multipart boundary, which is generated per-request by the browser — writing a
+ * fixed one would break every upload, and omitting it makes the API read the
+ * body as a single unnamed blob.
+ *
+ * The timeout is longer than the JSON one. A 25 MB file over a hotel connection
+ * is a slow request rather than a broken one, and cutting it off at fifteen
+ * seconds would refuse the uploads most worth waiting for.
+ */
+export async function proxyUpload(
+  request: Request,
+  { path, unavailable }: { path: string; unavailable: string },
+): Promise<NextResponse> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+  try {
+    const headers = new Headers()
+    const cookie = request.headers.get('cookie')
+    if (cookie) headers.set('Cookie', cookie)
+    const csrf = request.headers.get('x-csrf-token')
+    if (csrf) headers.set('X-CSRF-Token', csrf)
+    const contentType = request.headers.get('content-type')
+    if (contentType) headers.set('Content-Type', contentType)
+
+    const upstream = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: await request.arrayBuffer(),
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+
+    const responseHeaders = new Headers()
+    forwardCookies(upstream, responseHeaders)
+    responseHeaders.set('cache-control', 'no-store')
+
+    const payload = await upstream.json().catch(() => ({ detail: 'Unexpected response.' }))
+    return NextResponse.json(payload, { status: upstream.status, headers: responseHeaders })
+  } catch {
+    return NextResponse.json({ detail: unavailable }, { status: 503 })
+  } finally {
+    clearTimeout(timeout)
   }
 }

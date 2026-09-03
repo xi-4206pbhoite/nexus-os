@@ -23,7 +23,7 @@ def test_every_department_has_exactly_three() -> None:
 
 
 def test_every_ask_names_a_document_and_what_it_turns_on() -> None:
-    """"Upload some documents" gets nothing. A founder uploads a file when they
+    """ "Upload some documents" gets nothing. A founder uploads a file when they
     can picture which file and can see what it buys them."""
     for department, asks in ASKS.items():
         for ask in asks:

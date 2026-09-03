@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { OfferingTile } from '@/components/dashboard/OfferingTile'
+import { Button } from '@/components/ui/Button'
 import { Logo } from '@/components/ui/Logo'
 import { AuthError } from '@/lib/auth-client'
 import {
@@ -103,6 +104,8 @@ export function DirectorPage({ department }: { department: string }) {
 
 function Ready({ director, all }: { director: Director; all: Dashboards }) {
   const planned = director.offerings.filter((o) => o.state === 'planned').length
+  const unanswered = all.directors.find((d) => d.department === director.department)
+    ?.unanswered_questions
 
   return (
     <>
@@ -129,6 +132,28 @@ function Ready({ director, all }: { director: Director; all: Dashboards }) {
           {director.remit}
         </p>
       </header>
+
+      {/* Q27. The deferral, made concrete on the director it holds back.
+          A dashboard that cannot compute anything yet should say what would
+          turn it on — and the answer is specific and reachable, not "connect
+          some data". `unanswered` is `undefined` against an older API, which is
+          why the check is a comparison and not a truthiness test: zero must
+          only ever mean zero. */}
+      {typeof unanswered === 'number' && unanswered > 0 ? (
+        <div className="mt-6 rounded-2xl border border-steel-300 bg-steel-100 px-5 py-5">
+          <p className="font-mono text-2xs uppercase tracking-[0.12em] text-steel-700">
+            What turns this on
+          </p>
+          <p className="mt-2 max-w-prose text-[0.95rem] leading-relaxed text-ink-800">
+            <strong>{unanswered}</strong> question{unanswered === 1 ? '' : 's'} about how this
+            department works {unanswered === 1 ? 'is' : 'are'} still unanswered. Each one is
+            named with what it changes, so none of them is a form field.
+          </p>
+          <div className="mt-4">
+            <Button href={`/onboarding/${director.department}`}>Answer them</Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Doc 05 §1's shell is not built. Saying which parts are missing is the
           honest version of a header strip with an empty score in it. */}

@@ -45,6 +45,14 @@ export type DirectorSummary = {
   scoreable: boolean
   path: string
   offering_count: number
+  /**
+   * Q27. How many of this department's questions are still unanswered.
+   *
+   * Optional because a client built against an older API gets `undefined`
+   * rather than a wrong zero — and zero would read as "nothing to do", which is
+   * the one thing it must not say when the truth is unknown.
+   */
+  unanswered_questions?: number
 }
 
 export type Dashboards = {

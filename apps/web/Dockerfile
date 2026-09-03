@@ -26,7 +26,10 @@ ENV NODE_ENV=production \
 # hundred megabytes of build-time tooling in a runtime image.
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
+# No `COPY public` — this app has no `public/` directory. Adding one "just in
+# case" fails the build outright, which is what it did: BuildKit cannot copy a
+# path that is not there, and a Dockerfile written from a template rather than
+# from the repository is a Dockerfile that has never been built.
 
 # The node image already has a `node` user at 1000. Using it is one less
 # account than creating our own, and the point is only that it is not root.

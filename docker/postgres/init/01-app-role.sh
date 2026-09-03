@@ -14,6 +14,20 @@ set -euo pipefail
 
 # The value is quoted twice on purpose: psql substitutes :app_password
 # literally, so the SQL string quotes must be part of the variable itself.
+# Refuse an empty password rather than create a role nobody can log in as.
+#
+# `psql -v app_password="''"` is valid SQL and produces a role with an empty
+# password — the bootstrap prints CREATE ROLE, every verification NOTICE fires,
+# the healthcheck passes, and the first client gets "password authentication
+# failed" with nothing anywhere explaining why. Loud beats silent.
+for required in NEXUS_APP_DB_PASSWORD; do
+  if [ -z "${!required:-}" ]; then
+    echo "FATAL: $required is empty. The app role would be created with no" >&2
+    echo "password and every client would fail to authenticate." >&2
+    exit 1
+  fi
+done
+
 # `jobs_password` as well as `app_password`. `bootstrap.sql` creates both roles
 # and references `:'jobs_password'`, so omitting it fails the whole script on an
 # unset variable — which is how the composed database went without the

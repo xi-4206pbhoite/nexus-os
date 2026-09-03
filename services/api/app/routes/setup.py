@@ -362,6 +362,7 @@ async def store_answer(
     question: Question,
     value: Any,
     is_assumption: bool = False,
+    answer_state: str = "bound",
 ) -> None:
     """Write one answer, classified from the catalogue.
 
@@ -383,8 +384,8 @@ async def store_answer(
         text(
             "INSERT INTO onboarding_answer"
             " (workspace_id, answered_by_user_id, question_key, value, scope,"
-            "  department, is_assumption)"
-            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d, :assumed)"
+            "  department, is_assumption, answer_state)"
+            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d, :assumed, :state)"
             " ON CONFLICT (workspace_id, question_key) DO UPDATE"
             "    SET value = EXCLUDED.value,"
             "        scope = EXCLUDED.scope,"
@@ -394,6 +395,10 @@ async def store_answer(
             # flag. An assumption that outlives the answer correcting it would
             # keep the Brain hedging about a fact it now knows.
             "        is_assumption = EXCLUDED.is_assumption,"
+            # A Manager confirming a Contributor's proposal overwrites the row
+            # and its state together. Leaving the state behind would keep a
+            # confirmed fact invisible to every reader using BINDING_ONLY_SQL.
+            "        answer_state = EXCLUDED.answer_state,"
             "        updated_at = now()"
         ),
         {
@@ -402,6 +407,7 @@ async def store_answer(
             "k": question.key,
             "v": json.dumps(value),
             "assumed": is_assumption,
+            "state": answer_state,
             "s": scope_code(answer_scope),
             "d": department.value if department else None,
         },

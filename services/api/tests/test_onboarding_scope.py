@@ -59,8 +59,9 @@ def test_keys_are_unique() -> None:
     null through a function written to make that impossible.
     """
     from app.domain.onboarding import COMPANY_QUESTIONS, CONFIRMABLE_FROM_CRAWL
+    from app.domain.question_bank import BANK
 
-    everything = [*CATALOGUE, *COMPANY_QUESTIONS, *CONFIRMABLE_FROM_CRAWL]
+    everything = [*CATALOGUE, *COMPANY_QUESTIONS, *CONFIRMABLE_FROM_CRAWL, *BANK]
     keys = [q.key for q in everything]
     duplicates = sorted({k for k in keys if keys.count(k) > 1})
 

@@ -325,3 +325,17 @@ BY_DEPARTMENT: dict[Department, tuple[Question, ...]] = {
     Department.HR: PEOPLE,
     Department.STRATEGY: STRATEGY,
 }
+
+
+# The bank joins the lookup `store_answer` resolves scope through.
+#
+# Registered here rather than in `onboarding.py` because this module imports
+# from that one, and the reverse import would be circular. Same pattern the
+# company stage uses, and the same hazard: a key defined in two places is a
+# lookup that silently returns whichever was registered last, which is exactly
+# what happened in P6. `tests/test_question_bank.py` asserts no bank key
+# collides with the company stage, and `test_onboarding_scope.py` asserts
+# uniqueness across every source.
+from app.domain.onboarding import BY_KEY  # noqa: E402
+
+BY_KEY.update({q.key: q for q in BANK})

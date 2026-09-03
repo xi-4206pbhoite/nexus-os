@@ -25,6 +25,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from app.db import _unscoped_session
 from app.deps import CurrentScope
@@ -40,7 +41,12 @@ from app.domain.dashboards import (
     state_for,
     unlock_sentence,
 )
+from app.domain.department_answers import BINDING_ONLY_SQL
 from app.domain.departments import selected_departments
+
+# Aliased: `BY_DEPARTMENT` already means the dashboard *offerings* here, and two
+# dictionaries with one name is how the wrong one gets read.
+from app.domain.question_bank import BY_DEPARTMENT as QUESTIONS_BY_DEPARTMENT
 from app.domain.scopes import Department
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
@@ -90,6 +96,18 @@ class DirectorSummary(BaseModel):
     scoreable: bool
     path: str
     offering_count: int
+    unanswered_questions: int = 0
+    """Q27. How many of this department's questions are still unanswered.
+
+    The founder answers their own department during onboarding and defers the
+    rest, so most directors start here with a number. It belongs on the director
+    because that is where the deferral becomes concrete: a dashboard that cannot
+    yet compute anything should say **what would turn it on**, not sit empty.
+
+    Zero means the block is complete. A director with no block — the Chief of
+    Staff — is always zero, because it consumes the other directors rather than
+    asking anything of its own.
+    """
 
 
 class DashboardsOut(BaseModel):
@@ -120,6 +138,16 @@ def _offering_out(offering: Offering, connected: frozenset[Source]) -> OfferingO
     )
 
 
+# Built once, so the `S608` justification sits in one place. `BINDING_ONLY_SQL`
+# is a module constant and never input; it is interpolated because every reader
+# of department facts must use the *same* predicate, and a copy per query is how
+# one ends up missing it.
+_ANSWERED_SQL = (
+    "SELECT department, question_key FROM onboarding_answer"  # noqa: S608
+    f" WHERE department IS NOT NULL AND {BINDING_ONLY_SQL}"
+)
+
+
 async def running_departments(scope: CurrentScope) -> frozenset[Department]:
     """Which departments this company runs (Q22/Q63).
 
@@ -136,6 +164,30 @@ async def running_departments(scope: CurrentScope) -> frozenset[Department]:
 RunningDepartments = Annotated[frozenset[Department], Depends(running_departments)]
 
 
+async def answered_questions(scope: CurrentScope) -> frozenset[tuple[str, str]]:
+    """Which department questions already have a **binding** answer (Q27).
+
+    A dependency for the same reason `running_departments` is one, and this is
+    the second time that lesson has been learned in this file: reading it inline
+    turns four permission unit tests into integration tests, because they assert
+    the lattice and have no database.
+
+    One query for the whole dashboard list rather than one per director — six
+    round trips to render a screen is how it becomes slow before it holds any
+    data.
+    """
+    async with _unscoped_session() as db:
+        await db.execute(
+            text("SELECT set_config('nexus.workspace_id', :w, true)"),
+            {"w": str(scope.workspace_id)},
+        )
+        rows = (await db.execute(text(_ANSWERED_SQL))).all()
+    return frozenset((r.department, r.question_key) for r in rows)
+
+
+AnsweredQuestions = Annotated[frozenset[tuple[str, str]], Depends(answered_questions)]
+
+
 def _reachable(scope: CurrentScope, director: Director) -> bool:
     if director.executive_only:
         return scope.can_see_executive_surface
@@ -143,7 +195,9 @@ def _reachable(scope: CurrentScope, director: Director) -> bool:
 
 
 @router.get("", response_model=DashboardsOut)
-async def list_dashboards(scope: CurrentScope, chosen: RunningDepartments) -> DashboardsOut:
+async def list_dashboards(
+    scope: CurrentScope, chosen: RunningDepartments, answered: AnsweredQuestions
+) -> DashboardsOut:
     """The directors this caller may open, and where to land them.
 
     **Two filters, and they answer different questions.** Which departments the
@@ -171,6 +225,16 @@ async def list_dashboards(scope: CurrentScope, chosen: RunningDepartments) -> Da
         departments=scope.departments,
     )
 
+    def outstanding(department: Department) -> int:
+        # A proposed answer does not count as answered. A block that looked
+        # complete because a Contributor filled it in would hide the very thing
+        # the review gate exists to surface.
+        return sum(
+            1
+            for q in QUESTIONS_BY_DEPARTMENT.get(department, ())
+            if (department.value, q.key) not in answered
+        )
+
     return DashboardsOut(
         directors=[
             DirectorSummary(
@@ -179,6 +243,7 @@ async def list_dashboards(scope: CurrentScope, chosen: RunningDepartments) -> Da
                 remit=d.remit,
                 scoreable=d.scoreable,
                 path=_path(d.department),
+                unanswered_questions=outstanding(d.department),
                 offering_count=len(d.offerings),
             )
             for d in visible

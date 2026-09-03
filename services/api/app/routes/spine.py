@@ -13,11 +13,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.auth.csrf import require_csrf
 from app.db import _unscoped_session
 from app.deps import CurrentScope
 from app.domain import audit
+from app.domain.department_answers import (
+    AnswerState,
+    may_answer_department_question,
+    state_for_answer,
+)
 from app.domain.departments import (
     RECOMMENDED_MAX,
     RECOMMENDED_MIN,
@@ -27,6 +33,7 @@ from app.domain.departments import (
 )
 from app.domain.onboarding import BY_KEY, COMPANY_QUESTIONS, resolve_answer
 from app.domain.progress import STAGES, complete_stage, progress_for
+from app.domain.question_bank import BY_DEPARTMENT
 from app.domain.scopes import Department
 from app.logging import get_logger
 from app.retrieval.scoped import scoped_connection
@@ -191,3 +198,155 @@ async def save_departments(payload: DepartmentsIn, scope: CurrentScope) -> Stage
         stages=list(STAGES),
         finished=progress.finished,
     )
+
+
+# ── Department blocks (P7) ────────────────────────────────────
+
+
+class BlockQuestionOut(BaseModel):
+    key: str
+    prompt: str
+    why: str
+    answer_type: str
+    consumed_by: str
+    answered: bool
+    proposed: bool
+
+
+class BlockOut(BaseModel):
+    department: str
+    may_answer: bool
+    binds: bool
+    questions: list[BlockQuestionOut]
+
+
+@router.get("/departments/{department}/block", response_model=BlockOut)
+async def read_department_block(department: str, scope: CurrentScope) -> BlockOut:
+    """One department's questions, and whether this caller may answer them.
+
+    `may_answer` and `binds` are returned rather than left for the client to
+    infer. A UI deciding for itself would be guessing at an authority rule, and
+    the guesses that matter are the wrong ones — a Contributor shown a form that
+    binds, or a Manager shown a read-only block for their own department.
+
+    Served to callers who **may not** answer it, with `may_answer: false`.
+    Hiding it would leave a Contributor unable to see what their own department
+    has been asked, which is information they are entitled to and which the
+    stored answers already carry.
+    """
+    try:
+        target = Department(department)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such department.") from exc
+
+    questions = BY_DEPARTMENT.get(target, ())
+    if not questions:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No block for that department.")
+
+    async with scoped_connection(scope) as db:
+        rows = {
+            r.question_key: r.answer_state
+            for r in (
+                await db.execute(
+                    text(
+                        "SELECT question_key, answer_state FROM onboarding_answer"
+                        " WHERE department = :d"
+                    ),
+                    {"d": target.value},
+                )
+            ).all()
+        }
+
+    return BlockOut(
+        department=target.value,
+        may_answer=may_answer_department_question(
+            role=scope.role, caller_departments=scope.departments, department=target
+        ),
+        binds=state_for_answer(role=scope.role, caller_departments=scope.departments)
+        is AnswerState.BOUND,
+        questions=[
+            BlockQuestionOut(
+                key=q.key,
+                prompt=q.prompt,
+                why=q.why,
+                answer_type=q.answer_type.value,
+                consumed_by=q.consumed_by,
+                answered=q.key in rows,
+                proposed=rows.get(q.key) == AnswerState.PROPOSED.value,
+            )
+            for q in questions
+        ],
+    )
+
+
+class BlockAnswer(BaseModel):
+    key: str
+    value: str = Field(max_length=4000)
+
+
+class BlockAnswersIn(BaseModel):
+    answers: list[BlockAnswer]
+
+
+@router.post(
+    "/departments/{department}/block",
+    response_model=BlockOut,
+    dependencies=[Depends(require_csrf)],
+)
+async def answer_department_block(
+    department: str, payload: BlockAnswersIn, scope: CurrentScope
+) -> BlockOut:
+    """Answer a department's questions.
+
+    Two checks, and they are not the same check (Q30, Q31). **May you answer at
+    all** depends on which department this is — a Sales Manager may not
+    configure Finance. **Does your answer bind** depends on your role alone — a
+    Contributor's is proposed and waits for the review gate.
+
+    A Contributor reaches this route legitimately, because proposing *is*
+    answering. So the check permits them for their own department and
+    `state_for_answer` decides what the row means, rather than the route
+    refusing and the product losing a proposal it asked for.
+    """
+    try:
+        target = Department(department)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such department.") from exc
+
+    binding = state_for_answer(role=scope.role, caller_departments=scope.departments)
+
+    permitted = may_answer_department_question(
+        role=scope.role, caller_departments=scope.departments, department=target
+    ) or (binding is AnswerState.PROPOSED and target in scope.departments)
+
+    if not permitted:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"You cannot answer the {target.value} questions. A department's "
+            "questions are answered by its manager, or by an owner.",
+        )
+
+    bank = {q.key: q for q in BY_DEPARTMENT.get(target, ())}
+    unknown = [a.key for a in payload.answers if a.key not in bank]
+    if unknown:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Not questions in this block: {sorted(unknown)}"
+        )
+
+    async with scoped_connection(scope) as db:
+        for answer in payload.answers:
+            await store_answer(
+                db,
+                caller=scope,
+                question=bank[answer.key],
+                value=answer.value,
+                answer_state=binding.value,
+            )
+
+    log.info(
+        "onboarding.block.answered",
+        department=target.value,
+        binding=binding.value,
+        count=len(payload.answers),
+    )
+    return await read_department_block(target.value, scope)

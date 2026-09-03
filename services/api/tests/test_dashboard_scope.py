@@ -57,9 +57,15 @@ def _override_departments(app: object) -> None:
     written for; `tests/test_onboarding_spine.py` covers the other.
     """
     from app.domain.scopes import Department
-    from app.routes.dashboards import running_departments
+    from app.routes.dashboards import answered_questions, running_departments
 
     app.dependency_overrides[running_departments] = lambda: frozenset(Department)  # type: ignore[attr-defined]
+    # Q27's counter reads the database too. Overridden for the same reason: these
+    # tests are about the permission lattice, and `test_question_bank.py` covers
+    # what the counter counts.
+    # A lambda, not `frozenset` itself — FastAPI introspects the signature of
+    # an override, and a builtin type has none.
+    app.dependency_overrides[answered_questions] = lambda: frozenset()  # type: ignore[attr-defined]
 
 
 @pytest.fixture

@@ -62,7 +62,8 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
 | **P4 — The security surface** | ✅ **complete** | Run [33749908728](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33749908728) — 713 passed, migration 0013 both directions. Credential rate limiting, argon2 off the loop, the audit trail, session refresh, RLS on `domain_claim` with the `nexus_jobs` role (D24 → ADR 0018), and four of the five named findings. #5 and half of H9 are re-deferred with reasons |
-| P5 — Company registration | next | Domain-claim UI and the three missing BFF proxies — **C3**, and the largest single thing between the code and a user |
+| **P5 — Company registration** | ✅ **complete** | Run [33763536577](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33763536577) — 722 passed. `POST /companies`, join requests, `/register-company`, verification moved to Settings, migrations 0014–0015. **C3 closes**: the authenticated product has a front door |
+| P6 — The onboarding spine | next | And it changes shape — ADR 0019 makes the AI questionnaire a renderer over `doc/08`'s catalogue, with the form as the floor |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -162,7 +163,7 @@ Migration 0010 permits `'superseded'` and retires `'parsing'`/`'parsed'`, which
 nothing had ever written. `DocumentStatus` is the enum the constraint had never
 had. Proved by superseding a document and reading the earlier row's status back.
 
-### 4.3 🔴 A new customer cannot create a workspace through the web app
+### 4.3 ✅ ~~A new customer cannot create a workspace through the web app~~ — fixed
 
 **Phase 5.** `POST /domains/{claim_id}/workspace` is the only path that inserts
 a workspace, and there is no `apps/web/app/api/domains/` directory, no claim
@@ -337,7 +338,6 @@ exist yet.
 
 | P | ID | Task | Phase | Current status | Dependencies | Effort |
 |---|---|---|---|---|---|---|
-| 🔴 | C3 | Domain-claim UI + the three missing BFF proxies | P5 | §4.3 — no authed entry point exists | none | 3 d |
 | 🔴 | C4 | End-to-end test of the real signup journey against Postgres | P9 | Does not exist | C1, C2, C3 | 2 d |
 | 🔴 | C11 | API and web container images + a runnable stack | P9 | No Dockerfile anywhere | none | 2 d |
 

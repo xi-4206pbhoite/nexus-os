@@ -61,7 +61,8 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
-| **P4 — The security surface** | 🟨 **one item from done** | C9, the audit trail, four of the five named findings and session refresh — all green in CI. **Only RLS on `domain_claim` remains, and it is blocked on D24.** Findings #5 and half of H9 are re-deferred with reasons. See §9 |
+| **P4 — The security surface** | ✅ **complete** | Run [33749908728](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33749908728) — 713 passed, migration 0013 both directions. Credential rate limiting, argon2 off the loop, the audit trail, session refresh, RLS on `domain_claim` with the `nexus_jobs` role (D24 → ADR 0018), and four of the five named findings. #5 and half of H9 are re-deferred with reasons |
+| P5 — Company registration | next | Domain-claim UI and the three missing BFF proxies — **C3**, and the largest single thing between the code and a user |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -450,7 +451,6 @@ silent `local` (ADR 0015).
 
 | Item | Note |
 |---|---|
-| **RLS on `domain_claim`** | The only item left, and **blocked on D24.** A literal `user_id` predicate silently breaks the expiry sweep and the dispute write — both fail by matching zero rows and reporting success. Three options costed in `DECISIONS-REQUIRED.md` |
 | ~~Session refresh~~ | **Done.** One `UPDATE ... RETURNING` that resolves and refreshes together, extending only once the window is more than half spent |
 | ~~Finding #5~~ | **Re-deferred, not skipped.** `validate_url` is synchronous and called from six places including the 89-case SSRF suite; making it `async` ripples through all of them, and `run_in_executor` inside a sync function needs a loop it cannot assume. Its reach shrank in P2 and P4 put a counter in front of the one path that reaches it. Take it with P5's work on those routes |
 

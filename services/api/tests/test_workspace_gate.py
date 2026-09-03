@@ -71,6 +71,12 @@ def make_claim(
     verified: bool = True,
 ) -> UUID:
     cid = uuid4()
+    # Since migration 0013 `domain_claim` is row-level secured on `user_id`, so
+    # an insert with no `nexus.user_id` fails the WITH CHECK. Set here rather
+    # than in each test: this is the seam every claim in this file goes through,
+    # and it mirrors what `app/auth/domains.py:_scope_to_user` does at the two
+    # doors into that module.
+    conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user_id)})
     conn.execute(
         text(
             "INSERT INTO domain_claim"
@@ -221,13 +227,23 @@ def test_two_different_people_may_each_attempt_the_same_domain(conn: Connection)
     real owner simply by starting a claim first.
     """
     domain = f"shared-{uuid4().hex[:8]}.om"
-    make_claim(conn, user_id=make_user(conn), domain=domain, state="pending", verified=False)
-    make_claim(conn, user_id=make_user(conn), domain=domain, state="pending", verified=False)
+    alice, bob = make_user(conn), make_user(conn)
+    # Both inserts succeeding *is* the assertion — the partial unique index
+    # permits two pending claims on one domain, and a violation would raise
+    # here rather than return a count.
+    make_claim(conn, user_id=alice, domain=domain, state="pending", verified=False)
+    make_claim(conn, user_id=bob, domain=domain, state="pending", verified=False)
 
-    count = conn.execute(
-        text("SELECT count(*) FROM domain_claim WHERE lower(domain) = :d"), {"d": domain}
-    ).scalar()
-    assert count == 2
+    # Counted per user, not in total. Since migration 0013 neither of them can
+    # see the other's attempt, which is the point of the policy and is worth
+    # asserting here: two people racing for a domain must not be able to
+    # discover each other through it.
+    for user in (alice, bob):
+        conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user)})
+        mine = conn.execute(
+            text("SELECT count(*) FROM domain_claim WHERE lower(domain) = :d"), {"d": domain}
+        ).scalar()
+        assert mine == 1
 
 
 # ── Weak claims flag review ───────────────────────────────────

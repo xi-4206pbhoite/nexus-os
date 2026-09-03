@@ -321,6 +321,19 @@ so it is written and tested rather than remembered later.
 
 ---
 
+## 5e. Raised by Phase 5, 3 September 2026
+
+### ~~D25 — Should onboarding be an AI questionnaire instead of a form?~~ — **answered: wrap, not replace**
+
+**Wrap.** The `doc/08` catalogue stays the source of truth for what must be
+known; the model decides how to ask it, and with no API key the plain form is the
+floor. ADR 0011 is therefore unamended — a deployment without a model still
+onboards customers — and each answer keeps the scope tag that decides where it is
+stored. A **persona** is derived from the answers, citing the answer behind each
+field. Recorded as **ADR 0019**; lands in P6/P7, not P5.
+
+---
+
 ## 5d. Raised by Phase 4, 3 September 2026
 
 ### ~~D24 — RLS on `domain_claim`~~ — **answered: option B**, 3 September 2026

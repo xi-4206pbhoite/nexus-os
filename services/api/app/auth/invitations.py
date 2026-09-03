@@ -26,6 +26,7 @@ from sqlalchemy import CursorResult, RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import hash_token, new_token
+from app.auth.workspaces import require_verified_domain
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.domain.scopes import Department, Role
@@ -127,6 +128,12 @@ async def issue(
     links for one person is two different roles they might end up with,
     depending on which email they happen to open.
     """
+    # D19. Creation no longer waits for verification, but **inviting does** —
+    # an invitation adds somebody to a company, and the only evidence that this
+    # is your company is the domain. Without it anyone could register `acme.om`,
+    # invite `finance@acme.om`, and receive whatever that person brought along.
+    await require_verified_domain(db, workspace_id=workspace_id, action="inviting people")
+
     token = new_token()
     normalised = email.strip().lower()
 

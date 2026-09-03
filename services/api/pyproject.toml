@@ -145,13 +145,12 @@ filterwarnings = ["error"]
 #   modules previously kept `requires_db` as a local `skipif` variable, so a
 #   tenth misspelling it would have applied nothing at all.
 # --strict-config: an unknown key in this table is an error too.
-# --cov-fail-under: the floor, set to the measured figure (74.2% at Phase 0,
-#   branch coverage) and
-#   rounded down so it cannot flake on a fraction. It exists to make a deleted
-#   test visible, so it goes up and never down. A coverage figure is not a
-#   quality claim - 74% here sits beside four of ten invariants proved - it is
-#   only a ratchet.
-addopts = "--strict-markers --strict-config --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=74"
+# --cov-fail-under: the floor, branch coverage, set to the measured figure
+#   rounded down so it cannot flake on a fraction. 74 at Phase 0, raised to 75
+#   at Phase 1 (measured 75.85). It exists to make a deleted test visible, so
+#   it goes up and never down. A coverage figure is not a quality claim - 75%
+#   here sits beside four of ten invariants proved - it is only a ratchet.
+addopts = "--strict-markers --strict-config --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=75"
 
 # Skipped only when no database is configured — and conftest.py fails the
 # session when that happens, because a database test that does not run proves

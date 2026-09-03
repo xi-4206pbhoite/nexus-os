@@ -273,18 +273,20 @@ it belongs in a separate worker.
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.
-**Twelve findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
+**Ten findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
 the register had said fourteen for a month after Phase 1 closed three of them.
 The three worth knowing before touching auth, the database or deployment:
 
 - **argon2 blocks the event loop** and **`/auth/login` has no rate limit** (both
   D14, both still open).
-- **Three of the four database timeouts do not apply on Neon** (finding #15).
-  `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout`
-  go out in asyncpg's `server_settings` and come back from `SHOW` as the
-  defaults; `application_name`, sent the same way, arrives. Neon's proxy filters
-  the startup packet. The code is right and CI is green because **CI runs plain
-  Postgres**, so this is invisible there and real in production.
+- **Never put a GUC in asyncpg's `server_settings` and assume it arrived**
+  (finding #15, fixed). That dictionary becomes the connection's startup packet,
+  and **Neon's proxy filters it to an allowlist** — `statement_timeout`,
+  `lock_timeout` and `idle_in_transaction_session_timeout` were silently dropped
+  for months while `application_name`, sent in the same dictionary, arrived. The
+  three are now issued with `set_config(name, $n, false)` on the pool's `connect`
+  event. `app/db.py` explains why `set_config` rather than `SET`, and why `false`
+  rather than `true`.
 
 - **The dependency set is unpinned** (finding #16). There is no lockfile, so CI
   resolves a different environment than any developer every single run. Two

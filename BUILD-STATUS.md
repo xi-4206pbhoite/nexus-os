@@ -29,7 +29,7 @@ analysis of a company they do not own.
 | A deployed env with no secrets | booted | refuses to start, naming the variable |
 | A missing `NEXUS_ENV` | insecure cookies, public `/docs` | refuses to start |
 | An unhandled exception | uncorrelatable 500 | carries the `x-request-id` in the log |
-| Database timeouts | none set | four in code — and see §4.7, three are inert on Neon |
+| Database timeouts | none set | four, and proved live **on Neon** as well as in CI — §4.7 |
 | A server-side fetch without a session | `POST /preview`, open to anyone | none, and an import-graph test fails the build if one returns |
 | Data held about a company with no account | retained under a TTL and a sweep | **not collected** — D9 void |
 
@@ -39,7 +39,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 
 | Area | Complete | Basis |
 |---|---|---|
-| Foundation — repo, config, logging, health, CI, migrations | **95%** | Real Postgres in CI both directions; config fails closed; correlated 500s. **Was 100%** — the database timeouts turn out not to apply on Neon (§4.7), so a claim this table made has been withdrawn |
+| Foundation — repo, config, logging, health, CI, migrations | **100%** | Real Postgres in CI both directions; config fails closed; correlated 500s; four database timeouts, live on Neon as well as CI. Briefly 95% — §4.7 was open between its discovery and its fix |
 | Tenancy, RLS, auth, sessions, roles→scope | **82%** | Proved in CI. Cookies now `Secure` outside local. Gaps: no login rate limit, no audit trail written |
 | ~~Preview audit (unauthenticated)~~ | **retired** | Deleted in Phase 2 (`doc/11` Q1). The entry point is gone; the engine moved to `app/research/` |
 | Research engine (`app/research/`) | **35%** | Guard, single-page crawler and extractor, all behind authentication and all passing from the new location. No job model, no multi-page crawl, no callers — P11 |
@@ -58,7 +58,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | Phase | State | Note |
 |---|---|---|
 | **P0 — CI and the remote** | ✅ complete, with one claim withdrawn | The workflow, the Postgres service and the skip guard are all real and all working. But **"confirmed green on the remote" was wrong**: the run it referred to was red, and every run since has been, because `mypy` failed on an undeclared `bs4` before pytest was reached. The isolation tests were confirmed executed *locally*. They first ran on a remote runner in Phase 2 |
-| **P1 — Correctness** | ✅ complete, with one claim withdrawn | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test all hold. The fourth item — four database timeouts — is correct in code and green in CI, and **does not take effect on Neon** (§4.7, finding #15) |
+| **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ **complete, green in CI** | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | P3 — Identity | next | Email that actually sends, password reset, one person to one company. Blocked on nothing — `doc/11` settled SMTP |
 | P4 — Security | pending | |
@@ -154,10 +154,12 @@ Both are the same class of defect: **an unpinned dependency set means CI resolve
 a different environment than the developer, and the difference is only visible on
 the run.** The workflow has no lockfile, so this will recur.
 
-**Locally, against Neon, seven tests still fail — and that is the database, not
-the code.** The developer's instance is at migration `0009`; head is `0011`. Four
-failures are Phase 1's `0010` missing and `0011` not yet applied; the other three
-are §4.7. CI, on a clean Postgres migrated both directions, is **green**.
+**Locally, against Neon, four tests still fail — and that is the database, not
+the code.** The developer's instance is at migration `0009`; head is `0011`, so
+Phase 1's `0010` and Phase 2's `0011` are both unapplied. `alembic upgrade head`
+clears all four. CI, on a clean Postgres migrated both directions, is **green**.
+
+Three more failed here until §4.7 was fixed in this phase.
 
 ### What the tests found that the plan did not anticipate
 
@@ -186,10 +188,10 @@ are §4.7. CI, on a clean Postgres migrated both directions, is **green**.
 
 ## 4. What is still broken
 
-Three of the seven are cleared. Of the four that remain, three are *absent
-features* rather than broken ones — nothing there fails at runtime; it simply
-does not exist yet, and each has a phase. The fourth, §4.7, is new: it fails
-silently, in production only, and CI cannot see it.
+Four of the seven are cleared. The three that remain are all *absent features*
+rather than broken ones — nothing here fails at runtime; it simply does not exist
+yet, and each has a phase. §4.7 was both found and fixed inside Phase 2: it
+failed silently, in production only, where CI could not see it.
 
 ### 4.1 ✅ ~~Every document upload fails at the chunk INSERT~~ — fixed
 
@@ -240,7 +242,7 @@ nothing blocks it.
 deployed environment needs, and `is_local` is replaced by `cookies_secure` and
 `docs_enabled`, which differ on `ci`. ADR 0015.
 
-### 4.7 🔴 Three of the four database timeouts do not exist in production
+### 4.7 ✅ ~~Three of the four database timeouts do not exist in production~~ — fixed
 
 **Found in Phase 2, and it is a Phase 1 claim being withdrawn.** `app/db.py`
 passes `statement_timeout`, `lock_timeout` and
@@ -256,9 +258,22 @@ present where it matters. This is the same lesson as D23 in a new costume: a tes
 whose result depends on which Postgres it met can be green in the place nobody
 deploys to and red in the place everyone does.
 
-The fix is not Phase 2's — it needs a decision between issuing the three as `SET`
-on connection checkout and accepting client-side `command_timeout` alone.
-Recorded as **finding #15** in `AUDIT-FINDINGS.md`.
+**Fixed.** The three are issued with `set_config(name, $n, false)` on the pool's
+`connect` event — once per physical connection, so one extra round trip per
+connection rather than per request. `set_config` rather than `SET` because `SET`
+takes no parameters and these values come from configuration; `false` rather than
+`true` because a `SET LOCAL` would be discarded by the first commit and leave
+every later user of that pooled connection unprotected.
+
+`application_name` deliberately stays in `server_settings`. It was never dropped,
+and it is the control that distinguishes "the startup packet is filtered" from
+"the connection is broken" if this regresses.
+
+**Proved by planting the regression.** Putting the three back into
+`server_settings` turns `test_db_timeouts.py` red against Neon — and leaves it
+green against stock PostgreSQL, which is the honest shape of the problem and is
+now stated in that file's docstring. No run against one database can prove a
+claim about the other.
 
 ---
 
@@ -322,7 +337,6 @@ was code, it went with the tree.
 | **D13** | Anthropic access and model tier per execution mode | P14, P20 |
 | **`doc/11` §5.4** | The five business calls — B2, B3 and B5 shape the build | P16 onward |
 | **Neon is two migrations behind** | It is at `0009`; head is `0011`. `alembic upgrade head` applies Phase 1's `0010` and Phase 2's `0011`, and **0011 drops `preview_session`** — so it is a data-destroying step on your database and was deliberately left for you | Running the suite locally |
-| **Finding #15** | Three database timeouts are inert on Neon (§4.7). `SET` on checkout, or accept `command_timeout` alone? | Nothing yet — but it is a production gap today |
 
 Everything else `doc/11` settled. Nothing in Phase 3 is blocked.
 
@@ -336,8 +350,9 @@ directions), **M9** (coverage, `--strict-markers`, type-check `tests/`).
 Cleared in Phase 1: **C1** (`review_state`), **C2** (`'superseded'`), **C7** (the
 no-op validator), **C8** (`NEXUS_ENV` fails closed), **H10** (correlated
 exception handler), and **M6** (constraint drift detection, as
-`test_constraint_enum_parity.py`). **C12** (database timeouts) is reopened —
-correct in code, inert on Neon, §4.7.
+`test_constraint_enum_parity.py`). **C12** (database timeouts) was reopened
+between Phase 2's discovery of finding #15 and its fix, and is closed again —
+the three server-side timeouts now apply on Neon, not only in CI.
 
 Cleared in Phase 2: the preview retirement itself, which had no work-item ID —
 it is `doc/12` §Phase 2 in full. **H9** shrank rather than closed: of its three
@@ -345,8 +360,8 @@ test mirrors,
 `expire_previews`' died with the code it mirrored, and `check_and_increment` and
 `scoped_connection` remain.
 
-**One critical item now fails at runtime again** — C12, and only on Neon.
-Everything else 🔴 below is a feature that does not exist yet.
+**Nothing critical fails at runtime.** Every 🔴 below is a feature that does not
+exist yet.
 
 ### 🔴 Critical — blocks the application from being usable
 
@@ -357,7 +372,6 @@ Everything else 🔴 below is a feature that does not exist yet.
 | 🔴 | C9 | Rate-limit `/auth/login` and `/auth/register`; argon2 off the event loop | P4 | Unbounded; ~40–80 ms sync CPU per attempt | D14 settled | 1.5 d |
 | 🔴 | C10 | Wire email delivery | P3 | §4.5 | D4 settled — SMTP | 1.5 d |
 | 🔴 | C11 | API and web container images + a runnable stack | P9 | No Dockerfile anywhere | none | 2 d |
-| 🔴 | C12 | **Reopened** — make the three server-side database timeouts apply on Neon | P4 | §4.7. Correct in code, green in CI, discarded by Neon's proxy. `command_timeout` is the only one live in production | a decision: `SET` on checkout vs accept one timeout | 0.5 d |
 
 ### 🟠 High — required for a complete, production-ready application
 
@@ -461,11 +475,8 @@ unreachable, and an invitation is delivered by the inviter copy-pasting a raw
 token URL. It also picks up **M7**, the four config settings held back until
 email exists.
 
-Two things Phase 2 hands it, neither of them blocking:
+One thing Phase 2 hands it, and it is not blocking:
 
-- **Finding #15 / C12** (§4.7). Three database timeouts are inert on Neon. It
-  needs a decision from you, not a phase; it is filed against P4 but it is a
-  production gap today, so it can be taken earlier if you would rather.
 - **Neon is two migrations behind.** `alembic upgrade head` applies `0010` and
   `0011`. `0011` drops `preview_session`, so it destroys data on your database —
   which is why Phase 2 did not run it for you.

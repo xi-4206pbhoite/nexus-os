@@ -33,6 +33,14 @@ jobs:
       run:
         working-directory: services/api
 
+    env:
+      # `NEXUS_ENV` has no default since Phase 1 — a forgotten one used to mean
+      # `local`, which served /docs publicly and set secure=False on both
+      # cookies. So it must be set here: `conftest.py` pins it for tests, but
+      # `alembic` builds Settings of its own and there is no `.env` in CI, so
+      # the migration step would refuse to start without this line.
+      NEXUS_ENV: ci
+
     services:
       postgres:
         # pgvector, not plain postgres. `db/bootstrap.sql` runs

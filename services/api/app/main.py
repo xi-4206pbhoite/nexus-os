@@ -8,8 +8,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 
 from app.config import Env, get_settings
+from app.db import get_engine
 from app.health import router as health_router
 from app.jobs.scheduler import build_scheduler
 from app.logging import configure_logging, get_logger, request_id_var
@@ -44,6 +46,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     if scheduler is not None:
         scheduler.shutdown(wait=False)
+
+    # Close the connection pool on the way out. The process previously exited
+    # with its connections open and let the operating system reap them, which
+    # on a serverless Postgres billed by connection-time is a cost, and in a
+    # test is worse: the engine's transports were created on this loop, so
+    # anything closing them afterwards does so on a loop that no longer exists
+    # and Python reports an unraisable exception from `__del__`.
+    #
+    # Guarded on the cache being populated rather than on the setting, so a
+    # process that never touched the database does not construct an engine
+    # purely to dispose of it.
+    if get_engine.cache_info().currsize:
+        await get_engine().dispose()
+
     log.info("api.shutdown")
 
 
@@ -54,9 +70,9 @@ def create_app() -> FastAPI:
         title="NEXUS OS API",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/docs" if settings.is_local else None,
+        docs_url="/docs" if settings.docs_enabled else None,
         redoc_url=None,
-        openapi_url="/openapi.json" if settings.is_local else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
 
     @app.middleware("http")
@@ -69,6 +85,18 @@ def create_app() -> FastAPI:
         from a client-supplied header, per doc 06 §2.1.
         """
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+
+        # On the scope as well as in the ContextVar, and the scope is the half
+        # that matters for a failure. When `call_next` raises, the `finally`
+        # below resets the ContextVar *before* Starlette's ServerErrorMiddleware
+        # — which sits outside this middleware — invokes the exception handler,
+        # so a handler reading the var sees nothing. `request.state` is backed by
+        # the ASGI scope, which both share.
+        #
+        # The header is also never set on that path, because the line after
+        # `call_next` is never reached. The exception handler sets it instead.
+        request.state.request_id = request_id
+
         token = request_id_var.set(request_id)
         try:
             response = await call_next(request)
@@ -76,6 +104,52 @@ def create_app() -> FastAPI:
             request_id_var.reset(token)
         response.headers["x-request-id"] = request_id
         return response
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+        """Return a correlatable 500 that gives nothing away.
+
+        Two requirements pulling in opposite directions. The response must carry
+        **enough** to find the log line — before this there was no handler at
+        all, so a customer reporting "it broke" could only be matched to a log
+        entry by timestamp. And it must carry **nothing else**: an error body is
+        the one place a stack trace reaches an unauthenticated stranger, and in
+        this product an exception message can name a customer's file, column or
+        table. `exc` is therefore logged and never rendered.
+
+        `exc_info` is passed explicitly so the traceback reaches the log through
+        `format_exc_info`, which is the processor that would otherwise drop it.
+
+        Registered for `Exception` only. FastAPI's own `HTTPException` keeps its
+        handler, because this product's refusals are load-bearing — routing a
+        deliberate 403 through a generic 500 would hide the thing the
+        permission tests exist to prove.
+        """
+        # From the scope, not the ContextVar: see the note in `request_context`.
+        # Generated as a last resort so that a 500 is always correlatable, even
+        # if the failure happened before the middleware ran — and it is logged
+        # with the same value, because a reference number that appears in no log
+        # line is a reference to nothing.
+        request_id = str(getattr(request.state, "request_id", "") or uuid.uuid4().hex)
+
+        log.error(
+            "request.unhandled_exception",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            exc_info=exc,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": (
+                    "Something went wrong on our side. Quote the request_id "
+                    "below if you contact us."
+                ),
+                "request_id": request_id,
+            },
+            headers={"x-request-id": request_id},
+        )
 
     app.include_router(health_router)
     app.include_router(auth_router)

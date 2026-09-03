@@ -64,7 +64,7 @@ def _set_session_cookie(response: Response, token: str, settings: Settings) -> s
         value=token,
         max_age=settings.session_max_age_seconds,
         httponly=True,  # not reachable from JavaScript, so XSS cannot exfiltrate it
-        secure=not settings.is_local,  # plain HTTP only in local development
+        secure=settings.cookies_secure,  # plain HTTP only in local and ci
         samesite="lax",  # blocks cross-site POSTs while keeping normal navigation
         path="/",
     )
@@ -78,7 +78,7 @@ def _set_session_cookie(response: Response, token: str, settings: Settings) -> s
         value=csrf,
         max_age=settings.session_max_age_seconds,
         httponly=False,
-        secure=not settings.is_local,
+        secure=settings.cookies_secure,
         samesite="lax",
         path="/",
     )

@@ -18,7 +18,7 @@ def test_settings_are_pinned_regardless_of_local_env() -> None:
     settings = get_settings()
     assert settings.env.value == "ci"
     assert settings.database_url.get_secret_value() == ""
-    assert settings.session_secret.get_secret_value() == ""
+    assert settings.storage_signing_secret.get_secret_value() == ""
 
 
 def test_storage_probe_does_not_write_into_the_repo() -> None:
@@ -32,7 +32,7 @@ def test_storage_probe_does_not_write_into_the_repo() -> None:
 def test_required_secrets_fail_loudly_rather_than_defaulting() -> None:
     """A missing secret must raise, never silently run on a placeholder."""
     settings = get_settings()
-    for name in ("database_url", "session_secret", "storage_signing_secret"):
+    for name in ("database_url", "storage_signing_secret"):
         try:
             settings.require(name)
         except RuntimeError as exc:

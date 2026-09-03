@@ -25,7 +25,6 @@ from tests.dburl import database_url
 
 _PINNED = (
     "NEXUS_DATABASE_URL",
-    "NEXUS_SESSION_SECRET",
     "NEXUS_STORAGE_SIGNING_SECRET",
     # Omitted at first, and it showed: on a machine with a key in `.env` the
     # readiness probe reported `language_model: ok` during tests, so

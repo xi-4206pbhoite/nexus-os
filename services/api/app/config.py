@@ -10,7 +10,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -31,7 +31,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    env: Env = Env.local
+    env: Env
+    """Required, with no default, and that is the fix for a real failure.
+
+    It defaulted to `local`, and `is_local` also answered true for `ci`. So a
+    deployment that simply forgot `NEXUS_ENV` served `/docs` and
+    `/openapi.json` publicly and set `secure=False` on both the session and the
+    CSRF cookie, over the internet, on a product holding company financials.
+    Nothing failed and nothing logged.
+
+    The plan offered two fixes — drop `ci` from `is_local`, or make cookie
+    security independent of it. Neither addresses the default, which is what
+    turned a forgotten variable into insecure cookies. So there is no default:
+    a missing `NEXUS_ENV` is a startup error naming the variable, rather than a
+    silent choice of the most permissive environment. See ADR 0015.
+    """
+
     debug: bool = False
 
     # ── Database ──────────────────────────────────────────────
@@ -40,9 +55,48 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         description="postgresql+asyncpg://... — must have the vector extension available",
     )
+    db_transaction_pooler: bool = False
+    """Whether the URL points at a transaction-mode pooler.
+
+    Was inferred from `"-pooler" in url`, which is a guess about a hostname: it
+    is true of Neon's pooled endpoint and of nothing else. PgBouncer in front of
+    RDS, a Cloud SQL proxy, or Neon renaming the endpoint all leave it silently
+    false — and the failure it prevents is `prepared statement ... does not
+    exist` appearing only under concurrency."""
+
+    db_statement_timeout: str = "15s"
+    """Bounds a single query. A request that hangs otherwise holds one of five
+    pooled connections until the process restarts."""
+
+    db_lock_timeout: str = "5s"
+    """Bounds *waiting* for a lock, which the statement timeout does not: a
+    statement blocked on a lock has not begun executing."""
+
+    db_idle_in_transaction_timeout: str = "30s"
+    """Bounds an open transaction doing nothing — the shape a request that died
+    mid-flight leaves behind, and the one that blocks every later migration."""
+
+    db_command_timeout_seconds: float = 20.0
+    """asyncpg's own, client-side. It still fires when the server is
+    unreachable rather than merely slow, which a server-side timeout cannot."""
+
+    db_pool_timeout_seconds: float = 10.0
+    """How long a request waits for a connection from the pool before failing.
+    SQLAlchemy's default is 30s, which is longer than most callers will wait."""
 
     # ── Sessions ──────────────────────────────────────────────
-    session_secret: SecretStr = Field(default=SecretStr(""))
+    #
+    # There is deliberately no `session_secret`. One was declared here,
+    # documented in `.env.example`, required by the validator below, pinned in
+    # `conftest.py` — and read by no line of code in the repository. A
+    # required-looking secret that nothing reads is worse than none: it teaches
+    # whoever provisions the environment that the list of secrets is
+    # approximate.
+    #
+    # Nothing signs a session token because there is nothing to sign. The token
+    # is 256 bits of CSPRNG output and only its SHA-256 hash is stored, so
+    # presenting it is authenticated by the lookup itself; an HMAC over a random
+    # opaque string adds no property. See `app/auth/tokens.py` and ADR 0015.
     session_cookie_name: str = "nexus_session"
     session_max_age_seconds: int = 60 * 60 * 12
 
@@ -107,16 +161,67 @@ class Settings(BaseSettings):
     crawl_timeout_seconds: int = 15
     crawl_max_redirects: int = 5
 
-    @field_validator("database_url", "session_secret", "storage_signing_secret")
-    @classmethod
-    def _required_in_deployed_envs(cls, v: SecretStr) -> SecretStr:
-        # Deliberately permissive locally so the app boots for health checks
-        # before a database exists; strict everywhere else.
-        return v
+    # Secrets the application cannot work without once it is deployed.
+    # `anthropic_api_key` is deliberately absent: an empty key is a supported
+    # operating state (ADR 0011), and listing it here would turn "no AI yet"
+    # into a refusal to boot.
+    _DEPLOYED_REQUIRES = ("database_url", "storage_signing_secret")
+
+    @model_validator(mode="after")
+    def _required_in_deployed_envs(self) -> Settings:
+        """Refuse to start in a deployed environment with a secret missing.
+
+        This replaces a `field_validator` over the same secrets whose body was
+        `return v`. It enforced nothing while presenting as a security control,
+        which is worse than its absence, because absence is visible.
+
+        A model validator rather than a field one for two reasons: it can read
+        `env` without depending on field declaration order, and it can name
+        every missing secret in one error. A deployment fixing them one restart
+        at a time is a deployment being told the truth slowly.
+
+        Local and `ci` stay permissive on purpose, so the process boots and
+        answers a health check before a database exists. That was always the
+        intent; only the enforcement everywhere else was missing.
+        """
+        if self.env in (Env.local, Env.ci):
+            return self
+
+        missing = [
+            f"NEXUS_{name.upper()}"
+            for name in self._DEPLOYED_REQUIRES
+            if not getattr(self, name).get_secret_value()
+        ]
+        if missing:
+            names = " and ".join(missing) if len(missing) < 3 else ", ".join(missing)
+            raise ValueError(
+                f"NEXUS_ENV={self.env.value} requires {names}, which "
+                f"{'is' if len(missing) == 1 else 'are'} empty or unset. These "
+                "are only optional in local and ci, where the app must boot "
+                "before a database exists."
+            )
+        return self
 
     @property
-    def is_local(self) -> bool:
-        return self.env in (Env.local, Env.ci)
+    def cookies_secure(self) -> bool:
+        """Whether the session and CSRF cookies carry `Secure`.
+
+        False for `local` and `ci`, which are served over plain HTTP. Safe now
+        only because `env` has no default: previously a forgotten `NEXUS_ENV`
+        landed here as `local` and produced insecure cookies in production.
+        """
+        return self.env not in (Env.local, Env.ci)
+
+    @property
+    def docs_enabled(self) -> bool:
+        """Whether `/docs` and `/openapi.json` are served.
+
+        Narrower than cookie security, and deliberately so. Together they
+        enumerate every endpoint and its schema; a developer's machine is the
+        only place that is a convenience rather than a disclosure. `ci` is
+        excluded — nobody reads `/docs` there.
+        """
+        return self.env is Env.local
 
     @property
     def trusted_proxies(self) -> frozenset[str]:

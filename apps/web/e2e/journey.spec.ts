@@ -126,6 +126,30 @@ test('a founder can go from the landing page to their dashboard', async ({ page 
     await fill(page, /^password/i, PASSWORD)
     await page.getByRole('button', { name: /sign in/i }).click()
     await expect(page).not.toHaveURL(/\/login/)
+
+    // **The reason the reverse proxy exists**, asserted where a session
+    // actually exists. It was a separate curl step against a *failed* login —
+    // which sets no cookies at all, correctly, so the check could only ever
+    // pass by accident. A cookie assertion needs a cookie.
+    //
+    // `Secure` is what makes the proxy load-bearing rather than decorative: a
+    // session cookie marked secure is not sent over plain HTTP, so a stack
+    // serving the app without TLS would pass every other step here and still be
+    // undeployable. `HttpOnly` keeps the session out of reach of any script
+    // that finds its way onto the page.
+    if ((process.env.NEXUS_E2E_BASE_URL ?? '').startsWith('https://')) {
+      const cookies = await page.context().cookies()
+      const session = cookies.find((c) => c.name === 'nexus_session')
+      expect(session, 'the sign-in set no session cookie').toBeTruthy()
+      expect(session!.secure, 'nexus_session must be Secure').toBe(true)
+      expect(session!.httpOnly, 'nexus_session must be HttpOnly').toBe(true)
+
+      const csrf = cookies.find((c) => c.name === 'nexus_csrf')
+      expect(csrf, 'the sign-in set no CSRF cookie').toBeTruthy()
+      expect(csrf!.secure, 'nexus_csrf must be Secure').toBe(true)
+      // Deliberately *not* HttpOnly: the browser has to read it to echo it back
+      // in the header, which is the whole double-submit mechanism.
+    }
   })
 
   await test.step('register the company', async () => {

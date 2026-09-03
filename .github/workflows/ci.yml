@@ -269,23 +269,6 @@ jobs:
           done
           echo "the site never answered"; exit 1
 
-      # The reason the proxy exists. A session cookie marked secure is not sent
-      # over plain HTTP, so a stack that serves the app but not TLS would pass
-      # the journey and still be undeployable.
-      - name: The session cookie is Secure and HttpOnly
-        run: |
-          set -euo pipefail
-          headers=$(curl -sSk -D - -o /dev/null -X POST https://localhost/api/auth/login \
-            -H 'Content-Type: application/json' \
-            -d '{"email":"nobody@example.om","password":"not-a-real-password"}')
-          echo "$headers"
-          # A failed login sets no session cookie, which is correct — so assert
-          # on the CSRF cookie, which is set regardless and carries the same
-          # flags. Asserting on a cookie that is never present would be a test
-          # that cannot fail.
-          echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'Secure'
-          echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'HttpOnly'
-
       # Proves the SMTP path before the journey depends on it. If mail is not
       # being delivered, the journey fails at "verify by email" with a timeout
       # that says nothing about why — and the answer would be four containers

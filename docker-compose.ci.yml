@@ -1,0 +1,22 @@
+# CI overrides for the end-to-end job.
+#
+# Two differences from the production stack, both so the *test* can see what
+# the stack does — not so the stack behaves differently.
+#
+# **The mail sink is a bind mount.** The journey reads the verification link out
+# of the `.eml` the API actually wrote, which is the point of that step: reading
+# the token from the database instead would skip the delivery it exists to
+# prove. A named volume is invisible to Playwright running on the host, so in CI
+# it is a directory both can see.
+#
+# **The database is the composed one**, built from this repository's own
+# `bootstrap.sql` and migrations, so the schema under test is the schema this
+# repo produces. The `db` service already does that; this only fixes its
+# credentials to the values the job exports.
+services:
+  api:
+    volumes:
+      - ./.mail:/app/.mail
+  worker:
+    volumes:
+      - ./.mail:/app/.mail

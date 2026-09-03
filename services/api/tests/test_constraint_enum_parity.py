@@ -31,6 +31,7 @@ from app.connectors.domain_check import Method, Strength
 from app.documents.classify import ReviewState
 from app.documents.status import DocumentStatus
 from app.domain.access import Sensitivity
+from app.domain.company_brain import GeneratedBy
 from app.domain.department_answers import AnswerState
 from app.domain.registration import JoinRequestState, ResearchRunState
 from app.domain.scopes import Role, Scope, scope_code
@@ -54,6 +55,11 @@ class Mapping:
 
 
 MAPPINGS: tuple[Mapping, ...] = (
+    Mapping(
+        "ck_company_brain_generated_by",
+        "app.domain.company_brain.GeneratedBy",
+        frozenset(how.value for how in GeneratedBy),
+    ),
     Mapping(
         "ck_onboarding_answer_state",
         "app.domain.department_answers.AnswerState",

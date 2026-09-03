@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Final
 from uuid import UUID
 
@@ -48,6 +49,30 @@ FIELD_FOR_KEY: Final[dict[str, str]] = {
 }
 
 
+class GeneratedBy(StrEnum):
+    """How the brain came to exist, in `ck_company_brain_generated_by`'s own
+    vocabulary.
+
+    An enum rather than three string literals because
+    `tests/test_constraint_enum_parity.py` insists on it — and it insists
+    because `ck_chunk_review_state` once permitted four values while the code
+    wrote a different four, and nothing could see the drift: the enum
+    type-checked, the constraint was valid SQL, and the only place they met was
+    an INSERT no test had ever run.
+    """
+
+    ANSWERS = "answers"
+    """Assembled from the founder's own answers. Invents nothing, and every
+    line names the question it came from."""
+
+    MODEL = "model"
+    """Enriched by a language model, over the same grounded material."""
+
+    UNAVAILABLE = "unavailable"
+    """No brain could be built, and `unavailable_reason` says why — the schema
+    refuses this value without one."""
+
+
 @dataclass(slots=True)
 class Brain:
     """A built brain, before it is stored."""
@@ -60,7 +85,7 @@ class Brain:
     competitors: list[str] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     provenance: list[str] = field(default_factory=list)
-    generated_by: str = "answers"
+    generated_by: str = GeneratedBy.ANSWERS.value
     unavailable_reason: str = ""
     documents_read: int = 0
 
@@ -153,7 +178,7 @@ async def build(db: AsyncSession, *, workspace_id: UUID) -> Brain:
         # Nothing answered yet. Unavailable **with a reason**, which the schema
         # insists on: "we could not build one" with no reason is
         # indistinguishable from a bug, and the founder decides whether to care.
-        brain.generated_by = "unavailable"
+        brain.generated_by = GeneratedBy.UNAVAILABLE.value
         brain.unavailable_reason = (
             "Nothing has been answered yet. The brain is built from your own "
             "answers, so it stays empty until onboarding has something in it."

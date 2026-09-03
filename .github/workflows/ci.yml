@@ -71,12 +71,27 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/api/pyproject.toml
+          # The lockfile, not pyproject.toml — the cache key must change when
+          # the resolved set changes, and pyproject only states ranges.
+          cache-dependency-path: services/api/requirements-dev.lock
 
       - name: Install
+        # From the lockfile, not from the ranges in pyproject.toml (finding #16).
+        #
+        # `pip install -e ".[dev]"` resolved whatever was newest each morning, so
+        # CI ran a different environment from every developer, every run. That is
+        # how `beautifulsoup4` went undeclared for four milestones — present
+        # locally by accident, absent here — and how an `anyio`/`starlette`
+        # deprecation broke collection with nothing in the repo having changed.
+        #
+        # `--require-hashes` is implied by the hashes in the file: pip refuses
+        # the whole install if any artefact does not match. Then the project
+        # itself, `--no-deps`, because its dependencies are already pinned above
+        # and letting pip re-resolve them would defeat the point.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: Install the postgres client
         working-directory: .

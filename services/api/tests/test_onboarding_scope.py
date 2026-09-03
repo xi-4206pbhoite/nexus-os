@@ -45,7 +45,30 @@ def test_no_question_above_l3_is_collected_at_onboarding() -> None:
 
 
 def test_keys_are_unique() -> None:
-    assert len(BY_KEY) == len(CATALOGUE)
+    """No key is defined twice, across every source `BY_KEY` indexes.
+
+    This used to read `len(BY_KEY) == len(CATALOGUE)`, which was the same claim
+    while the catalogue was the only source. P6 added `COMPANY_QUESTIONS` and
+    `CONFIRMABLE_FROM_CRAWL`, so the count no longer matches and the *invariant*
+    had to be stated directly rather than inferred from a length.
+
+    It is worth stating directly anyway. A duplicate key does not raise — the
+    later definition simply wins, silently — and that happened during P6: three
+    company questions existed in both places, and `BY_KEY` kept handing out the
+    old ones, which carried no assumption. "Not sure yet" would have stored a
+    null through a function written to make that impossible.
+    """
+    from app.domain.onboarding import COMPANY_QUESTIONS, CONFIRMABLE_FROM_CRAWL
+
+    everything = [*CATALOGUE, *COMPANY_QUESTIONS, *CONFIRMABLE_FROM_CRAWL]
+    keys = [q.key for q in everything]
+    duplicates = sorted({k for k in keys if keys.count(k) > 1})
+
+    assert duplicates == [], (
+        f"{duplicates} are defined more than once. The later definition wins "
+        "silently, so a question can be shadowed by an older version of itself."
+    )
+    assert len(BY_KEY) == len(everything), "BY_KEY does not index every source"
 
 
 def test_an_unknown_key_raises_rather_than_defaulting() -> None:

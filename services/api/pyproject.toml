@@ -26,6 +26,14 @@ dependencies = [
   # upload route accepts a file plus a consent field, and FastAPI raises at
   # import time without it.
   "python-multipart>=0.0.20",
+  # HTML parsing for the research engine's extractor. **Undeclared until Phase
+  # 2**, and it had been red in CI since the file was written: `pip install -e
+  # ".[dev]"` on a clean runner did not install it, so `mypy` failed with
+  # "cannot find implementation or library stub for module named bs4" and the
+  # test step never ran. It passed on the developer's machine because another
+  # package had pulled bs4 in transitively — the exact shape of bug a lockless
+  # install hides. 4.13+ ships `py.typed`, so no stubs package is needed.
+  "beautifulsoup4>=4.13",
   # Document parsing (M5). No OCR: a scanned PDF must fail visibly,
   # not be silently indexed as an empty document.
   "pypdf>=5.1",

@@ -24,10 +24,11 @@ that says what it is assuming.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
@@ -50,41 +51,35 @@ async def app_db(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
         cache.cache_clear()
 
 
-async def _workspace(db: object) -> tuple[object, object]:
+async def _workspace(db: AsyncSession) -> tuple[UUID, UUID]:
     """A workspace and its owner, committed."""
     user, tenant, ws = uuid4(), uuid4(), uuid4()
-    await db.execute(  # type: ignore[attr-defined]
+    await db.execute(
         sa.text("INSERT INTO app_user (id, email) VALUES (:i,:e)"),
         {"i": str(user), "e": f"spine-{user.hex[:8]}@example.com"},
     )
-    await db.execute(  # type: ignore[attr-defined]
-        sa.text("INSERT INTO tenant (id, name) VALUES (:i,'T')"), {"i": str(tenant)}
-    )
-    await db.execute(  # type: ignore[attr-defined]
-        sa.text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(ws)}
-    )
-    await db.execute(  # type: ignore[attr-defined]
+    await db.execute(sa.text("INSERT INTO tenant (id, name) VALUES (:i,'T')"), {"i": str(tenant)})
+    await db.execute(sa.text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(ws)})
+    await db.execute(
         sa.text(
             "INSERT INTO workspace (id, workspace_id, tenant_id, name, domain,"
             " domain_verified_at) VALUES (:i,:i,:t,'W',:d, now())"
         ),
         {"i": str(ws), "t": str(tenant), "d": f"spine-{ws.hex[:8]}.om"},
     )
-    await db.execute(  # type: ignore[attr-defined]
+    await db.execute(
         sa.text(
             "INSERT INTO membership (workspace_id, user_id, role, departments)"
             " VALUES (:w,:u,'owner', ARRAY['executive']::text[])"
         ),
         {"w": str(ws), "u": str(user)},
     )
-    await db.commit()  # type: ignore[attr-defined]
+    await db.commit()
     return user, ws
 
 
-async def _cleanup(db: object, user: object, ws: object) -> None:
-    await db.execute(  # type: ignore[attr-defined]
-        sa.text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(ws)}
-    )
+async def _cleanup(db: AsyncSession, user: UUID, ws: UUID) -> None:
+    await db.execute(sa.text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(ws)})
     for statement in (
         "DELETE FROM onboarding_progress WHERE workspace_id = :w",
         "DELETE FROM workspace_department WHERE workspace_id = :w",
@@ -93,11 +88,9 @@ async def _cleanup(db: object, user: object, ws: object) -> None:
         "DELETE FROM membership WHERE workspace_id = :w",
         "DELETE FROM workspace WHERE id = :w",
     ):
-        await db.execute(sa.text(statement), {"w": str(ws)})  # type: ignore[attr-defined]
-    await db.execute(  # type: ignore[attr-defined]
-        sa.text("DELETE FROM app_user WHERE id = :u"), {"u": str(user)}
-    )
-    await db.commit()  # type: ignore[attr-defined]
+        await db.execute(sa.text(statement), {"w": str(ws)})
+    await db.execute(sa.text("DELETE FROM app_user WHERE id = :u"), {"u": str(user)})
+    await db.commit()
 
 
 # ── Resumable ─────────────────────────────────────────────────
@@ -111,9 +104,8 @@ async def test_onboarding_progress_is_resumable(app_db: None) -> None:
     lived in memory or in a cookie would pass a test that kept them, and fail
     the founder who closed the tab.
     """
-    from app.domain.progress import complete_stage, progress_for
-
     from app.db import _unscoped_session
+    from app.domain.progress import complete_stage, progress_for
 
     async with _unscoped_session() as db:
         user, ws = await _workspace(db)
@@ -141,9 +133,8 @@ async def test_progress_does_not_go_backwards_on_a_repeat(app_db: None) -> None:
     founder who has since moved on, which is the same class of defect as the
     double-click that broke workspace creation (finding #9).
     """
-    from app.domain.progress import complete_stage, progress_for
-
     from app.db import _unscoped_session
+    from app.domain.progress import complete_stage, progress_for
 
     async with _unscoped_session() as db:
         user, ws = await _workspace(db)
@@ -171,9 +162,8 @@ async def test_department_selection_drives_the_director_list(app_db: None) -> No
     Automatic because it *consumes* the others: a company that selected none
     would leave it reading nothing, so it is not a choice to offer.
     """
-    from app.domain.departments import select_departments, selected_departments
-
     from app.db import _unscoped_session
+    from app.domain.departments import select_departments, selected_departments
     from app.domain.scopes import Department
 
     async with _unscoped_session() as db:
@@ -198,9 +188,8 @@ async def test_reselecting_replaces_rather_than_accumulates(app_db: None) -> Non
     """Changing your mind must remove what you deselected. Adding without
     removing would leave a director on the dashboard that nobody chose, and no
     screen through which to get rid of it."""
-    from app.domain.departments import select_departments, selected_departments
-
     from app.db import _unscoped_session
+    from app.domain.departments import select_departments, selected_departments
     from app.domain.scopes import Department
 
     async with _unscoped_session() as db:

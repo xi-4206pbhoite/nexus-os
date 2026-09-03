@@ -36,6 +36,7 @@ from app.connectors.domain_check import (
     new_challenge,
     normalise_domain,
 )
+from app.db import jobs_session
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
@@ -79,7 +80,21 @@ class Claim:
 # ── Starting a claim ──────────────────────────────────────────
 
 
+async def _scope_to_user(db: AsyncSession, user_id: UUID) -> None:
+    """Set the GUC `domain_claim`'s policy reads (migration 0013).
+
+    Transaction-scoped, so one call covers every statement until the commit —
+    which is why the two entry points below are enough rather than every query.
+
+    Without it the policy matches nothing and a user cannot see **their own**
+    claim. That is the safe direction to fail and still a bug, so it is set at
+    the two doors into this module rather than remembered per query.
+    """
+    await db.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user_id)})
+
+
 async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, method: Method) -> Claim:
+    await _scope_to_user(db, user_id)
     domain = normalise_domain(raw_domain)
     if not domain or "." not in domain:
         raise DomainClaimError("Enter a valid domain, for example acme.om")
@@ -128,6 +143,7 @@ async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, metho
 
 
 async def _load_claim(db: AsyncSession, claim_id: UUID, user_id: UUID) -> Claim:
+    await _scope_to_user(db, user_id)
     row = (
         await db.execute(
             text(
@@ -303,13 +319,27 @@ async def create_workspace_for_claim(
         # First verified wins. The loser gets a dispute record rather than a
         # silent failure — someone has to be able to resolve this, and a
         # support conversation needs an artefact.
-        await db.execute(
-            text(
-                "UPDATE domain_claim SET state = 'disputed', disputes_workspace_id = :ws"
-                " WHERE id = :id"
-            ),
-            {"ws": str(existing.id), "id": str(claim.id)},
-        )
+        # ADR 0018. The row belongs to the *loser* and the actor is the winner,
+        # so the application role's `user_id` policy (migration 0013) refuses
+        # this write — correctly. It runs as `nexus_jobs` instead, on its own
+        # connection.
+        #
+        # A separate transaction, and that is the point rather than a
+        # side-effect: this function is about to raise, aborting everything it
+        # has done. The dispute record must **survive** that abort — it is the
+        # artefact a support conversation needs, and the version of this that
+        # rolled back with the failure left nothing behind at all.
+        async with jobs_session() as jobs_db:
+            await jobs_db.execute(
+                text(
+                    "UPDATE domain_claim SET state = 'disputed', disputes_workspace_id = :ws"
+                    " WHERE id = :id"
+                ),
+                {"ws": str(existing.id), "id": str(claim.id)},
+            )
+            await jobs_db.commit()
+
+        log.info("domain.disputed", claim_id=str(claim.id))
         raise DomainDisputedError("This domain is already claimed by another workspace.")
 
     tenant_row = await db.execute(

@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.db import _unscoped_session
+from app.db import _unscoped_session, jobs_session
 from app.jobs.expiry import run_expiry_sweep
 from app.logging import get_logger
 
@@ -41,8 +41,8 @@ EMBEDDING_BATCH = 64
 
 async def _expiry_job() -> None:
     try:
-        async with _unscoped_session() as db:
-            await run_expiry_sweep(db)
+        async with _unscoped_session() as db, jobs_session() as jobs_db:
+            await run_expiry_sweep(db, jobs_db)
     except Exception as exc:
         log.warning("expiry.sweep.failed", error=type(exc).__name__)
 

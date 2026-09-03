@@ -182,3 +182,59 @@ async def _unscoped_session() -> AsyncIterator[AsyncSession]:
     """
     async with get_sessionmaker()() as session:
         yield session
+
+
+# ── The maintenance connection (ADR 0018) ─────────────────────
+
+
+@lru_cache
+def get_jobs_engine() -> AsyncEngine:
+    """The engine for `nexus_jobs`, which is a different role and a smaller one.
+
+    Separate from `get_engine` rather than a parameter on it, because the whole
+    value of ADR 0018 is that the two identities cannot be confused: this one
+    authenticates with its own credentials and holds a policy on exactly one
+    table, and no caller can reach it by passing a flag.
+
+    **It refuses rather than falling back.** An unset `NEXUS_JOBS_DATABASE_URL`
+    raises here, and `Settings` refuses to boot without one outside `local` and
+    `ci`. Falling back to the application role would let the expiry sweep run
+    under a policy that hides every row from it — matching zero and reporting
+    success, which is precisely the silent failure D24 was raised about.
+    """
+    settings = get_settings()
+    url = settings.jobs_database_url.get_secret_value()
+    if not url:
+        raise RuntimeError(
+            "NEXUS_JOBS_DATABASE_URL is not set. Maintenance writes connect as "
+            "nexus_jobs (ADR 0018); running them as nexus_app would silently "
+            "match zero rows under the domain_claim policy."
+        )
+
+    engine = create_async_engine(
+        url,
+        echo=False,
+        pool_pre_ping=True,
+        # A sweep every hour and the occasional dispute record. A pool would
+        # hold connections open on a serverless Postgres billed for them.
+        poolclass=NullPool,
+        connect_args={
+            "server_settings": {"application_name": "nexus-jobs"},
+            "command_timeout": settings.db_command_timeout_seconds,
+        },
+    )
+    _apply_session_timeouts(engine, settings)
+    return engine
+
+
+@asynccontextmanager
+async def jobs_session() -> AsyncIterator[AsyncSession]:
+    """A session as `nexus_jobs`. Never for request-path reads of user data.
+
+    The only callers are the expiry sweep and the dispute record — the two
+    writes ADR 0018 names. Anything else belongs on `_unscoped_session` or, for
+    customer data, on `retrieval/`.
+    """
+    factory = async_sessionmaker(get_jobs_engine(), expire_on_commit=False)
+    async with factory() as session:
+        yield session

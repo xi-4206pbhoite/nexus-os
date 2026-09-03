@@ -41,6 +41,9 @@ DEPLOYABLE_EMAIL: dict[str, object] = {
     "mailer_backend": "smtp",
     "smtp_host": "smtp.example.invalid",
     "public_base_url": "https://app.example.invalid",
+    # ADR 0018. "Deployable" grew again: a deployed environment must have the
+    # maintenance role, or the expiry sweep matches zero rows and says nothing.
+    "jobs_database_url": SecretStr("postgresql+asyncpg://nexus_jobs:p@h:5432/nexus"),
 }
 
 
@@ -192,6 +195,7 @@ def test_the_api_docs_are_not_served_outside_local(
     monkeypatch.setenv("NEXUS_MAILER_BACKEND", "smtp")
     monkeypatch.setenv("NEXUS_SMTP_HOST", "smtp.example.invalid")
     monkeypatch.setenv("NEXUS_PUBLIC_BASE_URL", "https://app.example.invalid")
+    monkeypatch.setenv("NEXUS_JOBS_DATABASE_URL", "postgresql+asyncpg://nexus_jobs:p@h:5432/nexus")
     get_settings.cache_clear()
     try:
         app = create_app()
@@ -398,3 +402,37 @@ def test_the_link_base_is_configuration_and_never_the_request_host() -> None:
         )
     assert "request.base_url" not in source
     assert "request.url_for" not in source
+
+
+@pytest.mark.parametrize("env", DEPLOYED)
+def test_a_deployed_env_refuses_to_start_without_the_maintenance_role(env: Env) -> None:
+    """ADR 0018, and the refusal matters more than the setting.
+
+    The tempting alternative is to fall back to `nexus_app` when
+    `NEXUS_JOBS_DATABASE_URL` is unset. That would restore exactly the failure
+    D24 was raised about: the expiry sweep would run, match zero rows under the
+    `domain_claim` policy, and log a clean pass — in production, while every
+    test stayed green.
+    """
+    with pytest.raises(ValidationError, match="JOBS_DATABASE_URL"):
+        _settings(
+            env=env,
+            database_url=SecretStr("postgresql+asyncpg://u:p@h:5432/nexus"),
+            storage_signing_secret=SecretStr("a-real-secret"),
+            jobs_database_url=SecretStr(""),
+        )
+
+
+def test_the_jobs_engine_refuses_rather_than_falling_back() -> None:
+    """The same rule one layer down, because `local` and `ci` are permitted to
+    leave it unset and something has to refuse when a caller then uses it."""
+    from app.db import get_engine, get_jobs_engine
+
+    get_jobs_engine.cache_clear()
+    get_engine.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="NEXUS_JOBS_DATABASE_URL"):
+            get_jobs_engine()
+    finally:
+        get_jobs_engine.cache_clear()
+        get_engine.cache_clear()

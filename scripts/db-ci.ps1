@@ -120,6 +120,9 @@ function New-Secret { ([System.Web.Security.Membership]::GeneratePassword(32, 0)
 $superPassword = New-Secret
 $appPassword = $AppPassword
 if (-not $appPassword) { $appPassword = New-Secret }
+# The maintenance role (ADR 0018). Always generated: this database is thrown
+# away every run, so there is nothing to keep in step with.
+$jobsPassword = New-Secret
 
 # db\ is mounted rather than copied, so local and CI provably run the same file.
 $dbMount = Convert-ToWslPath (Join-Path $repo 'db')
@@ -172,7 +175,7 @@ Write-Host '  accepting connections'
 Write-Host "`n=== bootstrap ===" -ForegroundColor Cyan
 $bootstrap = "exec -e PGPASSWORD=$superPassword $Container " +
     "psql -h 127.0.0.1 -U postgres -d $Database " +
-    "-v ON_ERROR_STOP=1 -v app_password=$appPassword -f /bootstrap/bootstrap.sql"
+    "-v ON_ERROR_STOP=1 -v app_password=$appPassword -v jobs_password=$jobsPassword -f /bootstrap/bootstrap.sql"
 $exit = Invoke-Docker -Arguments $bootstrap
 if ($exit -ne 0) {
     Write-Host "FAIL  bootstrap.sql (exit $exit)" -ForegroundColor Red
@@ -181,6 +184,11 @@ if ($exit -ne 0) {
 
 $url = "postgresql+asyncpg://nexus_app:$appPassword@127.0.0.1:$Port/$Database"
 $env:NEXUS_DATABASE_URL = $url
+
+# Without this the expiry sweep runs as nexus_app, matches zero rows under the
+# domain_claim policy from migration 0013, and reports success (ADR 0018).
+$jobsUrl = "postgresql+asyncpg://nexus_jobs:$jobsPassword@127.0.0.1:$Port/$Database"
+$env:NEXUS_JOBS_DATABASE_URL = $jobsUrl
 
 # -- 3. migrations, both directions --------------------------
 Write-Host "`n=== migrations ===" -ForegroundColor Cyan

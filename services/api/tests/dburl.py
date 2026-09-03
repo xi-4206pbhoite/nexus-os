@@ -81,3 +81,29 @@ def database_url() -> str | None:
     url = re.sub(r"([?&])ssl=", r"\1sslmode=", url)
 
     return url
+
+
+def _to_psycopg2(url: str) -> str:
+    url = re.sub(r"^postgresql\+asyncpg://", "postgresql://", url)
+    # asyncpg's `ssl=` → libpq's `sslmode=`.
+    return re.sub(r"([?&])ssl=", r"\1sslmode=", url)
+
+
+_CONFIGURED_JOBS_URL = os.environ.get("NEXUS_JOBS_DATABASE_URL") or None
+
+
+def jobs_database_url() -> str | None:
+    """A psycopg2 DSN for the `nexus_jobs` role, or None when unconfigured.
+
+    ADR 0018. Resolved from the environment only — never from `.env` — because
+    the suites that use it assert what that role *cannot* reach, and silently
+    falling back to `nexus_app` would make every one of them pass while proving
+    the opposite.
+
+    Deliberately not run through `_resolve()`: that has a `.env` fallback which
+    exists here and never in CI, and this is exactly the value where that
+    divergence would be worst.
+    """
+    if _CONFIGURED_JOBS_URL is None:
+        return None
+    return _to_psycopg2(_CONFIGURED_JOBS_URL)

@@ -123,6 +123,18 @@ class Settings(BaseSettings):
     # refuses that combination in a deployed environment.
     smtp_tls: bool = True
 
+    # ── The maintenance role (ADR 0018, D24) ──────────────────
+    # A second connection string, for `nexus_jobs`. It exists so RLS on
+    # `domain_claim` can be `user_id`-scoped without breaking the two writes
+    # that are legitimately nobody's in particular — the expiry sweep and the
+    # dispute record.
+    #
+    # Empty is permitted in `local` and `ci` only, and `require_jobs_url()`
+    # refuses rather than falling back. Falling back to `nexus_app` would
+    # restore the exact silent failure ADR 0018 exists to prevent: the sweep
+    # would run, match zero rows under the policy, and log a clean pass.
+    jobs_database_url: SecretStr = Field(default=SecretStr(""))
+
     # ── Credential backoff (D14) ──────────────────────────────
     # The curve `app/routes/auth.py` spends when a caller is over the login or
     # register limit: doubling from `base`, capped at `max`.
@@ -250,6 +262,14 @@ class Settings(BaseSettings):
                 "NEXUS_SMTP_TLS=false sends credentials and every verification "
                 "token in clear text. It is allowed in local and ci for a "
                 f"local relay; NEXUS_ENV={self.env.value} is not."
+            )
+        if not self.jobs_database_url.get_secret_value():
+            raise ValueError(
+                f"NEXUS_ENV={self.env.value} requires NEXUS_JOBS_DATABASE_URL. "
+                "The expiry sweep connects as nexus_jobs, which holds the only "
+                "policy permitting it to see another user's domain claim (ADR "
+                "0018). Without it the sweep matches zero rows and reports "
+                "success, which is the failure that decision was made to avoid."
             )
         if self.public_base_url.startswith("http://"):
             raise ValueError(

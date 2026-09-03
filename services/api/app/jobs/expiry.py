@@ -57,11 +57,31 @@ async def expire_stale_claims(db: AsyncSession, *, now: datetime | None = None) 
     return int(result.scalar_one())
 
 
-async def run_expiry_sweep(db: AsyncSession, *, now: datetime | None = None) -> ExpiryReport:
-    """One pass of everything time-bound. Safe to run repeatedly."""
+async def run_expiry_sweep(
+    db: AsyncSession, jobs_db: AsyncSession, *, now: datetime | None = None
+) -> ExpiryReport:
+    """One pass of everything time-bound. Safe to run repeatedly.
+
+    **Two sessions, and they are different roles** (ADR 0018). The split is not
+    tidiness:
+
+    - `expire_stale_claims` spans every user's claims. Since migration 0013,
+      `domain_claim` carries a `user_id` policy, so the application role sees
+      none of them — the statement would match zero rows and this function would
+      report a clean sweep for ever. It runs as `nexus_jobs`, which holds the
+      one role-targeted policy that permits it.
+    - `purge_expired` clears `rate_limit_counter`, which has no RLS and which
+      `nexus_jobs` is deliberately **not** granted. Its access is one table wide
+      and stays that way.
+
+    Passed in rather than opened here so a test can drive the real function
+    against real sessions instead of a copy of its SQL.
+    """
     from app.connectors.rate_limit import purge_expired
 
-    claims = await expire_stale_claims(db, now=now)
+    claims = await expire_stale_claims(jobs_db, now=now)
+    await jobs_db.commit()
+
     counters = await purge_expired(db)
     await db.commit()
 

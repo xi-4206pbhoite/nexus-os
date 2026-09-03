@@ -90,10 +90,18 @@ jobs:
           PGPASSWORD: postgres
         run: |
           APP_PASSWORD="$(openssl rand -hex 24)"
+          JOBS_PASSWORD="$(openssl rand -hex 24)"
           echo "::add-mask::$APP_PASSWORD"
+          echo "::add-mask::$JOBS_PASSWORD"
           psql -h localhost -U postgres -d nexus \
-               -v app_password="$APP_PASSWORD" -f db/bootstrap.sql
+               -v app_password="$APP_PASSWORD" \
+               -v jobs_password="$JOBS_PASSWORD" -f db/bootstrap.sql
           echo "NEXUS_DATABASE_URL=postgresql+asyncpg://nexus_app:$APP_PASSWORD@localhost:5432/nexus" \
+               >> "$GITHUB_ENV"
+          # The maintenance role (ADR 0018). Without it the expiry sweep runs as
+          # nexus_app, matches zero rows under the domain_claim policy, and
+          # reports success - so the suite would be green over a broken sweep.
+          echo "NEXUS_JOBS_DATABASE_URL=postgresql+asyncpg://nexus_jobs:$JOBS_PASSWORD@localhost:5432/nexus" \
                >> "$GITHUB_ENV"
 
       - name: Migrations, both directions

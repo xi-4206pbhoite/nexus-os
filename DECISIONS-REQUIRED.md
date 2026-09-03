@@ -323,7 +323,16 @@ so it is written and tested rather than remembered later.
 
 ## 5d. Raised by Phase 4, 3 September 2026
 
-### D24 — RLS on `domain_claim` cannot simply be `user_id`-scoped *(blocks the rest of P4's isolation work)*
+### ~~D24 — RLS on `domain_claim`~~ — **answered: option B**, 3 September 2026
+
+**A separate `nexus_jobs` role**, `NOSUPERUSER NOBYPASSRLS` like `nexus_app`,
+with a role-targeted policy on `domain_claim` and nothing else. Not a GUC-keyed
+bypass: a GUC is application state, so anything that can set one gets full read,
+and the boundary moves out of the database into application code — which is
+where it stops being structural. Recorded as **ADR 0018**.
+
+The question and its costings are kept below, because the two rejected options
+are the ones a later reader will be tempted by.
 
 `doc/12` §Phase 4 says: *"RLS on `domain_claim`: the predicate is `user_id`-scoped,
 since claims exist before a workspace does."* That is the right instinct — a claim

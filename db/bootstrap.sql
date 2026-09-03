@@ -58,6 +58,54 @@ SELECT format(
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nexus_app')
 \gexec
 
+-- ── The maintenance role (ADR 0018, answering D24) ──────────
+--
+-- `nexus_jobs` exists so that RLS on `domain_claim` can be `user_id`-scoped
+-- without breaking the two writes that legitimately are not one user's: the
+-- expiry sweep, which spans every user, and the dispute record, where the actor
+-- is the winner of a race and the row belongs to the loser.
+--
+-- It is **not privileged**. Same flags as `nexus_app`, verified the same way
+-- below. What it has is a role-targeted policy on exactly one table (migration
+-- 0013), which is a boundary an identity must authenticate to cross rather than
+-- a runtime flag any code path can set. That distinction is the whole of D24.
+SELECT format(
+    'CREATE ROLE nexus_jobs WITH LOGIN NOSUPERUSER NOCREATEDB '
+    'NOCREATEROLE NOBYPASSRLS PASSWORD %L', :'jobs_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nexus_jobs')
+\gexec
+
+ALTER ROLE nexus_jobs WITH LOGIN NOCREATEDB NOCREATEROLE;
+ALTER ROLE nexus_jobs PASSWORD :'jobs_password';
+
+DO $$
+BEGIN
+    EXECUTE 'ALTER ROLE nexus_jobs WITH NOSUPERUSER NOBYPASSRLS';
+    RAISE NOTICE 'nexus_jobs flags asserted directly';
+EXCEPTION WHEN insufficient_privilege OR feature_not_supported THEN
+    RAISE NOTICE 'cannot ALTER nexus_jobs flags without a superuser - verifying instead';
+END $$;
+
+-- Fatal, for the same reason it is fatal for nexus_app. A maintenance role with
+-- BYPASSRLS would make ADR 0018 a bypass after all, and the whole point of
+-- choosing option B over option A was to avoid that.
+DO $$
+DECLARE
+    is_super boolean;
+    bypasses boolean;
+BEGIN
+    SELECT rolsuper, rolbypassrls INTO is_super, bypasses
+      FROM pg_roles WHERE rolname = 'nexus_jobs';
+
+    IF is_super OR bypasses THEN
+        RAISE EXCEPTION
+            'nexus_jobs has super=% bypassrls=% - either defeats the role-targeted '
+            'policy that ADR 0018 rests on, and would make it the GUC bypass that '
+            'option A was rejected for', is_super, bypasses;
+    END IF;
+    RAISE NOTICE 'nexus_jobs verified: NOSUPERUSER, NOBYPASSRLS';
+END $$;
+
 -- Flags that any role with CREATEROLE may set.
 ALTER ROLE nexus_app WITH LOGIN NOCREATEDB NOCREATEROLE;
 ALTER ROLE nexus_app PASSWORD :'app_password';
@@ -115,6 +163,18 @@ GRANT USAGE, CREATE ON SCHEMA public TO nexus_app;
 -- Anything already in the schema, for a database that predates this script.
 GRANT ALL ON ALL TABLES IN SCHEMA public TO nexus_app;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO nexus_app;
+
+-- `nexus_jobs` gets USAGE and one table. Deliberately not `ALL TABLES`: a
+-- maintenance identity that can reach everything is a second application role,
+-- and the argument for it being safe rests on how little it may touch. Adding a
+-- table here is a decision, and ADR 0018 puts the burden on whoever adds one to
+-- say why the app role cannot do the work.
+GRANT USAGE ON SCHEMA public TO nexus_jobs;
+-- The table grant is NOT here. `domain_claim` is created by migration 0005 and
+-- this file runs before any migration, so granting on it would fail with
+-- "relation does not exist" on a fresh database. It lives in migration 0013,
+-- beside the policy it goes with — which is the right place anyway: the grant
+-- and the policy are one decision and should never be able to drift apart.
 
 -- ── Verification ─────────────────────────────────────────────
 -- Printed so a deployment log records what was actually achieved rather than

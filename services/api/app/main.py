@@ -35,6 +35,31 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     log.info("api.startup", env=settings.env.value, embedding_dim=settings.embedding_dim)
 
+    # The maintenance role, checked here rather than in `Settings` (ADR 0018).
+    #
+    # Without it the process boots happily and then fails at the **first company
+    # registration** — a 500 on the product's front door, from a variable
+    # nothing had mentioned — because the duplicate-domain lookup runs as
+    # `nexus_jobs`. ADR 0018 says refuse rather than fall back; this refuses
+    # earlier, which is the same rule with a better error.
+    #
+    # In `lifespan` and not in the model validator because `Settings` is built
+    # at import by tests and tooling, on machines whose `.env` legitimately has
+    # a database and no jobs URL. A validator there stops the suite collecting;
+    # this stops the *server* starting, which is the thing that actually needs
+    # the role.
+    if (
+        settings.database_url.get_secret_value()
+        and not settings.jobs_database_url.get_secret_value()
+    ):
+        raise RuntimeError(
+            "NEXUS_DATABASE_URL is set but NEXUS_JOBS_DATABASE_URL is not. "
+            "Company registration checks whether a domain is already claimed as "
+            "the nexus_jobs role, because `workspace` is row-level secured and "
+            "the application role cannot see another company's row (ADR 0018). "
+            "Run db/bootstrap.sql to create the role, then set the second URL."
+        )
+
     # Only run scheduled work when there is a database to run it against.
     # Starting a sweep that cannot connect would log a failure every hour.
     scheduler = None

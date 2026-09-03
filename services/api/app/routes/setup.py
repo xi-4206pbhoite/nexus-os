@@ -28,18 +28,20 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import invitations as invites
 from app.auth.csrf import require_csrf
+from app.auth.invitations_email import build_invitation_email
 from app.auth.workspaces import UnverifiedWorkspaceError
+from app.config import Settings, get_settings
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.domain import audit
@@ -57,6 +59,7 @@ from app.domain.onboarding import (
 from app.domain.scopes import Department, Role, Scope, scope_code, scope_from_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
+from app.mail import build_mailer
 from app.retrieval.scoped import scoped_connection
 
 router = APIRouter(tags=["setup"])
@@ -553,8 +556,13 @@ class IssuedOut(InvitationOut):
     accept_path: str
     """Where to send the invited person.
 
-    Returned to the inviter because no email is sent yet — delivery is not wired
-    up anywhere in the product. Handing the link back is not a weakening: the
+    **The invitation is emailed too.** This comment used to say delivery was
+    "not wired up anywhere in the product" — true when written, stale since P3
+    built the mailer. A product whose answer to "add someone to your company" is
+    "copy this string and send it yourself" has made the customer the transport.
+
+    Still returned, because an owner who wants to paste it into a chat should be
+    able to. Handing the link back is not a weakening: the
     inviter is the person who chose the role, and the link alone grants nothing,
     since acceptance requires being signed in as the address it names.
     """
@@ -581,7 +589,12 @@ def _out(invitation: invites.Invitation) -> InvitationOut:
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_csrf)],
 )
-async def create_invitation(payload: InviteIn, scope: CurrentScope) -> IssuedOut:
+async def create_invitation(
+    payload: InviteIn,
+    scope: CurrentScope,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IssuedOut:
     """Invite someone, at a role this caller is allowed to grant.
 
     Every precondition is in `check_invitation` rather than here, so there is
@@ -620,6 +633,28 @@ async def create_invitation(payload: InviteIn, scope: CurrentScope) -> IssuedOut
             # code, and only the status code is visible to a person.
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
+    # Sent, not merely handed back. Queued so the response does not wait on the
+    # transport — and after the commit, so an invitation that failed to store is
+    # never one somebody received a link for.
+    async with scoped_connection(scope) as session:
+        row = (
+            await session.execute(
+                text("SELECT name FROM workspace WHERE id = :w"), {"w": str(scope.workspace_id)}
+            )
+        ).first()
+    background.add_task(
+        build_mailer(settings).send,
+        build_invitation_email(
+            to=email,
+            token=issued.token,
+            base_url=settings.public_base_url,
+            company=row.name if row else "your company",
+        ),
+    )
+    log.info("invitation.queued", role=payload.role)
+
+    # The link still comes back to the inviter. An owner who wants to paste it
+    # into a chat should be able to; the email is the default, not the only way.
     return IssuedOut(
         **_out(issued.invitation).model_dump(),
         accept_path=f"/invitations/accept?token={issued.token}",

@@ -34,6 +34,18 @@ services:
       # The web UI and API, for Playwright. SMTP stays on the compose network.
       - "127.0.0.1:8025:8025"
 
+  # `migrate` validates `Settings` on import too, and `Settings` does not know
+  # that migrations never send mail. It needs the same mailer configuration and
+  # none of the plumbing — no certificate, no volume, no dependency on the sink
+  # being up. A validator that fired for some entry points and not others would
+  # be worse than one that fires for all of them.
+  migrate:
+    environment:
+      NEXUS_MAILER_BACKEND: smtp
+      NEXUS_SMTP_HOST: mail
+      NEXUS_SMTP_PORT: "1025"
+      NEXUS_SMTP_TLS: "true"
+
   api:
     environment:
       NEXUS_MAILER_BACKEND: smtp

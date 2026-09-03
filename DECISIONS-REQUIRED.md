@@ -321,6 +321,55 @@ so it is written and tested rather than remembered later.
 
 ---
 
+## 5d. Raised by Phase 4, 3 September 2026
+
+### D24 — RLS on `domain_claim` cannot simply be `user_id`-scoped *(blocks the rest of P4's isolation work)*
+
+`doc/12` §Phase 4 says: *"RLS on `domain_claim`: the predicate is `user_id`-scoped,
+since claims exist before a workspace does."* That is the right instinct — a claim
+has no workspace yet, so the usual workspace predicate has nothing to key on — but
+written literally it **breaks two paths that exist today**, and both fail silently,
+which is the shape this repository has already been bitten by twice.
+
+**1. The expiry sweep updates nobody's rows.** `jobs/expiry.py:expire_stale_claims`
+runs `UPDATE domain_claim SET state='expired' WHERE state='pending' AND expires_at
+<= now()` on an unscoped session, across every user. With `FORCE ROW LEVEL
+SECURITY` and a `user_id = current_setting('nexus.user_id')` predicate, and no GUC
+set, that statement matches **zero rows** — and reports success. Abandoned claims
+would accumulate for ever while the sweep logged a clean run. (This is the same
+failure mode as the `next_run_time=None` bug in `scheduler.py`: a job that runs,
+does nothing, and says nothing.)
+
+**2. The dispute path writes to somebody else's claim.** `auth/domains.py:255` —
+when a second claimant loses a race, `create_workspace_for_claim` marks *their*
+claim `disputed`. The actor is the winner; the row belongs to the loser. A
+`user_id` predicate refuses that write, so the loser gets no dispute record and
+`DomainDisputedError` is raised over a row that was never marked — which is worse
+than no policy, because the support conversation the record exists for now has no
+artefact.
+
+**Three ways out, and the choice is yours because each trades something different:**
+
+| Option | What it costs |
+|---|---|
+| **A. A maintenance GUC** — a second permissive policy keyed on `nexus.maintenance`, set only by the sweep | An explicit, auditable bypass. But anything that can set a GUC gets full read of every claim, and the whole point of RLS here is that no application bug can do that |
+| **B. Move the sweep and the dispute write out of the app role** — a migration-time or job-role identity with its own grants | Correct, and the most work: it needs a second database role, which `db/bootstrap.sql` and every environment must then provision |
+| **C. Scope by `user_id` OR `disputes_workspace_id`, and make the sweep set-based per user** | No new role and no bypass, but the sweep becomes N statements instead of one, and the policy starts encoding business rules |
+
+**My recommendation: B**, with A as the interim if a second role is more than you
+want to provision today. The reason is the one ADR 0008 already establishes for
+`neondb_owner`: the isolation guarantee is only worth what the *connecting role*
+cannot do, and a GUC-keyed bypass moves that boundary from the database into
+application code, which is exactly where it stops being structural.
+
+**Until this is answered, `domain_claim` has no RLS** — any authenticated user who
+can guess a claim id can read another person's claim through `_load_claim`, which
+filters by `user_id` in SQL and would therefore *not* leak today. So the exposure
+is bounded by that filter rather than by the database, which is the thing P4 exists
+to change.
+
+---
+
 ## 5c. Raised by Phase 0, 3 September 2026
 
 ### ~~D23 — The developer database is five migrations ahead of the repository~~ · RESOLVED 3 September 2026

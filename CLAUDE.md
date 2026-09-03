@@ -273,12 +273,16 @@ it belongs in a separate worker.
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.
-**Ten findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
+**Eight findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
 the register had said fourteen for a month after Phase 1 closed three of them.
 The three worth knowing before touching auth, the database or deployment:
 
-- **argon2 blocks the event loop** and **`/auth/login` has no rate limit** (both
-  D14, both still open).
+- ~~**argon2 blocks the event loop**~~ and ~~**`/auth/login` has no rate
+  limit**~~ — both **fixed in P4**. The shape is D14's and worth knowing before
+  touching either: **never a 429 and never a lock.** A 429 keyed by email
+  confirms the address has an account, which undoes account-enumeration
+  resistance in the act of adding security; a lock is a denial-of-service vector
+  against a named user. Backoff, and an identical 401 whatever the counters say.
 - **Never put a GUC in asyncpg's `server_settings` and assume it arrived**
   (finding #15, fixed). That dictionary becomes the connection's startup packet,
   and **Neon's proxy filters it to an allowlist** — `statement_timeout`,

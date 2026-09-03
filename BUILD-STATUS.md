@@ -61,7 +61,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
-| **P4 — The security surface** | in progress | Login and register rate limiting, argon2 off the event loop, RLS on `domain_claim`, the audit trail. **Not blocked** — D14 was answered in `doc/11` §5.2 and this row said otherwise while the C9 row two sections down said "D14 settled" |
+| **P4 — The security surface** | 🟨 **partly done** | **C9 is complete and green in CI** — login and register rate limited per-IP and per-email, exponential backoff, identical 401, argon2 off the event loop. Four items remain: the audit trail, RLS on `domain_claim` (**blocked on D24**), five named audit findings, and session refresh. See §9 |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -314,6 +314,9 @@ exception handler), and **M6** (constraint drift detection, as
 between Phase 2's discovery of finding #15 and its fix, and is closed again —
 the three server-side timeouts now apply on Neon, not only in CI.
 
+Cleared in Phase 4 so far: **C9** (credential rate limiting, and argon2 off the
+event loop) — findings #1 and #2 with it.
+
 Cleared in Phase 3: **C10** (wire email delivery) and **M7** (the four config
 settings held back until email existed). `POST /auth/workspace` and
 `_teardown_on_switch` are deleted.
@@ -333,7 +336,6 @@ exist yet.
 |---|---|---|---|---|---|---|
 | 🔴 | C3 | Domain-claim UI + the three missing BFF proxies | P5 | §4.3 — no authed entry point exists | none | 3 d |
 | 🔴 | C4 | End-to-end test of the real signup journey against Postgres | P9 | Does not exist | C1, C2, C3 | 2 d |
-| 🔴 | C9 | Rate-limit `/auth/login` and `/auth/register`; argon2 off the event loop | P4 | Unbounded; ~40–80 ms sync CPU per attempt | D14 settled | 1.5 d |
 | 🔴 | C11 | API and web container images + a runnable stack | P9 | No Dockerfile anywhere | none | 2 d |
 
 ### 🟠 High — required for a complete, production-ready application
@@ -427,31 +429,23 @@ silent `local` (ADR 0015).
 
 ## 9. Next
 
-**Phase 4 — The security surface.** Everything in it is a known defect, which
-makes it the least speculative phase in the plan and the one that decides whether
-the product can be exposed publicly at all.
+**Phase 4 — The security surface, continued.** One of five items is done.
 
-`C9` is the centre: `/auth/login` and `/auth/register` have no rate limit, so
-credential stuffing is unbounded, and argon2 runs on the event loop at ~40–80 ms
-of synchronous CPU per attempt — the two compound, because the cheapest way to
-stall every endpoint including the health probes is to guess passwords at an
-account that does not exist. **D14 is settled** (`doc/11` §5.2): per-IP *and*
-per-email counters, exponential backoff rather than a lock, and an identical 401
-in every case with the delay applied silently. The lock was rejected for the
-reason that made it a decision at all — a per-account lock is a
-denial-of-service vector against a named user, and anyone who knows an Owner's
-address could use it.
+**Done and green in CI** (run [33742762909](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33742762909), 693 passed, coverage 79.23%): **C9**. Login and
+register are rate limited on per-IP *and* per-email counters, with exponential
+backoff and an identical 401 in every case — never a 429, which keyed by email
+would announce that an address has an account, and never a lock, which is a
+denial-of-service vector against a named user. argon2 runs on a worker thread, so
+guessing at a non-existent account no longer stalls `/health`.
 
-Then the rest of `AUDIT-FINDINGS.md`: RLS on `domain_claim`, and the audit trail
-that I9 needs and that nothing currently writes.
+**Remaining, in the order I would take them:**
 
-Two things Phase 3 hands it:
+| Item | Note |
+|---|---|
+| **The audit trail** | The largest of the four. `audit_log` exists and nothing writes to it. One design question falls out immediately: `workspace_id` is `NOT NULL`, so a login by an account that has no workspace yet has no tenant to own the record — and a row with a NULL workspace would be invisible to the very policy that makes the log readable. Either account-level events are out of scope for this log, or they need their own stream |
+| **RLS on `domain_claim`** | **Blocked on D24.** A literal `user_id` predicate silently breaks the expiry sweep and the dispute write — both fail by matching zero rows and reporting success. Three options costed in `DECISIONS-REQUIRED.md` |
+| **Five audit findings** | #3 unbounded response buffering, #5 blocking `getaddrinfo`, #9 the double-click self-dispute, #10 the register race returning 500, #11 network I/O inside an open transaction. None blocked; all self-contained |
+| **Session refresh, and H9's mirrors** | Rolling 12-hour expiry on activity. The mirrors are down to two — `check_and_increment` and `scoped_connection` — since `expire_previews`' died with the preview product |
 
-- **`/domains/{claim_id}/check` is still the only unmetered outbound fetch**, and
-  the route declares no session dependency because `onboarding.py` authenticates
-  inside its handlers. Findings #3 and #4. P4 is where a rate limit lands anyway.
-- **Neon is three migrations behind** — `0010`, `0011` and `0012`. `alembic
-  upgrade head` applies all three, and `0011` drops `preview_session`, so it
-  destroys data on your database and was left for you.
-
-Nothing else blocks it.
+**Nothing here is blocked except the RLS work**, and that is waiting on a
+decision rather than on engineering.

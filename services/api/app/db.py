@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import lru_cache
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 
 @lru_cache
@@ -46,10 +47,12 @@ def get_engine() -> AsyncEngine:
     # Before this there were none. One query that never finished held a
     # connection out of a pool of five until the process was restarted, with
     # `pool_pre_ping` reporting it healthy throughout.
+    #
+    # **The three server-side ones are applied after connecting, not in the
+    # startup packet** — see `_apply_session_timeouts` below. Only
+    # `application_name` goes in `server_settings`, because it is the one that
+    # survived.
     server_settings = {
-        "statement_timeout": settings.db_statement_timeout,
-        "lock_timeout": settings.db_lock_timeout,
-        "idle_in_transaction_session_timeout": settings.db_idle_in_transaction_timeout,
         # Named in `pg_stat_activity`, so a connection can be attributed to
         # this process rather than guessed at from its query.
         "application_name": "nexus-api",
@@ -110,7 +113,58 @@ def get_engine() -> AsyncEngine:
             "prepared_statement_cache_size": 0,
         }
 
-    return create_async_engine(url, **kwargs)
+    engine = create_async_engine(url, **kwargs)
+    _apply_session_timeouts(engine, settings)
+    return engine
+
+
+def _apply_session_timeouts(engine: AsyncEngine, settings: Settings) -> None:
+    """Set the three server-side timeouts on every new connection.
+
+    They used to travel in asyncpg's `server_settings`, which becomes the
+    connection's startup packet. That works on stock PostgreSQL — and CI runs
+    stock PostgreSQL, so it was green — but **Neon's proxy filters the startup
+    packet to an allowlist and silently drops all three.** `SHOW
+    statement_timeout` on a live application connection returned `0`.
+
+    Silently is the word that matters. Nothing errored, nothing logged, and
+    `application_name` — sent in the very same dictionary — arrived intact, so
+    the connection looked correctly configured from every angle except asking
+    the server what it thought. ADR 0008 makes Neon the production database, so
+    for as long as this was true the protection existed in CI and nowhere that
+    mattered (finding #15).
+
+    Issued here instead, on the pool's `connect` event, which runs once per
+    physical connection rather than once per checkout — so this costs one round
+    trip per connection, not one per request.
+
+    `set_config(name, value, false)` rather than `SET name = value`: `SET` takes
+    no parameters, so the values would have to be interpolated into the SQL, and
+    these come from configuration. `false` is the `is_local` flag, making the
+    setting last for the session rather than the transaction — a `SET LOCAL`
+    here would be reverted by the first commit and protect nothing.
+    """
+    timeouts = (
+        ("statement_timeout", settings.db_statement_timeout),
+        ("lock_timeout", settings.db_lock_timeout),
+        ("idle_in_transaction_session_timeout", settings.db_idle_in_transaction_timeout),
+    )
+    # `$1`, not `%s`. SQLAlchemy's asyncpg dialect is `numeric_dollar` — the
+    # first version of this used `%s` and every connection failed with
+    # "syntax error at or near %", which is at least a loud failure rather than
+    # the silent one it was written to replace.
+    statement = "SELECT " + ", ".join(
+        f"set_config('{name}', ${i}, false)" for i, (name, _) in enumerate(timeouts, start=1)
+    )
+    values = tuple(value for _, value in timeouts)
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_timeouts(dbapi_connection: object, _record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        try:
+            cursor.execute(statement, values)
+        finally:
+            cursor.close()
 
 
 @lru_cache

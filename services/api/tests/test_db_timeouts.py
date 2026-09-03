@@ -22,6 +22,21 @@ Asserted with `SHOW`, against the application's own engine, because a test over
 `create_async_engine`'s keyword arguments proves the arguments were passed and
 not that Postgres accepted them — and `server_settings` names are silently
 per-driver.
+
+**That distinction stopped being theoretical.** The three server-side timeouts
+originally travelled in asyncpg's `server_settings`, which becomes the startup
+packet. Stock PostgreSQL honours it; **Neon's proxy filters the startup packet
+and dropped all three**, so `SHOW statement_timeout` on a live application
+connection returned `0` while `application_name`, sent in the same dictionary,
+arrived intact. CI runs stock PostgreSQL, so these tests passed there throughout
+— the protection existed in CI and nowhere that mattered, since ADR 0008 makes
+Neon production (finding #15).
+
+They are now issued with `set_config` on the pool's `connect` event. The tests
+below are written so that reverting to `server_settings` fails them **on Neon**
+and still passes on stock PostgreSQL, which is the honest shape of this problem:
+no test run against one database can prove a claim about the other. Run the
+suite against Neon before believing anything here.
 """
 
 from __future__ import annotations
@@ -71,6 +86,47 @@ async def test_the_server_has_the_timeout_applied(guc: str, expected: str, app_d
     async with _unscoped_session() as session:
         value = (await session.execute(text(f"SHOW {guc}"))).scalar_one()
     assert value == expected
+
+
+@requires_db
+async def test_the_timeouts_survive_a_pool_checkout_cycle(app_db: None) -> None:
+    """Set once per connection, not once per session.
+
+    `set_config(..., false)` is session-scoped, so it lasts as long as the
+    physical connection and a pooled connection carries it into the next
+    request. The failure this rules out is a `SET LOCAL` — reverted by the first
+    commit, which would leave the second and every later user of that connection
+    unprotected while the first checkout looked fine.
+    """
+    async with _unscoped_session() as session:
+        first = (await session.execute(text("SHOW statement_timeout"))).scalar_one()
+        # A commit is what would discard a transaction-scoped setting.
+        await session.commit()
+        after_commit = (await session.execute(text("SHOW statement_timeout"))).scalar_one()
+
+    # Return to the pool, then take a connection again.
+    async with _unscoped_session() as session:
+        reused = (await session.execute(text("SHOW statement_timeout"))).scalar_one()
+
+    assert first == "15s"
+    assert after_commit == "15s", "a commit discarded it — this is SET LOCAL, not SET"
+    assert reused == "15s", "the setting did not survive returning to the pool"
+
+
+@requires_db
+async def test_application_name_still_arrives(app_db: None) -> None:
+    """The control in the experiment that found #15.
+
+    `application_name` is the one setting still sent in `server_settings`, and
+    it arrives on Neon. Keeping it asserted here is what distinguishes "the
+    startup packet is filtered" from "the connection is misconfigured" if this
+    ever regresses — and it is why the fix targeted three settings rather than
+    four.
+    """
+    async with _unscoped_session() as session:
+        value = (await session.execute(text("SHOW application_name"))).scalar_one()
+
+    assert value == "nexus-api"
 
 
 @requires_db

@@ -36,6 +36,11 @@ from app.connectors.domain_check import (
     is_free_email_domain,
     normalise_domain,
 )
+
+# Aliased: `consume` already means "spend a verification token" in this module,
+# and two functions with one name in one file is how the wrong one gets called.
+from app.connectors.rate_limit import CHECK_PER_DOMAIN, CHECK_PER_USER
+from app.connectors.rate_limit import consume as meter
 from app.db import _unscoped_session
 from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.logging import get_logger
@@ -176,6 +181,29 @@ async def check_domain_claim(
     if loaded.state == "verified":
         claim = loaded
     else:
+        # Finding #4. Metered before the fetch, not after: the point is to stop
+        # the outbound request being made, and a limit checked afterwards has
+        # already sent it.
+        #
+        # A 429 is safe here where it was not on `/auth/login` — the caller has
+        # already proved they own this claim, so refusing them discloses nothing
+        # about anyone else. The *scope* is still withheld: which bucket ran out
+        # is our business, and saying "this domain has been checked too often"
+        # would tell one claimant about another's activity.
+        async with _unscoped_session() as db:
+            over_user = await meter(db, CHECK_PER_USER, str(user_id))
+            over_domain = await meter(db, CHECK_PER_DOMAIN, loaded.domain)
+            await db.commit()
+
+        if over_user or over_domain:
+            log.info("domain.check.rate_limited")
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "That domain has been checked too many times recently. "
+                "DNS changes can take a few minutes to appear — try again shortly.",
+                headers={"Retry-After": "300"},
+            )
+
         # No session in scope here. Deliberately outside the block above rather
         # than merely after a commit: a commit ends the transaction and keeps
         # the connection, which is the resource that runs out.

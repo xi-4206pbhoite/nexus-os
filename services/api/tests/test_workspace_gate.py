@@ -367,3 +367,59 @@ def test_revocation_does_not_delete_the_workspace(conn: Connection) -> None:
     ).first()
     assert row is not None, "revocation must not delete the workspace"
     assert row.owner_claim_review is True
+
+
+# ── The check is metered (finding #4) ─────────────────────────
+
+
+@requires_db
+def test_domain_check_is_metered_per_user_and_per_domain(conn: Connection) -> None:
+    """`/domains/{id}/check` performs a server-side fetch against a host the
+    caller named, and until now nothing bounded it.
+
+    It became the *only* unmetered outbound fetch in the product when P2 deleted
+    the preview's `PER_DOMAIN` bucket — which finding #4 had cited as its
+    mitigation, so removing the preview made this worse rather than better.
+
+    Two counters, because the two abuses differ. Per user bounds one account
+    looping the button; per domain is the reflected-DoS shape, where many
+    accounts pointed at one victim each stay under a per-user limit while the
+    target is hammered by requests it never asked for.
+
+    Asserted on the limits themselves rather than by driving the route 60 times:
+    what matters is that both buckets exist and that the domain ceiling is the
+    higher of the two — a per-domain limit *below* the per-user one would refuse
+    a single legitimate claimant before it ever refused a crowd.
+    """
+    from app.connectors.rate_limit import CHECK_PER_DOMAIN, CHECK_PER_USER
+
+    assert CHECK_PER_USER.max_count > 0
+    assert CHECK_PER_DOMAIN.max_count >= CHECK_PER_USER.max_count, (
+        "the per-domain ceiling is below the per-user one, so one honest "
+        "claimant hits it before any crowd does"
+    )
+    # Distinct prefixes, or the two counters share a bucket and the tighter of
+    # them silently becomes the only one.
+    assert CHECK_PER_USER.bucket_prefix != CHECK_PER_DOMAIN.bucket_prefix
+
+
+def test_the_check_route_meters_before_it_fetches() -> None:
+    """Order matters, and it is not visible from the limits alone.
+
+    A limit consulted *after* the fetch has already sent the request it exists
+    to prevent. This asserts the metering appears ahead of `perform_check` in
+    the source — crude, and it is the only way to state an ordering that no
+    return value reveals.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "routes" / "onboarding.py").read_text(
+        encoding="utf-8"
+    )
+
+    meter_at = source.index("CHECK_PER_DOMAIN, loaded.domain")
+    fetch_at = source.index("await perform_check(")
+    assert meter_at < fetch_at, (
+        "the rate limit is consulted after the outbound fetch, which means the "
+        "request it exists to prevent has already been sent"
+    )

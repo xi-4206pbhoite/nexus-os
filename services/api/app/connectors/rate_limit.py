@@ -83,6 +83,29 @@ LOGIN_PER_IP = Limit("login_ip", max_count=10, window=timedelta(hours=1))
 LOGIN_PER_EMAIL = Limit("login_email", max_count=10, window=timedelta(hours=1))
 REGISTER_PER_IP = Limit("register_ip", max_count=5, window=timedelta(hours=1))
 
+# ── Domain verification checks (finding #4) ───────────────────
+#
+# `/domains/{id}/check` performs a **server-side fetch against a host the caller
+# named** — a DNS TXT lookup, or an HTTPS GET of a well-known path. It is the
+# only unmetered outbound fetch left in the product, and it became the only one
+# when P2 deleted the preview's `PER_DOMAIN` bucket, which finding #4 had cited
+# as its mitigation.
+#
+# Two counters, because the two abuses are different:
+#
+# - **per user** — bounds one account looping the button, which is also the
+#   accidental case: a founder waiting for DNS to propagate clicks Check every
+#   few seconds, and that should cost them nothing worse than a wait.
+# - **per domain** — the reflected-DoS shape. Many accounts pointed at one
+#   victim stay under any per-user limit while the target is hammered by
+#   requests it did not ask for and cannot attribute to whoever chose it.
+#
+# Generous, because a real claimant is genuinely uncertain when their record
+# will appear and re-checking is the correct thing for them to do. These stop a
+# script, not a person.
+CHECK_PER_USER = Limit("domaincheck_user", max_count=30, window=timedelta(hours=1))
+CHECK_PER_DOMAIN = Limit("domaincheck_domain", max_count=60, window=timedelta(hours=24))
+
 # Doubling from a quarter of a second, capped. The cap matters: an uncapped
 # curve turns the twentieth attempt into a request that holds a worker for
 # minutes, so the backoff becomes a way to exhaust the server it protects.

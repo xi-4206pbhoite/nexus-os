@@ -356,7 +356,12 @@ async def _members(session: AsyncSession) -> list[MemberOut]:
 
 
 async def store_answer(
-    session: AsyncSession, *, caller: ScopedSession, question: Question, value: Any
+    session: AsyncSession,
+    *,
+    caller: ScopedSession,
+    question: Question,
+    value: Any,
+    is_assumption: bool = False,
 ) -> None:
     """Write one answer, classified from the catalogue.
 
@@ -377,13 +382,18 @@ async def store_answer(
     await session.execute(
         text(
             "INSERT INTO onboarding_answer"
-            " (workspace_id, answered_by_user_id, question_key, value, scope, department)"
-            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d)"
+            " (workspace_id, answered_by_user_id, question_key, value, scope,"
+            "  department, is_assumption)"
+            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d, :assumed)"
             " ON CONFLICT (workspace_id, question_key) DO UPDATE"
             "    SET value = EXCLUDED.value,"
             "        scope = EXCLUDED.scope,"
             "        department = EXCLUDED.department,"
             "        answered_by_user_id = EXCLUDED.answered_by_user_id,"
+            # Carried on the upsert, so answering properly later clears the
+            # flag. An assumption that outlives the answer correcting it would
+            # keep the Brain hedging about a fact it now knows.
+            "        is_assumption = EXCLUDED.is_assumption,"
             "        updated_at = now()"
         ),
         {
@@ -391,6 +401,7 @@ async def store_answer(
             "u": str(caller.user_id),
             "k": question.key,
             "v": json.dumps(value),
+            "assumed": is_assumption,
             "s": scope_code(answer_scope),
             "d": department.value if department else None,
         },

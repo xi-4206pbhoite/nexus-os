@@ -48,9 +48,24 @@ def caller(role: Role, departments: set[Department] | None = None) -> ScopedSess
     )
 
 
+def _override_departments(app: object) -> None:
+    """Say "this company runs everything" for these tests.
+
+    They assert the **permission** lattice — who may reach which director — and
+    P6 added a second, independent filter for which departments the company
+    runs at all. Overriding it keeps these tests about the one thing they were
+    written for; `tests/test_onboarding_spine.py` covers the other.
+    """
+    from app.domain.scopes import Department
+    from app.routes.dashboards import running_departments
+
+    app.dependency_overrides[running_departments] = lambda: frozenset(Department)  # type: ignore[attr-defined]
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app = create_app()
+    _override_departments(app)
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

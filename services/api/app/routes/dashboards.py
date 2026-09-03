@@ -21,9 +21,12 @@ doc 06 §4.5, the same rule `filter_records` follows.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from app.db import _unscoped_session
 from app.deps import CurrentScope
 from app.deps_scope import enforce_department
 from app.domain.dashboards import (
@@ -37,6 +40,7 @@ from app.domain.dashboards import (
     state_for,
     unlock_sentence,
 )
+from app.domain.departments import selected_departments
 from app.domain.scopes import Department
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
@@ -116,6 +120,22 @@ def _offering_out(offering: Offering, connected: frozenset[Source]) -> OfferingO
     )
 
 
+async def running_departments(scope: CurrentScope) -> frozenset[Department]:
+    """Which departments this company runs (Q22/Q63).
+
+    A dependency rather than a call inside the handler, so the route stays a
+    pure function of its inputs and `tests/test_dashboard_scope.py` can keep
+    asserting the *permission* lattice without standing up a database. Reading
+    it inline turned four unit tests into integration tests, which is a real
+    cost and not one this filter is worth.
+    """
+    async with _unscoped_session() as db:
+        return await selected_departments(db, workspace_id=scope.workspace_id)
+
+
+RunningDepartments = Annotated[frozenset[Department], Depends(running_departments)]
+
+
 def _reachable(scope: CurrentScope, director: Director) -> bool:
     if director.executive_only:
         return scope.can_see_executive_surface
@@ -123,9 +143,28 @@ def _reachable(scope: CurrentScope, director: Director) -> bool:
 
 
 @router.get("", response_model=DashboardsOut)
-async def list_dashboards(scope: CurrentScope) -> DashboardsOut:
-    """The directors this caller may open, and where to land them."""
-    visible = [d for d in DIRECTORS if _reachable(scope, d)]
+async def list_dashboards(scope: CurrentScope, chosen: RunningDepartments) -> DashboardsOut:
+    """The directors this caller may open, and where to land them.
+
+    **Two filters, and they answer different questions.** Which departments the
+    *company runs* (Q22/Q63, chosen during onboarding) decides which directors
+    exist at all; which the *caller may reach* decides who sees them. A company
+    that does not run a sales function should show no Sales Director to anybody,
+    including its Owner — an empty dashboard reads as broken data rather than as
+    an absent department, which is the whole reason selection exists.
+
+    A workspace that has not chosen yet gets all seven. That is the honest
+    default: nothing has been said about this company, so nothing has been ruled
+    out, and hiding directors from someone who never made a choice would be the
+    product deciding on their behalf.
+    """
+    # `selected_departments` always includes the Chief of Staff, so a workspace
+    # with exactly one entry has chosen nothing.
+    has_chosen = len(chosen) > 1
+
+    visible = [
+        d for d in DIRECTORS if _reachable(scope, d) and (not has_chosen or d.department in chosen)
+    ]
 
     landing = landing_department(
         executive_surface=scope.can_see_executive_surface,

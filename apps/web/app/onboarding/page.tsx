@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow'
 import { Logo } from '@/components/ui/Logo'
 
 export const metadata: Metadata = {
@@ -16,7 +16,12 @@ export const metadata: Metadata = {
  * before the client knew which, and a mismatch shows as a flash of the wrong
  * screen.
  *
- * The wizard renders what the API says this caller may see and change. Nothing
+ * **The flow is resumable** (Q28, P6). It replaced a single-page wizard that
+ * asked for everything at once — which is the wrong shape for questions a
+ * founder has to go and look up, because the half-finished state is the normal
+ * state and the wizard had nowhere to keep it.
+ *
+ * The flow renders what the API says this caller may see and change. Nothing
  * on this page decides that — a hidden field is a presentation choice, and the
  * boundary is in `app/routes/setup.py`.
  */
@@ -48,7 +53,7 @@ export default function OnboardingPage() {
           </p>
 
           <div className="mt-10">
-            <OnboardingWizard />
+            <OnboardingFlow />
           </div>
         </div>
       </div>

@@ -147,7 +147,20 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-filterwarnings = ["error"]
+filterwarnings = [
+  "error",
+  # `starlette` 1.6.0's TestClient imports `anyio.abc.BlockingPortal`, which
+  # `anyio` 4.15.0 deprecated in favour of `anyio.from_thread.BlockingPortal`.
+  # Neither package is ours and nothing in this repository names either symbol,
+  # so `error` turned a third-party deprecation into nine collection errors —
+  # every module that builds a TestClient.
+  #
+  # Narrow on purpose: the message is matched, not the category, so a *different*
+  # DeprecationWarning still fails the build. Delete this line when starlette
+  # stops using the alias; the suite will not tell you it has become redundant,
+  # so check it when starlette is next upgraded.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
 
 # --strict-markers: a misspelled marker is an error, not a silent no-op. Nine
 #   modules previously kept `requires_db` as a local `skipif` variable, so a

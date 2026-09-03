@@ -174,9 +174,11 @@ instance serves several sessions.
 
 Reconciled with `BUILD-STATUS.md` in Phase 2. Four rows (#6, #7, #8, and the
 code half of #12) had been fixed in Phase 1 and never struck from this table, so
-the register said fourteen open findings while the code said ten. One new
-finding, **#15**, was added in the same pass: it is what running the suite
-against Neon rather than the CI container turned up.
+the register said fourteen open findings while the code said ten. Two new
+findings were added in the same pass. **#15** is what running the suite against
+Neon rather than the CI container turned up. **#16** is what running CI at all
+turned up — the test step had not executed since M5, and nobody could have known,
+because the job failed at an earlier step that looked unrelated.
 
 | # | Finding | Where | Why not now |
 |---|---|---|---|
@@ -195,6 +197,7 @@ against Neon rather than the CI container turned up.
 | 13 | **Email verification never wired** - `send_verification` has zero callers, so no token can exist, so the EMAIL domain method is structurally dead | `auth/email_verification.py` | Blocked on **D4** |
 | 14 | **Re-verification unimplemented**, not merely uncalled | `auth/domains.py:341` | The third-party deletion half of this finding is **closed by Phase 2**: no unauthenticated crawl means no crawled company, so there is nothing for such a path to delete (**D9 void**). Re-verification remains open |
 | 15 | **Neon silently discards three of the four database timeouts** - `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` are passed in asyncpg's `server_settings` and come back from `SHOW` as `0`, `0` and `5min`. `application_name`, sent the same way, arrives intact, so the connection is fine and the GUCs are being filtered by Neon's proxy. **C12's protection does not exist in production** (ADR 0008 makes Neon the target), and CI cannot see it because CI runs plain Postgres, where the same code passes | `db.py:49` | Found in Phase 2 by running the suite against Neon. Needs a decision: issue them as `SET` on checkout instead of in the startup packet, or accept `command_timeout` alone. Not Phase 2's to fix |
+| 16 | **The dependency set is unpinned, and CI resolves a different one than any developer** - two defects landed from this in a row: `beautifulsoup4` was imported and never declared (so `mypy` failed on a clean runner and **the test step never executed on any CI run since M5**), and `anyio` 4.15.0 deprecated an alias `starlette` 1.6.0 still uses, which `filterwarnings = ["error"]` turned into nine collection errors | `pyproject.toml`, `.github/workflows/ci.yml` | Both fixed in Phase 2. The **class** is not: there is no lockfile, so every run resolves fresh and the next transitive change lands the same way. Wants `pip-compile`/`uv lock` and a `pip-sync` in the workflow |
 
 ---
 

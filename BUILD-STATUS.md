@@ -131,15 +131,27 @@ reason:** P11 builds the research job model and will know what a run costs.
 | **The landing page has no URL field and builds** | `npx tsc --noEmit` clean, `npx next lint` clean, `npx next build` succeeds with no `/api/preview` route in the manifest |
 | The suite is green | **660 passed**, coverage **76.49%** against a floor of 75 — up from 75.86%, because the deleted code took its own uncovered branches with it |
 
-**CI was red before this phase started, and the cause was one undeclared
-dependency.** `app/.../extract.py` imports `bs4`, and `beautifulsoup4` appeared
-in no dependency list. On a clean runner `pip install -e ".[dev]"` therefore did
-not install it, `mypy` failed with *"cannot find implementation or library stub
-for module named bs4"*, and the **test step never ran** — so every run since that
-file was written has been red, including the one that closed Phase 1. It passed
-on the developer's machine because another package pulled `bs4` in transitively.
-Declared in `pyproject.toml` here, because the file it breaks is the file this
-phase moves.
+**CI was red before this phase started, for two reasons, and neither was
+visible.**
+
+The first: `app/.../extract.py` imports `bs4` and **`beautifulsoup4` appeared in
+no dependency list**. On a clean runner `pip install -e ".[dev]"` did not install
+it, so `mypy` failed with *"cannot find implementation or library stub for module
+named bs4"* — and mypy runs before pytest, so **the test step never executed on
+any run since that file was written**, including the one that closed Phase 1. It
+passed on the developer's machine because another package pulled `bs4` in
+transitively.
+
+The second was underneath it, and only appeared once the first was fixed:
+`starlette` 1.6.0's `TestClient` imports `anyio.abc.BlockingPortal`, which `anyio`
+4.15.0 deprecated. `filterwarnings = ["error"]` turned that into **nine
+collection errors** — every module that builds a `TestClient`. Neither package is
+ours. A narrow `ignore` naming the message, so a different `DeprecationWarning`
+still fails the build.
+
+Both are the same class of defect: **an unpinned dependency set means CI resolves
+a different environment than the developer, and the difference is only visible on
+the run.** The workflow has no lockfile, so this will recur.
 
 **The seven local failures against Neon are a separate cause, and not the code.**
 The developer's Neon instance is at migration `0009`; head is now `0011`. Four
@@ -385,6 +397,7 @@ company. ~2 days saved.
 | 🟡 | M13 | `loading.tsx` / `global-error.tsx` | P16 | none | 0.5 d |
 | 🟡 | M14 | Reconcile the scoreable count — data says five, copy says six | P15 | D8 ✅ | 0.5 d |
 | 🟡 | M15 | Move the embedding pass out of the API process | P9 | C11 | 1.5 d |
+| 🟡 | M16 | Pin the dependency set — a lockfile and `pip-sync` in CI | P4 | Finding #16. No lockfile today, so every CI run resolves fresh. Two defects landed from this in Phase 2 alone, and the first hid the second | none | 0.5 d |
 
 **M2 (preview deletion path) is void, and now actually so** — Phase 2 deleted
 `POST /preview` and migration 0011 dropped `preview_session`, so no data about a

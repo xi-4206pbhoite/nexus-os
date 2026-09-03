@@ -273,7 +273,7 @@ it belongs in a separate worker.
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.
-**Eleven findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
+**Twelve findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
 the register had said fourteen for a month after Phase 1 closed three of them.
 The three worth knowing before touching auth, the database or deployment:
 
@@ -286,9 +286,18 @@ The three worth knowing before touching auth, the database or deployment:
   the startup packet. The code is right and CI is green because **CI runs plain
   Postgres**, so this is invisible there and real in production.
 
-The third is the same shape as the D23 incident below, and worth internalising as
-one rule rather than two anecdotes: **a test that meets a different Postgres than
-production can be green in the place nobody deploys to.**
+- **The dependency set is unpinned** (finding #16). There is no lockfile, so CI
+  resolves a different environment than any developer every single run. Two
+  defects landed from this back to back in Phase 2: `beautifulsoup4` imported and
+  never declared — which failed `mypy` on a clean runner and meant **the pytest
+  step had not executed in CI since M5** — and an `anyio`/`starlette` deprecation
+  that `filterwarnings = ["error"]` turned into nine collection errors. Both
+  fixed; the class is not.
+
+The last two are the same shape as the D23 incident below, and worth internalising
+as one rule rather than three anecdotes: **an environment that differs from the
+one you deploy to can be green in the place nobody deploys to.** It has now been
+a drifted database, a proxy that filters GUCs, and an unpinned resolver.
 
 ## Content rule
 

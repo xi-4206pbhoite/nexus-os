@@ -63,19 +63,22 @@ npm run dev --prefix apps\web
 
 That script is the fastest honest answer to "is it working?" It walks every
 endpoint, prints what it is about to prove, and **asserts the refusals as well as
-the successes** — a CSRF-less POST, a workspace for a domain you do not own, six
-hostile URLs. A smoke test that only walked the happy path would pass just as
-happily with every guard removed.
+the successes** — a CSRF-less POST, a workspace for a domain you do not own, a
+spent verification token, a reset link used twice. A smoke test that only walked
+the happy path would pass just as happily with every guard removed.
 
-Expect `SMOKE PASSED   17 assertions`. Two things it may legitimately skip:
+**It reads your `.mail\` directory**, which is what lets it follow a
+verification link and a password reset with no provider and no mailbox: the file
+mailer writes RFC-822 to disk, so the link a real user would click is sitting in
+a file. Point it elsewhere with `-MailRoot` if you have moved
+`NEXUS_MAIL_ROOT`.
 
-- **`429 rate limited`** — the Preview audit is capped at 20/hour per IP
-  and 5/day per domain. A repeat of a domain already audited is
-  served from storage without a crawl and costs no domain allowance, so this is
-  harder to hit than it was. Use `-SkipPreview`, or
-  `-PreviewUrl https://another-site.com`.
-- **`did not answer`** — the site you pointed it at is slow or blocking us.
-  Not a defect; the API says which it was.
+Nothing in it skips any more. The two conditional skips that used to live here
+were both about the unauthenticated Preview audit — a rate limit and a
+third-party website being slow — and Phase 2 retired that endpoint. The script
+now asserts `POST /preview` returns **404** instead, and the SSRF guard it used
+to exercise is covered properly by 89 cases in `tests/test_ssrf_guard.py`, which
+needs nobody else's website to be up.
 
 ---
 

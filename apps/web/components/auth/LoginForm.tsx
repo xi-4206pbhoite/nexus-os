@@ -1,6 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Field } from '@/components/auth/Field'
 import { ArrowRight, Button } from '@/components/ui/Button'
@@ -10,6 +11,10 @@ type State = { status: 'idle' } | { status: 'submitting' } | { status: 'error'; 
 
 export function LoginForm() {
   const router = useRouter()
+  // `/reset-password` redirects here after a successful reset, because setting a
+  // new password revokes every live session — including the one that did it.
+  // Landing on a sign-in form with no explanation reads as the reset failing.
+  const justReset = useSearchParams().get('reset') === '1'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [state, setState] = useState<State>({ status: 'idle' })
@@ -40,6 +45,16 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+      {justReset && state.status !== 'error' ? (
+        <div
+          role="status"
+          className="rounded-xl border border-steel-300 bg-steel-100 px-4 py-3 text-sm text-steel-700"
+        >
+          Your password is set. Sign in with it — you were signed out everywhere, which is what
+          makes a reset worth doing.
+        </div>
+      ) : null}
+
       {state.status === 'error' ? (
         <div
           role="alert"
@@ -68,6 +83,13 @@ export function LoginForm() {
         disabled={busy}
         revealable
       />
+
+      <Link
+        href="/forgot-password"
+        className="-mt-2 w-fit text-sm font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+      >
+        Forgot your password?
+      </Link>
 
       <Button
         type="submit"

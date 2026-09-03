@@ -94,6 +94,28 @@ export async function logout(): Promise<void> {
   await post('/api/auth/logout')
 }
 
+/** Spend a verification token. Throws `AuthError` if it is expired or used. */
+export async function verifyEmail(token: string): Promise<void> {
+  await post('/api/auth/verify-email', { token })
+}
+
+/**
+ * Ask for a password-reset link.
+ *
+ * Returns nothing, and cannot fail differently for a known and an unknown
+ * address — the API answers identically on purpose. Any caller that branches on
+ * the result to say "we found you" reintroduces the oracle the endpoint exists
+ * to close, so there is nothing here to branch on.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await post('/api/auth/password-reset/request', { email })
+}
+
+/** Spend a reset token and set a new password. Signs the account out everywhere. */
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  await post('/api/auth/password-reset/confirm', { token, password })
+}
+
 /** The current session, or `null` when there is none. */
 export async function fetchSession(): Promise<SessionState | null> {
   const response = await fetch('/api/auth/session', {

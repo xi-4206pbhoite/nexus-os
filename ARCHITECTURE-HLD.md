@@ -233,6 +233,23 @@ what was removed.
 - **I5** — generations, health scores, `score_history` and scheduled briefs are keyed
   by `cache_key()`. Without it, *"role changes take effect immediately"* is false
   for every cached surface.
+
+  **Scope-keyed caching stands. The invalidate-on-workspace-switch half of I5 is
+  void** (P3, `doc/11` §3.2). Doc 06 §2.1 required a switch to tear down agent
+  sessions and drop every scope-keyed cache entry, because one identity could
+  hold memberships in several client workspaces and a cache entry crossing that
+  boundary would be a tenant leak. A NEXUS account now belongs to **one**
+  company: `POST /auth/workspace` is deleted, `_teardown_on_switch` with it, and
+  there is no switch to invalidate on.
+
+  What remains is the requirement that actually bites — **role change is still
+  immediate** (doc 06 §4.15), and a Contributor promoted to Manager must not be
+  served a cache entry computed at the narrower scope, nor the reverse after a
+  demotion. That is what `cache_key()` is for, and it is unaffected.
+
+  The membership schema stays many-to-many (`app/domain/membership.py` explains
+  why), so if doc 06 §2.1's agency case is ever revived, this paragraph is the
+  one to reverse — and the teardown seam will have to come back with it.
 - **I6** — an artifact's scope is `max(scope of every input)`, with inputs recorded.
   Declassification is an explicit logged act with a named actor, never a side
   effect of sharing.

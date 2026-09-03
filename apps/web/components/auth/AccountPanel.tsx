@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
@@ -90,7 +89,14 @@ export function AccountPanel() {
   }
 
   const { session } = state
-  const hasWorkspace = session.workspaces.length > 0
+  // One company per account (`doc/11` §3.2), so this is a single row rather
+  // than a list, and there is no switcher — `POST /auth/workspace` was deleted
+  // in P3 because there is never a second workspace to switch to.
+  //
+  // `session.workspaces` stays an array. The schema is many-to-many by choice
+  // (see `app/domain/membership.py`), so the wire format that carries zero or
+  // one entry today can carry more if doc 06 §2.1's agency case is revived.
+  const company = session.workspaces[0] ?? null
 
   return (
     <div className="flex flex-col gap-8">
@@ -104,7 +110,7 @@ export function AccountPanel() {
         </div>
         <div className="bg-white px-5 py-4">
           <dt className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-400">
-            Active workspace
+            Company
           </dt>
           <dd className="mt-1 font-mono text-sm text-ink-800">
             {session.active_workspace_id ?? 'None'}
@@ -114,23 +120,16 @@ export function AccountPanel() {
 
       {/* ── Workspaces ── */}
       <section>
-        <h2 className="font-display text-lg font-medium text-ink-900">Your workspaces</h2>
+        <h2 className="font-display text-lg font-medium text-ink-900">Your company</h2>
 
-        {hasWorkspace ? (
+        {company ? (
           <>
-            <ul className="mt-3 flex flex-col gap-2">
-              {session.workspaces.map((workspace) => (
-                <li
-                  key={workspace.workspace_id}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper"
-                >
-                  <span className="font-medium text-ink-900">{workspace.name}</span>
-                  <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
-                    {workspace.role}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper">
+              <span className="font-medium text-ink-900">{company.name}</span>
+              <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
+                {company.role}
+              </span>
+            </div>
 
             <div className="mt-4 rounded-2xl border border-ink-100 bg-white px-5 py-5 shadow-paper">
               <p className="font-display text-lg text-ink-900">Set up your workspace</p>
@@ -184,14 +183,10 @@ export function AccountPanel() {
           adding permissions after the features is how these products leak.
         </p>
         <p className="mt-3 text-[0.95rem] text-ink-600">
-          The free audit needs no account and works today —{' '}
-          <Link
-            href="/#top"
-            className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
-          >
-            run one
-          </Link>
-          .
+          There was a free audit here that needed no account. Phase 2 retired it: it
+          crawled any address a visitor typed, which meant anyone could be handed an
+          analysis of a company they do not own. The same engine now runs inside
+          onboarding, on the domain you have proved you control.
         </p>
       </section>
 

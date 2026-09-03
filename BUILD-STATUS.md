@@ -1,6 +1,6 @@
 # NEXUS OS — Build Status
 
-**Regenerated:** 3 September 2026, at the end of **Phase 2** of
+**Regenerated:** 3 September 2026, at the end of **Phase 3** of
 `doc/12-IMPLEMENTATION-PLAN.md`.
 **Method:** every claim below was run, not read. Where a figure is quoted, the
 command that produced it is named.
@@ -40,11 +40,11 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | Area | Complete | Basis |
 |---|---|---|
 | Foundation — repo, config, logging, health, CI, migrations | **100%** | Real Postgres in CI both directions; config fails closed; correlated 500s; four database timeouts, live on Neon as well as CI. Briefly 95% — §4.7 was open between its discovery and its fix |
-| Tenancy, RLS, auth, sessions, roles→scope | **82%** | Proved in CI. Cookies now `Secure` outside local. Gaps: no login rate limit, no audit trail written |
+| Tenancy, RLS, auth, sessions, roles→scope | **90%** | Proved in CI. Cookies `Secure` outside local. Verification and password reset work end to end, and one account belongs to one company. Gaps: no login rate limit, no audit trail written — both P4 |
 | ~~Preview audit (unauthenticated)~~ | **retired** | Deleted in Phase 2 (`doc/11` Q1). The entry point is gone; the engine moved to `app/research/` |
 | Research engine (`app/research/`) | **35%** | Guard, single-page crawler and extractor, all behind authentication and all passing from the new location. No job model, no multi-page crawl, no callers — P11 |
 | Domain verification (backend) | **70%** | DNS + file work. EMAIL method structurally dead; no transfer; no UI |
-| Onboarding + invitations | **65%** | Wizard and API real. Delivery by copy-pasted URL |
+| Onboarding + invitations | **70%** | Wizard and API real. Verification is delivered; **invitations are still a copy-pasted URL** (M17) |
 | Documents / classification / indexing | **45%** | Upload, chunking, withholding and the review queue all work against Postgres. Gaps: no classifier, no UI |
 | Scoped retrieval layer (the security core) | **5%** | `scoped_connection` exists; no retrieval query of any kind |
 | Company Brain + review gate | **0%** | Not started |
@@ -59,9 +59,9 @@ that split is unchanged, and Phase 5 is where it starts to close.
 |---|---|---|
 | **P0 — CI and the remote** | ✅ complete, with one claim withdrawn | The workflow, the Postgres service and the skip guard are all real and all working. But **"confirmed green on the remote" was wrong**: the run it referred to was red, and every run since has been, because `mypy` failed on an undeclared `bs4` before pytest was reached. The isolation tests were confirmed executed *locally*. They first ran on a remote runner in Phase 2 |
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
-| **P2 — Retire the preview product** | ✅ **complete, green in CI** | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
-| P3 — Identity | next | Email that actually sends, password reset, one person to one company. Blocked on nothing — `doc/11` settled SMTP |
-| P4 — Security | pending | |
+| **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
+| **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
+| P4 — The security surface | next | Login and register rate limiting, argon2 off the event loop, RLS on `domain_claim`, the audit trail. Blocked on **D14** |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -69,126 +69,81 @@ that split is unchanged, and Phase 5 is where it starts to close.
 
 ---
 
-## 3. What Phase 2 built
+## 3. What Phase 3 built
 
-Nothing. That is the phase.
+**The product can now be signed up for by a stranger, unaided.** That is the
+difference this phase makes, and it is smaller than it sounds only because the
+pieces were nearly all present: the token machinery, the mailer, the routes. What
+was missing was a caller.
 
-**`POST /preview` is gone**, and with it the only endpoint in the product that
-performed a server-side fetch for a caller who had not identified themselves.
-The reason is the one its own docstring gave: *"anyone can type a competitor's
-URL, and without that limit NEXUS would crawl a company the requester does not
-own, name its competitors, and hand that to a stranger — a competitive-
-intelligence product sold by accident."* The docstring was right and the mitigation
-— a reduced audit — was the wrong shape of answer. `doc/11` Q1 gave the right one.
+**Registration sends.** `send_verification` had **zero callers for two
+milestones**, so `email_verified_at` could never be set and the EMAIL
+domain-verification method was structurally dead — a whole branch of
+`domain_check.py` unreachable because nothing upstream of it ever ran. A
+duplicate registration still answers identically and now deliberately sends
+nothing: a second email would confirm to whoever triggered it that the first
+account exists.
 
-Deleted: the route (339 lines), `apps/web/app/api/preview/route.ts`,
-`PreviewForm.tsx`, `PreviewResult.tsx`, `lib/client-address.ts` and the whole
-`X-Forwarded-For` trust chain, the hero URL form, `preview_ttl_hours`,
-`trusted_proxy_ips`, `expire_previews`, `delete_previews_for_domain`, three test
-modules, and — in migration 0011 — the `preview_session` table.
+**Password reset**, in its own table (migration 0012) rather than a `purpose`
+column on `email_verification`. A stolen verification token confirms an address;
+a stolen reset token *is* the account, and a shared table invites the query that
+forgets to filter. One hour rather than twenty-four, superseding any outstanding
+token, revoking every live session on confirm.
 
-**The engine moved rather than died.** `ssrf.py`, `crawler.py` and `extract.py`
-are now `app/research/`, and the package docstring says what the directory is
-for. `app/calculators/audit.py` deliberately stayed where it is: it scores what
-the extractor finds, and I1 keeps every calculation in one place.
+**One person, one company** — `doc/11` §3.2, in `app/domain/membership.py`,
+called from the two paths that write a `membership` row rather than from the
+routes. The table stays many-to-many: doc 06 §2.1's agency case is deferred
+rather than deleted, and the rule is about *live* memberships, which a unique
+index cannot express without becoming a partial index that has to agree with
+application code anyway.
 
-**`test_no_unauthenticated_crawl.py` is the part that outlives the phase.**
-Deleting a route removes today's exposure; nothing about the deletion stops the
-next one being added. So the invariant is asserted structurally: an `ast` walk
-over `app/`, from every route that declares no session dependency, failing if any
-of them can reach `app.research.crawler` or `app.research.extract` at any depth.
-It replaces `test_preview_scope.py`, which could only ever describe the one
-endpoint it was written for.
+`POST /auth/workspace` and `_teardown_on_switch` are deleted with it, and **I5's
+invalidate-on-switch half is void** (`ARCHITECTURE-HLD.md` §4.6). Scope-keyed
+caching stays, because role change is still immediate.
 
-Two details in it were not obvious and are worth carrying:
+**The web surface**: `/verify-email`, `/forgot-password` and `/reset-password`,
+three BFF proxies, a forgot-password link on the sign-in form, and a post-reset
+confirmation on it — without which a reset dumps you at a sign-in page with no
+explanation, which reads as failure. `AccountPanel` shows one company instead of
+a list.
 
-- **The walk is over the source, not `sys.modules`.** A runtime check sees only
-  what the test session happened to import, and would go quiet exactly when a new
-  import path appeared.
-- **`app.research.ssrf` is exempted, narrowly.** It is the guard, not the fetch,
-  and `connectors/domain_check.py` — which proves a domain claim by fetching a
-  well-known file — has to use it. Forbidding it would push that path towards its
-  own copy of the SSRF guard, which is the worst available outcome.
-
-**The rate limiter is re-keyed**, `(ip, domain, global)` → `(workspace, global)`.
-The first two limits lost their subject: there is no address to attribute a crawl
-to when every caller is authenticated, and no reflected-DoS shape when the target
-must be a claimed domain. No migration was needed — a bucket is an opaque string,
-so the old rows are simply never written again and age out through
-`purge_expired`. **The per-workspace number is a placeholder with a stated
-reason:** P11 builds the research job model and will know what a run costs.
-
-### What Phase 2 proved, and how
+### What Phase 3 proved, and how
 
 | Claim | Evidence |
 |---|---|
-| **Nothing answers at `/preview`** | `TestClient(create_app())` — `GET` and `POST` both **404**. Asserted through the app, so re-registering the router in `main.py` fails the build |
-| **No anonymous route can reach the crawler** | `test_no_anonymous_route_can_reach_the_crawler`. It found `app.routes.preview` while the route still existed, and went green when it was deleted |
-| **The guard suite passes unedited from its new home** | `tests/test_ssrf_guard.py` — **89 cases**. The diff against `dev` is three import lines. No assertion changed |
-| **The calculator suite too** | `tests/test_audit_calculators.py` — 29 cases, one import line changed |
-| **The redirect suite too** | `tests/test_crawler_redirects.py` — 18 cases, two import lines |
-| **The exemption list pruned itself** | Removing `ck_preview_session_status` from `UNMAPPED` made `test_every_value_list_constraint_is_registered` fail against a database that still has the table — which is the tripwire Phase 1 built, firing on schedule |
-| **The landing page has no URL field and builds** | `npx tsc --noEmit` clean, `npx next lint` clean, `npx next build` succeeds with no `/api/preview` route in the manifest |
-| The suite is green **in CI** | **667 passed in 25s**, coverage **76.43%** against a floor of 75 — up from 75.86%, because the deleted code took its own uncovered branches with it. No `requires_db` test skipped, or `conftest.py` would have failed the session |
-| **Migration 0011 runs both directions on a clean Postgres** | The workflow's `upgrade head → downgrade base → upgrade head`, with `Running upgrade 0010 -> 0011` and `Running downgrade 0011 -> 0010` both in the log |
-
-**CI was red before this phase started, for two reasons, and neither was
-visible.**
-
-The first: `app/.../extract.py` imports `bs4` and **`beautifulsoup4` appeared in
-no dependency list**. On a clean runner `pip install -e ".[dev]"` did not install
-it, so `mypy` failed with *"cannot find implementation or library stub for module
-named bs4"* — and mypy runs before pytest, so **the test step never executed on
-any run since that file was written**, including the one that closed Phase 1. It
-passed on the developer's machine because another package pulled `bs4` in
-transitively.
-
-The second was underneath it, and only appeared once the first was fixed:
-`starlette` 1.6.0's `TestClient` imports `anyio.abc.BlockingPortal`, which `anyio`
-4.15.0 deprecated. `filterwarnings = ["error"]` turned that into **nine
-collection errors** — every module that builds a `TestClient`. Neither package is
-ours. A narrow `ignore` naming the message, so a different `DeprecationWarning`
-still fails the build.
-
-Both are the same class of defect: **an unpinned dependency set means CI resolves
-a different environment than the developer, and the difference is only visible on
-the run.** The workflow has no lockfile, so this will recur.
-
-**Locally, against Neon, four tests still fail — and that is the database, not
-the code.** The developer's instance is at migration `0009`; head is `0011`, so
-Phase 1's `0010` and Phase 2's `0011` are both unapplied. `alembic upgrade head`
-clears all four. CI, on a clean Postgres migrated both directions, is **green**.
-
-Three more failed here until §4.7 was fixed in this phase.
+| **Registering writes an email to disk with a working token** | `test_registration_sends_verification` — reads the `.eml`, extracts the token, spends it, and asserts `email_verified_at` moves from NULL. Then asserts the same token fails the second time |
+| **Registering twice sends once and answers identically** | `test_registering_a_known_address_still_answers_identically` — delivery must not reintroduce the enumeration oracle registration already closed |
+| **Reset is byte-identical for a known and an unknown address** | `test_password_reset_does_not_reveal_whether_an_account_exists` — `.content` compared directly, headers compared minus the three that vary per request. Plus the asymmetry a body cannot show: only one produced an email |
+| **A reset token works once and ends every session** | `test_a_reset_token_changes_the_password_once` and `test_a_reset_revokes_every_live_session` |
+| **One live membership per user** | `test_one_live_membership_per_user`, calling the real guard on the application's own session — not a synchronous re-implementation, which is what the first draft did and would have made a fourth entry on H9's list |
+| **"Live" excludes revoked** | `test_the_guard_ignores_a_revoked_membership`. Someone who left a company must be able to join another; counting every row ever written locks them out permanently |
+| **Your own workspace does not count against you** | `test_the_guard_ignores_the_users_own_workspace` |
+| **A deployed environment cannot ship unable to send** | Four refusals in `test_config_gates.py`: the file backend, SMTP without a host, SMTP without TLS, and a plaintext `public_base_url` |
+| **No auth route builds a link from the request** | `test_the_link_base_is_configuration_and_never_the_request_host` — `Host` is attacker-controlled, and a verification link built from it is a working account-takeover primitive |
+| The suite is green in CI | **688 passed**, coverage **78.49%** against a floor of 75 |
 
 ### What the tests found that the plan did not anticipate
 
-- **`onboarding.py` authenticates in its body, not in its signature.** Three of
-  its four routes call a local `_require_user(nexus_session)` instead of
-  depending on `CurrentSession`, so they are authenticated in fact and *anonymous
-  to any structural check*. The new test treats them as anonymous rather than
-  arguing the point — a check that cannot see an authentication decision cannot
-  rely on it — and the fix is to declare the dependency. **P5 owns those routes.**
-- **`domain_check.check_well_known_file` is a second server-side fetch**, on
-  `/domains/{claim_id}/check`, which is one of those routes. It is far narrower
-  than the preview was — SSRF-guarded, address-pinned, no redirects, and tied to
-  a claim the caller initiated — and the plan knowingly keeps it (`doc/12` §Phase
-  2 says findings #3–#5 survive *because* `domain_check.py` does). But it is now
-  the **only** unmetered outbound fetch in the product, and the per-domain bucket
-  that finding #4 cited as mitigation was deleted by this phase. Finding #4 is
-  updated to say so.
-- **`FastAPI.include_router` no longer flattens.** In this version an included
-  router appears in `app.routes` as one object holding its own routes, so a flat
-  pass sees three documentation endpoints and nothing else. The first version of
-  the import-graph test classified *every* route as authenticated and passed
-  vacuously. The guard test written alongside it — "some routes are anonymous or
-  this test proves nothing" — is what caught that, on the first run.
-
----
+- **The one-company guard refused re-accepting your own invitation.** Accepting
+  is idempotent by design — `ON CONFLICT DO NOTHING`, so a second click keeps the
+  role you hold rather than resetting it (doc 06 §4.15: a role change is not an
+  invitation). The first guard counted every live membership, so the second click
+  answered "you are already part of a company": true, useless, and refusing the
+  one case built to be safe. `test_an_existing_member_keeps_the_role_they_already
+  _hold` caught it in CI on the first run.
+- **The fix silently did nothing on the first attempt.** `ruff format` had
+  collapsed the SQL onto one line, so a string replacement found no anchor and the
+  tests failed identically. Worth stating because the symptom of an edit that did
+  not apply is indistinguishable from an edit that did not work.
+- **Two Phase 2 misses surfaced here.** `scripts\smoke.ps1` still called
+  `POST /preview` — so the smoke walk had been broken since that endpoint was
+  deleted — and `AccountPanel.tsx` still offered a "free audit" that no longer
+  exists. Both fixed. A grep for the deleted route would have caught the first;
+  Phase 2 checked the API and the web app and did not check the scripts.
 
 ## 4. What is still broken
 
-Four of the seven are cleared. The three that remain are all *absent features*
+Five of the seven are cleared. The two that remain are both *absent features*
 rather than broken ones — nothing here fails at runtime; it simply does not exist
 yet, and each has a phase. §4.7 was both found and fixed inside Phase 2: it
 failed silently, in production only, where CI could not see it.
@@ -228,13 +183,18 @@ a bug. Every upload lands in the review queue because the absence of a
 classifier is a reason to deny, and the review queue is where a human decides.
 What is missing is the suggestion, not the gate.
 
-### 4.5 🔴 No email is ever sent
+### 4.5 ✅ ~~No email is ever sent~~ — fixed
 
-**Phase 3.** `FileMailer` is never instantiated and `send_verification` has zero
-callers. Consequently `email_verified_at` can never be set, the EMAIL
-domain-verification method is unreachable, and invitations are delivered by the
-inviter copy-pasting a raw token URL. `doc/11` settled the transport (SMTP), so
-nothing blocks it.
+`POST /auth/register` calls `send_verification`, `build_mailer` selects the
+transport, and `SmtpMailer` sends where `FileMailer` writes. `email_verified_at`
+can be set, so the EMAIL domain-verification method is reachable for the first
+time.
+
+**Invitations are still delivered by copy-pasting a token URL.** That half is
+untouched: the invitation flow has its own screen and its own token, and
+`doc/12` §Phase 3's build list does not include it. It is not blocked by
+anything — `invitations.issue` returns the token and the mailer now exists — so
+it is a small, deliberate omission rather than a dependency. Recorded as **M17**.
 
 ### 4.6 ✅ ~~Non-secure cookies and public API docs from one unset variable~~ — fixed
 
@@ -354,6 +314,10 @@ exception handler), and **M6** (constraint drift detection, as
 between Phase 2's discovery of finding #15 and its fix, and is closed again —
 the three server-side timeouts now apply on Neon, not only in CI.
 
+Cleared in Phase 3: **C10** (wire email delivery) and **M7** (the four config
+settings held back until email existed). `POST /auth/workspace` and
+`_teardown_on_switch` are deleted.
+
 Cleared in Phase 2: the preview retirement itself, which had no work-item ID —
 it is `doc/12` §Phase 2 in full. **H9** shrank rather than closed: of its three
 test mirrors,
@@ -370,7 +334,6 @@ exist yet.
 | 🔴 | C3 | Domain-claim UI + the three missing BFF proxies | P5 | §4.3 — no authed entry point exists | none | 3 d |
 | 🔴 | C4 | End-to-end test of the real signup journey against Postgres | P9 | Does not exist | C1, C2, C3 | 2 d |
 | 🔴 | C9 | Rate-limit `/auth/login` and `/auth/register`; argon2 off the event loop | P4 | Unbounded; ~40–80 ms sync CPU per attempt | D14 settled | 1.5 d |
-| 🔴 | C10 | Wire email delivery | P3 | §4.5 | D4 settled — SMTP | 1.5 d |
 | 🔴 | C11 | API and web container images + a runnable stack | P9 | No Dockerfile anywhere | none | 2 d |
 
 ### 🟠 High — required for a complete, production-ready application
@@ -413,6 +376,7 @@ company. ~2 days saved.
 | 🟡 | M14 | Reconcile the scoreable count — data says five, copy says six | P15 | D8 ✅ | 0.5 d |
 | 🟡 | M15 | Move the embedding pass out of the API process | P9 | C11 | 1.5 d |
 | 🟡 | M16 | Pin the dependency set — a lockfile and `pip-sync` in CI | P4 | Finding #16. No lockfile today, so every CI run resolves fresh. Two defects landed from this in Phase 2 alone, and the first hid the second | none | 0.5 d |
+| 🟡 | M17 | Send invitations by email | P5 | The inviter copy-pastes a raw token URL. `invitations.issue` returns the token and `build_mailer` exists since P3, so this is a caller and a template — the same gap registration had, and the same fix | none | 0.5 d |
 
 **M2 (preview deletion path) is void, and now actually so** — Phase 2 deleted
 `POST /preview` and migration 0011 dropped `preview_session`, so no data about a
@@ -463,25 +427,28 @@ silent `local` (ADR 0015).
 
 ## 9. Next
 
-**Phase 3 — Identity.** Email that actually sends, password reset, and one
-person to one company. `doc/11` settled the transport, so nothing external
-blocks it: `FileMailer` writes `.eml` files into `.mail\`, which means the whole
-verification and invitation chain can be built and tested locally and **D4 gates
-deployment rather than development**.
+**Phase 4 — The security surface.** Everything in it is a known defect, which
+makes it the least speculative phase in the plan and the one that decides whether
+the product can be exposed publicly at all.
 
-It closes §4.5 — `send_verification` has zero callers today, so
-`email_verified_at` can never be set, the EMAIL domain-verification method is
-unreachable, and an invitation is delivered by the inviter copy-pasting a raw
-token URL. It also picks up **M7**, the four config settings held back until
-email exists.
+`C9` is the centre: `/auth/login` and `/auth/register` have no rate limit, so
+credential stuffing is unbounded, and argon2 runs on the event loop at ~40–80 ms
+of synchronous CPU per attempt — the two compound, because the cheapest way to
+stall every endpoint including the health probes is to guess passwords at an
+account that does not exist. **It needs D14 from you**: a per-account lock is
+itself a denial-of-service vector against a named user, so the shape of the
+limit is a product decision rather than an engineering one.
 
-One thing Phase 2 hands it, and it is not blocking:
+Then the rest of `AUDIT-FINDINGS.md`: RLS on `domain_claim`, and the audit trail
+that I9 needs and that nothing currently writes.
 
-- **Neon is two migrations behind.** `alembic upgrade head` applies `0010` and
-  `0011`. `0011` drops `preview_session`, so it destroys data on your database —
-  which is why Phase 2 did not run it for you.
+Two things Phase 3 hands it:
 
-And one it hands **P5**, which owns the domain-claim routes: three of the four
-routes in `app/routes/onboarding.py` authenticate inside the handler rather than
-through `CurrentSession`, so no structural check can see it. `/domains/{id}/check`
-performs a server-side fetch, and it is now the only unmetered one left.
+- **`/domains/{claim_id}/check` is still the only unmetered outbound fetch**, and
+  the route declares no session dependency because `onboarding.py` authenticates
+  inside its handlers. Findings #3 and #4. P4 is where a rate limit lands anyway.
+- **Neon is three migrations behind** — `0010`, `0011` and `0012`. `alembic
+  upgrade head` applies all three, and `0011` drops `preview_session`, so it
+  destroys data on your database and was left for you.
+
+Nothing else blocks it.

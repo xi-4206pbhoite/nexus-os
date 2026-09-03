@@ -6,6 +6,7 @@ missing one fails at startup rather than silently running with a placeholder.
 
 from __future__ import annotations
 
+import os
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -13,7 +14,35 @@ from pathlib import Path
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+
+def _data_root() -> Path:
+    """Where the filesystem drivers keep `.storage` and `.mail`.
+
+    In the repository this file is `services/api/app/config.py`, so the root is
+    four levels up. **In the container it is `/app/app/config.py`** — the image
+    does not mirror the repository layout, and there is no fourth parent, so a
+    fixed `parents[3]` raised `IndexError` before anything could report a better
+    error. It failed at import, inside alembic, with a traceback that named
+    neither the setting nor the container.
+
+    So: the repository root when this is running from a checkout, and the
+    package's own parent otherwise. `NEXUS_DATA_ROOT` overrides both, because
+    the right answer in a deployment is a mounted volume rather than anything
+    inferred from a file path.
+    """
+    if override := os.environ.get("NEXUS_DATA_ROOT"):
+        return Path(override)
+
+    here = Path(__file__).resolve()
+    parents = here.parents
+    # `pyproject.toml` four levels up means a checkout; anything else is an
+    # installed layout, where `/app` (the parent of the package) is the root.
+    if len(parents) > 3 and (parents[1] / "pyproject.toml").exists():
+        return parents[3]
+    return parents[1]
+
+
+REPO_ROOT = _data_root()
 
 
 class Env(StrEnum):

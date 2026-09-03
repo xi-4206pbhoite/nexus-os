@@ -88,6 +88,12 @@ services:
       # settable at all. Running them as the superuser would silently reassign
       # ownership and leave RLS unenforceable on anything new.
       NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+      # `migrations/env.py` imports `app.config`, which refuses to build in a
+      # deployed environment with a required secret missing. Migrations do not
+      # use these, but the import does not know that — and a validator that only
+      # fires for some entry points is a validator nobody can reason about.
+      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
+      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:

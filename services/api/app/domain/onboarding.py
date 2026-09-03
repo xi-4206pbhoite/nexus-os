@@ -144,6 +144,24 @@ class Question:
     that says what it is assuming.
     """
 
+    consumed_by: str = ""
+    """The capability that reads this answer. **Q33's whole rule.**
+
+    A question with no consumer is not a question, it is a form field — and a
+    form field costs a founder the same attention as a real question while
+    changing nothing they will ever see. `tests/test_question_bank.py` fails on
+    an unconsumed question, which is the guard against this drifting back
+    towards the thirty-nine an earlier draft carried.
+
+    A capability name, not a table or a function: what matters is that a person
+    can trace a question to the thing that stops working without it, and argue
+    about whether that thing earns the question.
+
+    Empty on the company-stage questions — they are consumed by everything, and
+    naming one consumer would be arbitrary. The test scopes its rule to the
+    department bank for that reason.
+    """
+
     confirmable_from_crawl: bool = False
     """Q20's crawl-then-confirm posture.
 

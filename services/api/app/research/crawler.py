@@ -22,13 +22,13 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from app.connectors.ssrf import (
+from app.logging import get_logger
+from app.research.ssrf import (
     UrlNotAllowedError,
     ValidatedTarget,
     resolve_redirect,
     validate_url,
 )
-from app.logging import get_logger
 
 log = get_logger(__name__)
 

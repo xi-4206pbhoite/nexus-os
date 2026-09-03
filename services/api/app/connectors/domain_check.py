@@ -30,8 +30,8 @@ import dns.asyncresolver
 import dns.exception
 import httpx
 
-from app.connectors.ssrf import UrlNotAllowedError, validate_url
 from app.logging import get_logger
+from app.research.ssrf import UrlNotAllowedError, validate_url
 
 log = get_logger(__name__)
 

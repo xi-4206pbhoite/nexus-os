@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.connectors.ssrf import (
+from app.research.ssrf import (
     UrlNotAllowedError,
     is_public_ip,
     validate_url,
@@ -333,14 +333,14 @@ def test_redirect_target_is_validated_the_same_way() -> None:
 
 
 def test_relative_redirects_resolve_against_the_previous_hop() -> None:
-    from app.connectors.ssrf import resolve_redirect
+    from app.research.ssrf import resolve_redirect
 
     assert resolve_redirect("https://example.com/a/b", "../c") == "https://example.com/c"
     assert resolve_redirect("https://example.com/a/b", "/d") == "https://example.com/d"
 
 
 def test_redirect_to_a_new_scheme_is_still_checked() -> None:
-    from app.connectors.ssrf import resolve_redirect
+    from app.research.ssrf import resolve_redirect
 
     target = resolve_redirect("https://example.com/", "file:///etc/passwd")
     with pytest.raises(UrlNotAllowedError):

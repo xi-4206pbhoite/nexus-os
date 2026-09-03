@@ -21,9 +21,9 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from app.connectors import crawler
-from app.connectors import ssrf as ssrf_module
-from app.connectors.crawler import FetchError, fetch_page
+from app.research import crawler
+from app.research import ssrf as ssrf_module
+from app.research.crawler import FetchError, fetch_page
 
 PUBLIC_A = "93.184.216.34"
 PUBLIC_B = "93.184.216.35"

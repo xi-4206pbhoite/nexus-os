@@ -24,6 +24,7 @@ that says what it is assuming.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
@@ -33,6 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
 from tests.dburl import async_database_url
+
+if TYPE_CHECKING:
+    from app.domain.session import ScopedSession
 
 ASYNC_DB_URL = async_database_url()
 requires_db = pytest.mark.requires_db
@@ -76,6 +80,26 @@ async def _workspace(db: AsyncSession) -> tuple[UUID, UUID]:
     )
     await db.commit()
     return user, ws
+
+
+def _owner_scope(user: UUID, ws: UUID) -> ScopedSession:
+    """The founder, in their own workspace, holding every department.
+
+    Owner rather than a manager because these three tests are about the
+    *company's* shape — which departments it runs, and what a blank answer
+    means — and an owner is the caller for whom the permission lattice never
+    refuses. If a check still fires for an owner, it is not a permission check.
+    """
+    from app.domain.scopes import Department, Role
+    from app.domain.session import ScopedSession
+
+    return ScopedSession(
+        user_id=user,
+        tenant_id=uuid4(),
+        workspace_id=ws,
+        role=Role.OWNER,
+        departments=frozenset(Department),
+    )
 
 
 async def _cleanup(db: AsyncSession, user: UUID, ws: UUID) -> None:
@@ -273,3 +297,119 @@ def test_a_crawl_confirmable_question_is_not_asked_here() -> None:
         assert question.key not in asked, (
             f"{question.key} is confirmable from the crawl and is still being asked"
         )
+
+
+# ── Skipping is first-class, and a blank is not an answer ─────
+
+
+@requires_db
+async def test_a_blank_block_answer_is_refused_rather_than_stored(app_db: None) -> None:
+    """Finding #19. A department question you cannot answer is **skipped**, and
+    an empty string is not the way to say so.
+
+    `doc/11` stage 4 settles the mechanism: *"Blocks are skippable and
+    resumable"*, and each unanswered block is what turns its director on. That
+    is deliberately unlike the company stage, where "not sure yet" stores the
+    question's stated assumption — there, five questions feed a review gate and
+    a null would be indistinguishable from never having asked; here, the
+    unanswered state **is** the signal, and the product already renders it.
+
+    So the bug was never a missing "not sure yet". It was that a blank was
+    accepted and marked the question `answered`: the director's count fell, the
+    thing that turns it on reported itself done, and a capability downstream
+    would read an empty string as a configured value. That is the product
+    inventing an answer, which is the one thing it sells against.
+    """
+    from app.db import _unscoped_session
+    from app.domain.departments import select_departments
+    from app.domain.scopes import Department
+    from app.routes.spine import BlockAnswer, BlockAnswersIn
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+        try:
+            await select_departments(db, workspace_id=ws, departments={Department.FINANCE})
+            await db.commit()
+
+            for blank in ("", "   ", "\t\n"):
+                with pytest.raises(ValueError):
+                    BlockAnswersIn(answers=[BlockAnswer(key="approver", value=blank)])
+        finally:
+            await _cleanup(db, user, ws)
+
+
+@requires_db
+async def test_the_block_returns_what_was_answered(app_db: None) -> None:
+    """Finding #20. `answered: true` beside an empty box is not a resumable form.
+
+    Q28 makes onboarding resumable, and a founder who comes back to a block has
+    to be able to read what they said before deciding whether it is still true.
+    Without the value the badge is the only evidence an answer exists, saving
+    again silently overwrites it, and correcting a wrong answer means
+    remembering it.
+    """
+    from app.db import _unscoped_session
+    from app.domain.departments import select_departments
+    from app.domain.scopes import Department
+    from app.routes.spine import (
+        BlockAnswer,
+        BlockAnswersIn,
+        answer_department_block,
+        read_department_block,
+    )
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+        try:
+            await select_departments(db, workspace_id=ws, departments={Department.FINANCE})
+            await db.commit()
+            scope = _owner_scope(user, ws)
+
+            await answer_department_block(
+                "finance",
+                BlockAnswersIn(answers=[BlockAnswer(key="approver", value="The founder")]),
+                scope,
+            )
+            block = await read_department_block("finance", scope)
+
+            answered = {q.key: q for q in block.questions}
+            assert answered["approver"].answer == "The founder", (
+                "the stored answer must come back, or the form cannot be resumed"
+            )
+            assert answered["payment_terms"].answer is None, "an unanswered question has no value"
+        finally:
+            await _cleanup(db, user, ws)
+
+
+@requires_db
+async def test_a_department_the_company_does_not_run_has_no_block(app_db: None) -> None:
+    """Finding #21. The 404 asked whether the *bank* had questions, never
+    whether this company runs the department.
+
+    An owner reaches every department they hold, and holding is not running. So
+    a company on Finance alone was served a full People block with
+    `may_answer: true`, and the answers written into it were invisible from
+    every surface — `/dashboards` lists the chosen set, so nothing would ever
+    read them back.
+    """
+    from fastapi import HTTPException
+
+    from app.db import _unscoped_session
+    from app.domain.departments import select_departments
+    from app.domain.scopes import Department
+    from app.routes.spine import read_department_block
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+        try:
+            await select_departments(db, workspace_id=ws, departments={Department.FINANCE})
+            await db.commit()
+            scope = _owner_scope(user, ws)
+
+            assert (await read_department_block("finance", scope)).may_answer
+
+            with pytest.raises(HTTPException) as caught:
+                await read_department_block("hr", scope)
+            assert caught.value.status_code == 404
+        finally:
+            await _cleanup(db, user, ws)

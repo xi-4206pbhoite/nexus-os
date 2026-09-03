@@ -12,7 +12,7 @@ answer and the database holds it.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 
 from app.auth.csrf import require_csrf
@@ -28,6 +28,7 @@ from app.domain.departments import (
     RECOMMENDED_MAX,
     RECOMMENDED_MIN,
     SELECTABLE,
+    runs_department,
     select_departments,
     selected_departments,
 )
@@ -35,6 +36,7 @@ from app.domain.onboarding import BY_KEY, COMPANY_QUESTIONS, resolve_answer
 from app.domain.progress import STAGES, complete_stage, progress_for
 from app.domain.question_bank import BY_DEPARTMENT
 from app.domain.scopes import Department
+from app.domain.session import ScopedSession
 from app.logging import get_logger
 from app.retrieval.scoped import scoped_connection
 from app.routes.setup import store_answer
@@ -211,6 +213,14 @@ class BlockQuestionOut(BaseModel):
     consumed_by: str
     answered: bool
     proposed: bool
+    answer: str | None = None
+    """What was stored, so the form can be resumed (Q28).
+
+    `answered` alone made the badge the only evidence an answer existed: a
+    founder returning to a block could not read what they had said, saving
+    again silently overwrote it, and correcting a wrong answer meant
+    remembering it. `None` here means unanswered, not withheld — every caller
+    served this block may already see `answered`."""
 
 
 class BlockOut(BaseModel):
@@ -218,6 +228,27 @@ class BlockOut(BaseModel):
     may_answer: bool
     binds: bool
     questions: list[BlockQuestionOut]
+
+
+async def _require_running(scope: ScopedSession, target: Department) -> None:
+    """404 unless this **company** runs the department (finding #21).
+
+    Not the same question as whether the caller may reach it. `may_answer` asks
+    who you are; this asks what the company chose at stage 4, and an owner holds
+    every department while running only the ones they picked. Without it a
+    company on Finance alone was served a full People block with
+    `may_answer: true`, and answers written into it were reachable from nothing:
+    `GET /dashboards` lists the chosen set, so no surface would ever read them
+    back.
+
+    404 rather than 403 to match the neighbouring refusals — which department
+    a company runs is its own business, and this route already answers 404 for
+    a department that does not exist.
+    """
+    async with _unscoped_session() as db:
+        chosen = await selected_departments(db, workspace_id=scope.workspace_id)
+    if not runs_department(chosen, target):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This company does not run that department.")
 
 
 @router.get("/departments/{department}/block", response_model=BlockOut)
@@ -243,13 +274,15 @@ async def read_department_block(department: str, scope: CurrentScope) -> BlockOu
     if not questions:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No block for that department.")
 
+    await _require_running(scope, target)
+
     async with scoped_connection(scope) as db:
         rows = {
-            r.question_key: r.answer_state
+            r.question_key: r
             for r in (
                 await db.execute(
                     text(
-                        "SELECT question_key, answer_state FROM onboarding_answer"
+                        "SELECT question_key, answer_state, value FROM onboarding_answer"
                         " WHERE department = :d"
                     ),
                     {"d": target.value},
@@ -272,7 +305,8 @@ async def read_department_block(department: str, scope: CurrentScope) -> BlockOu
                 answer_type=q.answer_type.value,
                 consumed_by=q.consumed_by,
                 answered=q.key in rows,
-                proposed=rows.get(q.key) == AnswerState.PROPOSED.value,
+                proposed=q.key in rows and rows[q.key].answer_state == AnswerState.PROPOSED.value,
+                answer=rows[q.key].value if q.key in rows else None,
             )
             for q in questions
         ],
@@ -281,7 +315,32 @@ async def read_department_block(department: str, scope: CurrentScope) -> BlockOu
 
 class BlockAnswer(BaseModel):
     key: str
-    value: str = Field(max_length=4000)
+    value: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("value")
+    @classmethod
+    def reject_a_blank(cls, value: str) -> str:
+        """A department question you cannot answer is **skipped**, not blanked.
+
+        `doc/11` stage 4: *"Blocks are skippable and resumable"*, and each
+        unanswered block is what turns its director on. So the way to say
+        nothing is to send nothing — and a blank had to stop being the other
+        way, because it marked the question `answered`, dropped the director's
+        count, and left a capability downstream reading an empty string as a
+        configured value.
+
+        Deliberately unlike the company stage, where "not sure yet" stores the
+        question's stated assumption. Five questions there feed a review gate
+        and a null cannot be told from never having asked; here the unanswered
+        state *is* the signal and the product already renders it.
+        """
+        if not value.strip():
+            raise ValueError(
+                "An empty answer is not an answer. Leave the question out of the "
+                "request to skip it — blocks are skippable, and its director will "
+                "keep saying so."
+            )
+        return value.strip()
 
 
 class BlockAnswersIn(BaseModel):
@@ -325,6 +384,8 @@ async def answer_department_block(
             f"You cannot answer the {target.value} questions. A department's "
             "questions are answered by its manager, or by an owner.",
         )
+
+    await _require_running(scope, target)
 
     bank = {q.key: q for q in BY_DEPARTMENT.get(target, ())}
     unknown = [a.key for a in payload.answers if a.key not in bank]

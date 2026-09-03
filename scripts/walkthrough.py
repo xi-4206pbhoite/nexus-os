@@ -8,10 +8,11 @@ tests had anything to say about them.
 
     .venv/bin/python scripts/walkthrough.py        # expects an API on 127.0.0.1:8001
 
-Five checks fail on purpose. They assert the behaviour the product should have,
-and each one is an open finding in AUDIT-FINDINGS.md: 19 (no "not sure" in a
-block), 20 (a stored answer is never returned), 21 (blocks and dashboards served
-for departments the workspace never chose). Fix those and this goes green.
+It found findings 19-23 on its first run. 19, 20 and 21 are fixed and this now
+asserts the corrected contract, so it goes green. **22 and 23 stay open and this
+does not catch either**: 22 needs a question with no assumption and all five
+company questions have one, and 23 is a latency budget the BFF pays and this
+script does not go through the BFF. Green here is not "no known defects".
 """
 import re, sys, time, pathlib, httpx
 
@@ -127,8 +128,7 @@ check("every question carries a why", all(q.get("why") for q in bq), "a question
 check("every question names what consumes it", all(q.get("consumed_by") for q in bq), "a question has no consumed_by")
 print(f"       {len(bq)} questions; first: {bq[0]['key'] if bq else '—'}")
 r = c.get("/onboarding/departments/hr/block")
-check("a department the workspace did not choose -> 404", r.status_code == 404,
-      f"{r.status_code} — the block is served for a department this company does not run")
+check("a department the workspace did not choose -> 404", r.status_code == 404, f"{r.status_code}")
 r = c.get("/onboarding/departments/astrology/block")
 check("a department that does not exist -> 404/422", r.status_code in (404, 422), f"{r.status_code}")
 if bq:
@@ -142,10 +142,14 @@ if bq:
           str(aq.get(bq[0]["key"]))[:200])
     check("the second answer came back too", aq.get(bq[1]["key"], {}).get("answer") == "Also answered",
           str(aq.get(bq[1]["key"]))[:200])
-    r = c.post("/onboarding/departments/finance/block",
-               json={"answers": [{"key": bq[2]["key"], "value": None, "unsure": True}]}, headers=csrf())
-    check("a block question can be answered 'not sure'", r.status_code == 200,
-          f"{r.status_code} — the block has no unsure path at all")
+    for blank in ("", "   "):
+        r = c.post("/onboarding/departments/finance/block",
+                   json={"answers": [{"key": bq[2]["key"], "value": blank}]}, headers=csrf())
+        check(f"a blank answer ({blank!r}) is refused rather than stored", r.status_code == 422,
+              f"{r.status_code}")
+    r = c.get("/onboarding/departments/finance/block")
+    third = {q["key"]: q for q in r.json()["questions"]}[bq[2]["key"]]
+    check("...and the blank did not mark it answered", third["answered"] is False, str(third)[:160])
     r = c.post("/onboarding/departments/finance/block",
                json={"answers": [{"key": "nope_not_real", "value": "x"}]}, headers=csrf())
     check("an unknown key in a block is refused", r.status_code == 400, f"{r.status_code}")
@@ -170,8 +174,7 @@ if r.status_code == 200:
     check("every offering says it is planned", all(o["state"] == "planned" for o in offs), "an offering claims to be built")
     print(f"       {len(offs)} offerings, all planned")
 r = c.get("/dashboards/hr")
-check("a dashboard the list did not offer -> 404", r.status_code == 404,
-      f"{r.status_code} — /dashboards omits hr but /dashboards/hr serves it")
+check("a dashboard the list did not offer -> 404", r.status_code == 404, f"{r.status_code}")
 
 print("\n\033[1m7. The audit trail (I9)\033[0m")
 r = c.get("/audit-log")

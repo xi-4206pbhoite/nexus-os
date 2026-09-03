@@ -42,7 +42,7 @@ from app.domain.dashboards import (
     unlock_sentence,
 )
 from app.domain.department_answers import BINDING_ONLY_SQL
-from app.domain.departments import selected_departments
+from app.domain.departments import runs_department, selected_departments
 
 # Aliased: `BY_DEPARTMENT` already means the dashboard *offerings* here, and two
 # dictionaries with one name is how the wrong one gets read.
@@ -212,12 +212,8 @@ async def list_dashboards(
     out, and hiding directors from someone who never made a choice would be the
     product deciding on their behalf.
     """
-    # `selected_departments` always includes the Chief of Staff, so a workspace
-    # with exactly one entry has chosen nothing.
-    has_chosen = len(chosen) > 1
-
     visible = [
-        d for d in DIRECTORS if _reachable(scope, d) and (not has_chosen or d.department in chosen)
+        d for d in DIRECTORS if _reachable(scope, d) and runs_department(chosen, d.department)
     ]
 
     landing = landing_department(
@@ -254,7 +250,9 @@ async def list_dashboards(
 
 
 @router.get("/{department}", response_model=DirectorOut)
-async def director_dashboard(department: Department, scope: CurrentScope) -> DirectorOut:
+async def director_dashboard(
+    department: Department, scope: CurrentScope, chosen: RunningDepartments
+) -> DirectorOut:
     """One director's page.
 
     `enforce_department` is what refuses a department the caller does not hold,
@@ -273,6 +271,17 @@ async def director_dashboard(department: Department, scope: CurrentScope) -> Dir
         )
 
     enforce_department(scope, director.department)
+
+    # Finding #21. `enforce_department` asks whether the *caller* holds this
+    # department; `chosen` asks whether the *company runs* it, and an owner
+    # holds all seven while running only the ones they picked at stage 4.
+    # Without this the list and the detail disagreed: `GET /dashboards` omitted
+    # People and `GET /dashboards/hr` served it. `chosen` empty means the
+    # company has not chosen yet, which the list treats as "show everything"
+    # rather than "show nothing" — the same reading, so the two agree before
+    # stage 4 as well as after it.
+    if not runs_department(chosen, director.department):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
     connected = connected_sources()
     return DirectorOut(

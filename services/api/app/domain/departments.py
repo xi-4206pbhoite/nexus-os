@@ -93,3 +93,22 @@ async def selected_departments(db: AsyncSession, *, workspace_id: UUID) -> froze
     )
 
     return frozenset({Department(r) for r in rows} | {AUTOMATIC})
+
+
+def runs_department(chosen: frozenset[Department], department: Department) -> bool:
+    """Does this company run `department`? One rule, three call sites.
+
+    `selected_departments` always includes the Chief of Staff (Q24), so a
+    workspace holding exactly one entry has chosen **nothing** — and a company
+    that has not chosen yet runs everything. That is the honest default: nothing
+    has been said about this company, so nothing has been ruled out.
+
+    Lives here because finding #21 was two endpoints disagreeing about exactly
+    this, and the first fix for it reimplemented the test as `if chosen:` — the
+    truthy version, which is wrong the moment the only entry is the automatic
+    one. A rule that three routes each spell out is a rule that will drift
+    again; the one that already drifted gets to be a function.
+    """
+    if len(chosen) <= 1:
+        return True
+    return department in chosen

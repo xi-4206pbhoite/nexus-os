@@ -251,3 +251,38 @@ def test_the_two_synthesis_directors_are_never_scored() -> None:
     """Doc 05 §10 — which is why the composite is out of six, not seven."""
     unscored = {d.department for d in DIRECTORS if not d.scoreable}
     assert unscored == {Department.EXECUTIVE, Department.STRATEGY}
+
+
+def test_a_director_the_list_omits_cannot_be_opened_directly() -> None:
+    """Finding #21. The list and the detail must agree about what exists.
+
+    `GET /dashboards` filters to the departments the company chose at stage 4.
+    `GET /dashboards/{department}` checked only whether the caller *holds* the
+    department — and an owner holds all seven — so People was absent from the
+    list and served at its own URL. Two endpoints contradicting each other
+    about what a company runs, and a place to write answers no surface reads
+    back.
+    """
+    from app.routes.dashboards import running_departments
+
+    app = create_app()
+    _override_departments(app)
+    # Finance *and* the Chief of Staff, because `selected_departments` always
+    # includes the latter — a set of one means the company has chosen nothing,
+    # and then every director is shown on purpose.
+    app.dependency_overrides[running_departments] = lambda: frozenset(
+        {Department.FINANCE, Department.EXECUTIVE}
+    )
+
+    with TestClient(app) as client:
+        as_role(client, caller(Role.OWNER, {Department.FINANCE}))
+
+        assert client.get("/dashboards/finance").status_code == 200
+        listed = {d["department"] for d in client.get("/dashboards").json()["directors"]}
+        assert "hr" not in listed
+
+        assert client.get("/dashboards/hr").status_code == 404, (
+            "the list omits it, so opening it directly must 404 too"
+        )
+
+    app.dependency_overrides.clear()

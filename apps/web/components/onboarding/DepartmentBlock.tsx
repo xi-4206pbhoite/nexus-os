@@ -12,6 +12,7 @@ type BlockQuestion = {
   consumed_by: string
   answered: boolean
   proposed: boolean
+  answer: string | null
 }
 type Block = {
   department: string
@@ -59,6 +60,16 @@ async function send(department: string, answers: { key: string; value: string }[
 export function DepartmentBlock({ department }: { department: string }) {
   const [block, setBlock] = useState<Block | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
+
+  /** What the server holds, as the starting point for the boxes.
+   *
+   * An ANSWERED badge beside an empty box is not a resumable form (Q28): the
+   * badge was the only evidence an answer existed, saving again overwrote it
+   * silently, and correcting one meant remembering it. `edited` holds only what
+   * this visit changed, so an untouched question submits exactly what is
+   * already stored rather than a copy the render happened to make. */
+  const stored = (b: Block): Record<string, string> =>
+    Object.fromEntries(b.questions.filter((q) => q.answer !== null).map((q) => [q.key, q.answer!]))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -103,6 +114,12 @@ export function DepartmentBlock({ department }: { department: string }) {
             ? 'Every question here is answered.'
             : `${outstanding} of ${block.questions.length} still to answer. Each one turns something on.`}
         </p>
+        {block.may_answer && outstanding > 0 ? (
+          <p className="mt-2 text-sm text-ink-500">
+            Answer what you know. Leaving one blank is fine — it stays unanswered, and its
+            director keeps showing it as the thing that turns that number on.
+          </p>
+        ) : null}
         {block.may_answer && !block.binds ? (
           <p className="mt-3 rounded-xl border border-gold-300 bg-gold-100 px-4 py-3 text-sm text-ink-800">
             Your answers here are <strong>proposals</strong>. A manager or owner confirms them
@@ -123,14 +140,18 @@ export function DepartmentBlock({ department }: { department: string }) {
         onSubmit={async (event) => {
           event.preventDefault()
           if (busy || !block.may_answer) return
+          // A blank is not an answer, and the API refuses one. Skipping a
+          // question means leaving it out of the request entirely — blocks are
+          // skippable (doc 11 stage 4), and its director keeps saying so.
           const answers = Object.entries(values)
             .filter(([, v]) => v.trim() !== '')
             .map(([key, value]) => ({ key, value: value.trim() }))
           if (answers.length === 0) return
           setBusy(true)
           try {
-            setBlock(await send(department, answers))
-            setValues({})
+            const saved = await send(department, answers)
+            setBlock(saved)
+            setValues(stored(saved))
           } catch (e) {
             setError(e instanceof AuthError ? e.message : 'Could not save.')
           } finally {
@@ -156,7 +177,7 @@ export function DepartmentBlock({ department }: { department: string }) {
               id={q.key}
               rows={2}
               disabled={busy || !block.may_answer}
-              value={values[q.key] ?? ''}
+              value={values[q.key] ?? q.answer ?? ''}
               onChange={(e) => setValues({ ...values, [q.key]: e.target.value })}
               className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-ink-900 disabled:bg-bone-100 disabled:text-ink-400"
             />

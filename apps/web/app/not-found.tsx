@@ -10,8 +10,10 @@ export const metadata: Metadata = {
 /**
  * A 404 that stays in the product rather than dropping to the framework default.
  *
- * Offers the two things a lost visitor actually wants: the free audit, which
- * needs no account, and the way back.
+ * Offers the way back, and a way in.
+ *
+ * The second button used to be "Run a free audit", which needed no account.
+ * Phase 2 retired that endpoint, so it pointed at nothing.
  */
 export default function NotFound() {
   return (
@@ -34,8 +36,8 @@ export default function NotFound() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Button href="/">Back to the start</Button>
-            <Button href="/#top" variant="secondary">
-              Run a free audit
+            <Button href="/register" variant="secondary">
+              Create an account
             </Button>
           </div>
         </div>

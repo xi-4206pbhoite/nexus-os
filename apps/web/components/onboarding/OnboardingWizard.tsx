@@ -319,15 +319,11 @@ function AuditGap() {
         this product is built not to do.
       </p>
       <p className="mt-3 max-w-prose text-[0.95rem] leading-relaxed text-ink-700">
-        The same engine already runs on the landing page and needs no account.{' '}
-        <Link
-          href="/#top"
-          className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
-        >
-          Run it on your site
-        </Link>
-        , then come back — the questions after this one will make more sense with it in
-        front of you.
+        The engine that will produce it already exists — the guard, the crawler and
+        the scoring calculators all survived Phase 2 — but it now runs behind
+        authentication, on the domain you registered, rather than on anything a
+        visitor types. Until the research run that queues at registration is built
+        (P11), there is nothing here to show you.
       </p>
     </div>
   )

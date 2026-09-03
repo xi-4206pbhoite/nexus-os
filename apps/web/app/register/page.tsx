@@ -12,17 +12,27 @@ export default function RegisterPage() {
   return (
     <AuthShell
       title="Create your account"
-      intro="One account per person. You will claim your company's domain next, and that is what creates the workspace."
+      // Both lines here were wrong, and each was retired by a different phase.
+      //
+      // The intro said claiming the domain is "what creates the workspace".
+      // That was true until D19 (P5) split them: registering creates the
+      // company, and verification gates inviting and connecting instead. A new
+      // user was being told the wrong order of the flow they were standing in.
+      //
+      // The footer offered a free audit needing no account. Phase 2 retired
+      // that endpoint — this was the third place it survived, after
+      // `AccountPanel` and `FinalCta`.
+      intro="One account per person. Next you will create your company — that takes one step, and you can start straight away."
       footer={
         <p>
-          Want to see what it finds first?{' '}
+          Already have an account?{' '}
           <Link
-            href="/#top"
+            href="/login"
             className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
           >
-            Run a free audit
-          </Link>{' '}
-          — no account needed.
+            Sign in
+          </Link>
+          .
         </p>
       }
     >

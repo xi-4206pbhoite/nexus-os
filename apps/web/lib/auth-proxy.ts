@@ -30,11 +30,31 @@ import { NextResponse } from 'next/server'
 const API_BASE = process.env.NEXUS_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
 /** Comfortably above a round trip to a managed database, well below a hang. */
-const TIMEOUT_MS = 15_000
+const TIMEOUT_MS = Number(process.env.NEXUS_PROXY_TIMEOUT_MS ?? 30_000)
 
-/** Uploads get longer. A 25 MB file on a slow connection is a slow request,
- *  not a broken one, and the JSON budget would refuse the uploads most worth
- *  waiting for. */
+/**
+ * Why 30 seconds and not 15 (finding #23).
+ *
+ * Fifteen was chosen against a local Postgres answering in microseconds. It is
+ * below what real requests actually take when the API and the database are far
+ * apart: from a laptop against Neon in `us-east-1` a round trip is ~0.35s, and
+ * `POST /companies` and `GET /dashboards` each spend twenty-five to thirty of
+ * them — so the two most important requests in the product 503'd in the
+ * browser while CI stayed green, because CI's database is local.
+ *
+ * **This raises the ceiling; it does not fix the round trips.** #23 stays open
+ * for that, and it is the real defect — in production the API and database are
+ * co-located and the same request costs milliseconds, so a timeout this high
+ * should never be reached. It exists so development against a remote database
+ * is possible, and so a slow request fails as slow rather than as broken.
+ *
+ * Configurable because the right value differs by deployment, and a constant
+ * compiled into the bundle cannot be tuned by the person who feels the problem.
+ */
+
+/** Uploads get longer still. A 25 MB file on a slow connection is a slow
+ *  request, not a broken one, and even the raised JSON budget would refuse the
+ *  uploads most worth waiting for. */
 const UPLOAD_TIMEOUT_MS = 120_000
 
 /**

@@ -169,6 +169,9 @@ jobs:
       - name: Lint
         run: npx next lint
 
+      - name: Component and BFF tests
+        run: npm test
+
       - name: Build
         run: npx next build
 

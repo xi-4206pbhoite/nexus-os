@@ -1,30 +1,35 @@
-"""Rate limiting for the unauthenticated Preview path.
+"""Rate limiting the research path.
 
 Doc 06 §1.2: *"Metered APIs must never sit on an unauthenticated path... Without
 this, a script exhausts a paid quota and degrades the product for paying
 tenants."*
 
-Three independent limits, all of which must pass:
+Until Phase 2 that unauthenticated path existed, and the limits were shaped
+around it: **per IP**, to stop one client hammering the endpoint; **per domain**,
+to stop many clients being pointed at one victim; and a **global daily ceiling**
+to bound the bill. `doc/11` Q1 retired the anonymous audit, and both of the first
+two lost their subject with it. There is no address to attribute a crawl to when
+every caller is authenticated, and no reflected-DoS shape to block when the
+target has to be a domain the workspace has claimed.
 
-- **per IP** — stops one client hammering the endpoint
-- **per domain** — stops many clients being pointed at one victim, which is
-  also what keeps this from being used as a reflected DoS against a third party
-- **global daily ceiling** — the actual cost containment. The first two limit
-  any single abuser; only this one bounds the bill.
+What replaces them is the identity that now exists on every call:
+
+- **per workspace** — the tenant fairness limit. One customer running research in
+  a loop must not consume the day's budget that the others are paying for.
+- **global daily ceiling** — the actual cost containment, unchanged. The first
+  limit bounds any single tenant; only this one bounds the bill.
 
 Counters are fixed-window and live in Postgres (ADR 0001 — no Redis). A fixed
 window permits up to 2x the limit across a boundary; that is an accepted
 trade-off for a ceiling whose purpose is bounding spend rather than precision.
 
-The IP is stored **hashed**. It is needed for limiting and abuse response, not
-for identifying people, and the unauthenticated path should not accumulate a
-plaintext log of who looked at what.
+The re-keying needed no migration. A bucket is an opaque string, so the old
+`ip:` and `domain:` rows are simply never written again and age out through
+`purge_expired`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -39,24 +44,25 @@ class Limit:
     window: timedelta
 
 
-# Sized for the failure mode that actually costs money, which is not a curious
-# visitor. Two constraints pulled these numbers:
+# Two constraints set these numbers, and neither is "how much crawling feels
+# reasonable":
 #
-# - **A bucket is shared more often than it looks.** An office, a university or
-#   any carrier NAT presents one address for many people, and with no trusted
-#   proxy configured (see `client_ip`) every visitor collapses into a single
-#   bucket. At 5/hour two colleagues could lock each other out of the landing
-#   page, so the per-IP limit was rejecting customers, not scripts.
-# - **Only the global ceiling bounds the bill.** Loosening the per-key limits
-#   does not raise the maximum spend, because `GLOBAL_DAILY` still caps the
-#   number of crawls per day. That is the limit to keep tight.
+# - **Only the global ceiling bounds the bill.** Loosening the per-workspace
+#   limit does not raise the maximum spend, because `GLOBAL_DAILY` still caps
+#   the crawls per day across every tenant. That is the limit to keep tight.
+# - **The per-workspace limit is about fairness, not cost.** It exists so one
+#   customer looping on research cannot spend the ceiling the others are paying
+#   for. Set too tight it rejects ordinary use, which is the failure that costs
+#   a customer rather than money.
 #
-# A repeated domain inside its TTL is served from `preview_session` without a
-# crawl and without consuming any of these — so the per-domain limit counts
-# *fresh crawls of one target*, which is the reflected-DoS shape it exists to
-# stop, rather than page reloads.
-PER_IP = Limit("ip", max_count=20, window=timedelta(hours=1))
-PER_DOMAIN = Limit("domain", max_count=5, window=timedelta(hours=24))
+# `PER_WORKSPACE` is deliberately generous against `GLOBAL_DAILY`: a single
+# tenant can take a tenth of the day's budget before being told to wait, and
+# ten busy tenants can coexist without any of them noticing a limit exists.
+#
+# **P11 owns the real number.** It builds the research job model and will know
+# what one run actually costs; until then this bounds a path with no callers,
+# and a limit nobody has measured should not pretend otherwise.
+PER_WORKSPACE = Limit("workspace", max_count=50, window=timedelta(hours=24))
 GLOBAL_DAILY = Limit("global", max_count=500, window=timedelta(days=1))
 
 
@@ -65,11 +71,6 @@ class RateLimitedError(Exception):
         super().__init__(f"rate limited: {scope}")
         self.scope = scope
         self.retry_after_seconds = retry_after_seconds
-
-
-def hash_ip(ip: str, *, secret: str) -> str:
-    """Keyed hash, so the table is not a rainbow-table lookup of visitor IPs."""
-    return hmac.new(secret.encode(), ip.encode(), hashlib.sha256).hexdigest()
 
 
 def _window_start(now: datetime, window: timedelta) -> datetime:

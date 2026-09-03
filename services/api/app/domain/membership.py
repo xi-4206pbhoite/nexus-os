@@ -48,8 +48,14 @@ class UserAlreadyInAWorkspaceError(Exception):
         super().__init__(message)
 
 
-async def live_membership_count(db: AsyncSession, *, user_id: UUID) -> int:
+async def live_membership_count(
+    db: AsyncSession, *, user_id: UUID, other_than: UUID | None = None
+) -> int:
     """How many workspaces this user currently belongs to.
+
+    `other_than` excludes one workspace from the count. That is what makes
+    re-accepting an invitation to the workspace you are *already* in idempotent
+    rather than a refusal — see `assert_no_live_membership`.
 
     Reads through the `membership_own_rows` policy from migration 0003, so
     `nexus.user_id` is set first — the same contract `memberships_for_user`
@@ -61,18 +67,33 @@ async def live_membership_count(db: AsyncSession, *, user_id: UUID) -> int:
     await db.execute(text("SELECT set_config('nexus.user_id', :uid, true)"), {"uid": str(user_id)})
     count = (
         await db.execute(
-            text("SELECT count(*) FROM membership WHERE user_id = :uid AND revoked_at IS NULL"),
-            {"uid": str(user_id)},
+            text(
+                "SELECT count(*) FROM membership"
+                " WHERE user_id = :uid AND revoked_at IS NULL"
+                "   AND (:skip = '' OR workspace_id <> CAST(:skip AS uuid))"
+            ),
+            {"uid": str(user_id), "skip": str(other_than) if other_than else ""},
         )
     ).scalar_one()
     return int(count)
 
 
-async def assert_no_live_membership(db: AsyncSession, *, user_id: UUID) -> None:
-    """Refuse if this user already belongs to a company.
+async def assert_no_live_membership(
+    db: AsyncSession, *, user_id: UUID, other_than: UUID | None = None
+) -> None:
+    """Refuse if this user already belongs to a *different* company.
 
     Called by `create_workspace_for_claim` and by `invitations.accept` — the two
     paths that write a `membership` row.
+
+    **`other_than` is the difference between a rule and a trap.** Accepting an
+    invitation is idempotent by design: the insert is
+    `ON CONFLICT DO NOTHING`, so re-clicking a link keeps the role you already
+    hold rather than resetting it. Counting the user's own workspace would turn
+    every second click into "you are already part of a company" — technically
+    true, useless, and refusing the one case that was explicitly built to be
+    safe. `test_an_existing_member_keeps_the_role_they_already_hold` caught
+    exactly that when the first version of this guard omitted the parameter.
     """
-    if await live_membership_count(db, user_id=user_id) > 0:
+    if await live_membership_count(db, user_id=user_id, other_than=other_than) > 0:
         raise UserAlreadyInAWorkspaceError

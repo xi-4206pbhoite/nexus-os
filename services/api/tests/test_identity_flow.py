@@ -474,3 +474,72 @@ async def test_the_guard_ignores_a_revoked_membership(app_db: None) -> None:
                     sa.text(statement), {"u": str(user), "w": str(workspace), "t": str(tenant)}
                 )
             await db.commit()
+
+
+@requires_db
+async def test_the_guard_ignores_the_users_own_workspace(app_db: None) -> None:
+    """`other_than` — the difference between a rule and a trap.
+
+    Accepting an invitation is idempotent by design: the insert is
+    `ON CONFLICT DO NOTHING`, so re-clicking a link keeps the role you already
+    hold rather than resetting it (doc 06 §4.15 — a role change is not an
+    invitation). Counting the user's *own* workspace would turn every second
+    click into "you are already part of a company": true, useless, and refusing
+    the one case that was deliberately built to be safe.
+
+    The first version of the guard omitted the parameter and
+    `test_an_existing_member_keeps_the_role_they_already_hold` failed in CI. It
+    is asserted here too, because that test is about roles and would not
+    obviously be the place a later reader looks for this rule.
+    """
+    from app.db import _unscoped_session
+    from app.domain.membership import assert_no_live_membership
+
+    user, tenant, workspace = uuid4(), uuid4(), uuid4()
+
+    async with _unscoped_session() as db:
+        try:
+            await db.execute(
+                sa.text("INSERT INTO app_user (id, email) VALUES (:i,:e)"),
+                {"i": str(user), "e": f"same-{user.hex[:8]}@example.com"},
+            )
+            await db.execute(
+                sa.text("INSERT INTO tenant (id, name) VALUES (:i,'T')"), {"i": str(tenant)}
+            )
+            await db.execute(
+                sa.text("SELECT set_config('nexus.workspace_id', :w, true)"),
+                {"w": str(workspace)},
+            )
+            await db.execute(
+                sa.text(
+                    "INSERT INTO workspace (id, workspace_id, tenant_id, name, domain,"
+                    " domain_verified_at) VALUES (:i,:i,:t,'W',:d, now())"
+                ),
+                {"i": str(workspace), "t": str(tenant), "d": f"same-{workspace.hex[:8]}.om"},
+            )
+            await db.execute(
+                sa.text(
+                    "INSERT INTO membership (workspace_id, user_id, role) VALUES (:w,:u,'owner')"
+                ),
+                {"w": str(workspace), "u": str(user)},
+            )
+            await db.commit()
+
+            # Their own workspace is excluded, so this permits.
+            await assert_no_live_membership(db, user_id=user, other_than=workspace)
+
+            # Any other workspace is not.
+            with pytest.raises(Exception, match="already part of a company"):
+                await assert_no_live_membership(db, user_id=user, other_than=uuid4())
+        finally:
+            await db.rollback()
+            for statement in (
+                "DELETE FROM membership WHERE user_id = :u",
+                "DELETE FROM workspace WHERE id = :w",
+                "DELETE FROM tenant WHERE id = :t",
+                "DELETE FROM app_user WHERE id = :u",
+            ):
+                await db.execute(
+                    sa.text(statement), {"u": str(user), "w": str(workspace), "t": str(tenant)}
+                )
+            await db.commit()

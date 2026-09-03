@@ -274,7 +274,7 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
     # somebody holding a forwarded link that the *invited* account already
     # belongs to a company would answer a question they were never entitled to
     # ask. By this line the caller has proved the invitation names them.
-    await assert_no_live_membership(db, user_id=user_id)
+    await assert_no_live_membership(db, user_id=user_id, other_than=invitation.workspace_id)
 
     await db.execute(
         text("SELECT set_config('nexus.workspace_id', :ws, true)"),

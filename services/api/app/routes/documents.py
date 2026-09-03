@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, NamedTuple
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -46,6 +46,7 @@ from sqlalchemy import CursorResult, text
 
 from app.auth.csrf import require_csrf
 from app.config import Settings, get_settings
+from app.db import _unscoped_session
 from app.deps import CurrentScope
 from app.documents.chunk import Chunk, chunk_document
 from app.documents.classify import (
@@ -55,10 +56,12 @@ from app.documents.classify import (
     classify_chunk,
     review_state_code,
 )
-from app.documents.parse import MAX_FILE_BYTES, ParseOutcome, parse_document
+from app.documents.limits import check_upload
+from app.documents.parse import ParseOutcome, parse_document
 from app.documents.status import DocumentStatus
 from app.domain import audit
 from app.domain.access import Sensitivity
+from app.domain.progress import progress_for
 from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
@@ -109,6 +112,46 @@ def _object_store(settings: Settings) -> ObjectStore:
     )
 
 
+class WorkspaceUsage(NamedTuple):
+    bytes_used: int
+    files: int
+    onboarding: bool
+
+
+async def workspace_usage(scope: CurrentScope) -> WorkspaceUsage:
+    """Bytes stored, files stored, and whether onboarding is still running.
+
+    **A dependency, not a call inside the handler** — the third time this file's
+    neighbours have taught that lesson. Reading it inline turned seven upload
+    tests into integration tests: they assert what the *route* does with a
+    parsed file over a monkeypatched write, they have no database, and none of
+    them is about quotas. A route that stays a pure function of its inputs can
+    be tested for the thing it is actually responsible for.
+
+    One query for the two counts, because both are read on every upload and a
+    second round trip to decide a refusal is one too many.
+
+    **Failed and quarantined documents count.** We kept the bytes — a file we
+    could not parse is still the customer's file and is still on the disk — so
+    excluding them would let a workspace fill the quota with files the product
+    never read, which is exactly the case the quota exists for.
+    """
+    async with scoped_connection(scope) as db:
+        row = (
+            await db.execute(
+                text("SELECT COALESCE(SUM(size_bytes), 0) AS used, COUNT(*) AS files FROM document")
+            )
+        ).one()
+
+    async with _unscoped_session() as db:
+        progress = await progress_for(db, workspace_id=scope.workspace_id)
+
+    return WorkspaceUsage(int(row.used), int(row.files), not progress.finished)
+
+
+Usage = Annotated[WorkspaceUsage, Depends(workspace_usage)]
+
+
 @router.post(
     "",
     response_model=UploadOut,
@@ -118,6 +161,7 @@ def _object_store(settings: Settings) -> ObjectStore:
 async def upload_document(
     scope: CurrentScope,
     settings: Annotated[Settings, Depends(get_settings)],
+    usage: Usage,
     file: Annotated[UploadFile, File()],
     consent: Annotated[bool, Form()] = False,
     supersedes_id: Annotated[UUID | None, Form()] = None,
@@ -137,12 +181,19 @@ async def upload_document(
     data = await file.read()
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That file is empty.")
-    if len(data) > MAX_FILE_BYTES:
-        raise HTTPException(
-            status.HTTP_413_CONTENT_TOO_LARGE,
-            f"This file is over {MAX_FILE_BYTES // (1024 * 1024)} MB. "
-            "Split it and upload the parts.",
-        )
+
+    # Q36's three limits, all decided server-side. A limit the browser enforces
+    # is a suggestion: this endpoint is reachable without the browser, and the
+    # one caller who skips it is the caller the limit exists for.
+    breach = check_upload(
+        size_bytes=len(data),
+        workspace_bytes_used=usage.bytes_used,
+        files_uploaded=usage.files,
+        onboarding=usage.onboarding,
+    )
+    if breach is not None:
+        log.info("document.refused", limit=breach.value)
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, breach.message)
 
     filename = file.filename or "untitled"
     parsed = parse_document(data, filename=filename)

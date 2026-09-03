@@ -22,7 +22,11 @@ import io
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-MAX_FILE_BYTES = 50 * 1024 * 1024  # doc 01 M1 — 50 MB per document
+# One number, defined in `limits.py` with the other two. It lived here at 50 MB
+# — `doc/01` M1's figure — after `doc/11` settled on 25, and a second definition
+# is how they came to disagree in the first place.
+from app.documents.limits import MAX_FILE_BYTES as MAX_FILE_BYTES
+
 # Below this, a "successful" parse is almost certainly an image-only document.
 MIN_TEXT_CHARS_PER_PAGE = 20
 

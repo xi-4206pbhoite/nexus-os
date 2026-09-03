@@ -28,6 +28,7 @@ from app.documents.classify import ReviewState
 from app.domain.scopes import Department, Role
 from app.domain.session import ScopedSession
 from app.main import create_app
+from app.routes.documents import WorkspaceUsage, workspace_usage
 
 WORKSPACE = UUID("22222222-2222-2222-2222-222222222222")
 USER = UUID("11111111-1111-1111-1111-111111111111")
@@ -66,6 +67,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[TestClient, list[d
 
     app = create_app()
     app.dependency_overrides[current_scope] = scope_for
+    # An empty workspace. These tests assert what the route does with a parsed
+    # file, not what the quota does — and reading usage from the database would
+    # make every one of them need a database to answer a question none of them
+    # asks. `tests/test_upload_limits.py` owns the limits.
+    app.dependency_overrides[workspace_usage] = lambda: WorkspaceUsage(0, 0, True)
 
     with TestClient(app) as c:
         c.cookies.set(CSRF_COOKIE_NAME, CSRF)

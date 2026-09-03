@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import invitations as invites
 from app.auth.csrf import require_csrf
+from app.auth.workspaces import UnverifiedWorkspaceError
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.domain import audit
@@ -584,14 +585,23 @@ async def create_invitation(payload: InviteIn, scope: CurrentScope) -> IssuedOut
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That is not an email address.")
 
     async with scoped_connection(scope) as session:
-        issued = await invites.issue(
-            session,
-            workspace_id=scope.workspace_id,
-            invited_by_user_id=scope.user_id,
-            email=email,
-            role=payload.role,
-            departments=departments,
-        )
+        try:
+            issued = await invites.issue(
+                session,
+                workspace_id=scope.workspace_id,
+                invited_by_user_id=scope.user_id,
+                email=email,
+                role=payload.role,
+                departments=departments,
+            )
+        except UnverifiedWorkspaceError as exc:
+            # D19's gate, translated. `issue` raises this correctly and nothing
+            # caught it, so a deliberate refusal reached the user as a **500**.
+            # Found by walking the flow, not by the suite — the test called
+            # `require_verified_domain` directly rather than through this route.
+            # Same shape as findings #9 and #10: right behaviour, wrong status
+            # code, and only the status code is visible to a person.
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
     return IssuedOut(
         **_out(issued.invitation).model_dump(),

@@ -134,6 +134,26 @@ class Question:
     the reason, and resolving them per workspace is the route's job.
     """
 
+    assumption_when_unsure: str | None = None
+    """What is recorded when a founder answers "not sure yet".
+
+    **Not a default and not a null.** A null says nobody was asked; this says
+    somebody was asked, did not know, and the product proceeded on a stated
+    basis — which the Brain can later contradict with evidence, and a null
+    cannot. It is also the difference between a blank dashboard tile and one
+    that says what it is assuming.
+    """
+
+    confirmable_from_crawl: bool = False
+    """Q20's crawl-then-confirm posture.
+
+    A flagged question is **not asked during onboarding**. The research run
+    proposes it and the founder confirms it at the review gate, because asking
+    somebody for what we are about to find out ourselves spends the scarcest
+    thing onboarding has — their patience — on a question we can answer.
+    Industry is the first such field.
+    """
+
     @property
     def free_entry(self) -> bool:
         return not self.options and self.answer_type is not AnswerType.USER_LIST
@@ -203,24 +223,6 @@ CATALOGUE: tuple[Question, ...] = (
         why="Intent is not published anywhere — we cannot infer it from your site.",
     ),
     Question(
-        key="biggest_challenges",
-        prompt="What is getting in the way?",
-        stage=Pass.TWO,
-        answer_type=AnswerType.MULTI_CHOICE,
-        scope=Scope.L2_COMPANY_INTERNAL,
-        department=None,
-        why="It orders the improvement roadmap.",
-    ),
-    Question(
-        key="ideal_customer",
-        prompt="Describe your ideal customer, in your words",
-        stage=Pass.TWO,
-        answer_type=AnswerType.LONG_TEXT,
-        scope=Scope.L2_COMPANY_INTERNAL,
-        department=None,
-        why="Often different from who you currently serve.",
-    ),
-    Question(
         key="average_deal_size",
         prompt="What is your average deal size?",
         stage=Pass.TWO,
@@ -270,17 +272,6 @@ CATALOGUE: tuple[Question, ...] = (
         why="Every figure in the product is shown in it.",
         options=CURRENCIES,
     ),
-    Question(
-        key="fiscal_year_start",
-        prompt="When does your financial year start?",
-        stage=Pass.TWO,
-        answer_type=AnswerType.SINGLE_CHOICE,
-        scope=Scope.L2_COMPANY_INTERNAL,
-        department=None,
-        required=True,
-        why="Period comparisons depend on it.",
-        options=MONTHS,
-    ),
     # ── After team invitation (doc 06 §4.10) ──────────────────
     Question(
         key="brief_recipients",
@@ -294,6 +285,15 @@ CATALOGUE: tuple[Question, ...] = (
 )
 
 BY_KEY: dict[str, Question] = {q.key: q for q in CATALOGUE}
+"""Rebuilt below to include Phase 6's company stage — see `_register_p6`.
+
+Three keys used to live in `CATALOGUE` and now live in `COMPANY_QUESTIONS`:
+`ideal_customer`, `biggest_challenges` and `fiscal_year_start`. They were
+removed above rather than left in place, because two `Question`s with one key is
+a lookup that silently returns whichever was defined first — which is exactly
+what happened: the P6 versions carried an assumption, and `BY_KEY` kept handing
+out the old ones that did not.
+"""
 
 
 def questions_for(stage: Pass) -> tuple[Question, ...]:
@@ -311,3 +311,143 @@ def scope_for_answer(key: str) -> tuple[Scope, Department | None]:
     if question is None:
         raise KeyError(f"Unknown onboarding question: {key}")
     return question.scope, question.department
+
+
+# ── Phase 6: the company stage (Q19) ──────────────────────────
+#
+# Five questions, and the count is the design. Doc 04 §5 wants every question
+# justified by something the founder has already seen; five is what fits before
+# the justification runs out and it starts feeling like a form.
+#
+# They are also the five a founder can answer **without going to look anything
+# up**, except the fiscal year — which is why that one carries the assumption
+# most likely to be used.
+#
+# `CATALOGUE` above is not deleted. It holds the department and persona
+# questions P7 rebuilds into blocks, and deleting it here would take working,
+# tested scope-tagging with it for the sake of tidiness.
+
+COMPANY_QUESTIONS: tuple[Question, ...] = (
+    Question(
+        key="what_you_sell",
+        prompt="What does your company sell?",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L1_COMPANY_PUBLIC,
+        department=None,
+        required=True,
+        why="Everything NEXUS says about your market starts here.",
+        assumption_when_unsure=(
+            "Assumed from the website until confirmed — the research run will "
+            "propose a description and you can correct it."
+        ),
+    ),
+    Question(
+        key="ideal_customer",
+        prompt="Who is your ideal customer?",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="Lead scoring, outreach and content all judge against this.",
+        assumption_when_unsure=(
+            "Assumed to be whoever your current customers resemble, until you say otherwise."
+        ),
+    ),
+    Question(
+        key="top_goals",
+        prompt="Your top three goals for the next year",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="What NEXUS measures progress against, and what it recommends towards.",
+        assumption_when_unsure=(
+            "Assumed to be growth in revenue, until you name something else. "
+            "Stated plainly because a wrong goal quietly bends every "
+            "recommendation towards it."
+        ),
+    ),
+    Question(
+        key="biggest_challenges",
+        prompt="Your biggest challenges right now",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="What the morning brief looks for first.",
+        assumption_when_unsure="None stated — the brief will surface what it finds instead.",
+    ),
+    Question(
+        key="fiscal_year_start",
+        prompt="When does your financial year start?",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L2_COMPANY_INTERNAL,
+        department=None,
+        why="Every quarter, every year-to-date figure and every comparison depends on it.",
+        assumption_when_unsure=(
+            "Assumed to be January. Wrong for most of the GCC, which is exactly "
+            "why it is stated rather than silently defaulted — a misaligned "
+            "fiscal year makes every year-to-date number wrong without making "
+            "any of them look wrong."
+        ),
+    ),
+)
+
+
+# Q20. Asked by the crawl, confirmed at the review gate, never asked here.
+CONFIRMABLE_FROM_CRAWL: tuple[Question, ...] = (
+    Question(
+        key="industry",
+        prompt="What industry are you in?",
+        stage=Pass.ONE,
+        answer_type=AnswerType.TEXT,
+        scope=Scope.L1_COMPANY_PUBLIC,
+        department=None,
+        why="Benchmarks and competitor discovery both key off it.",
+        confirmable_from_crawl=True,
+        assumption_when_unsure="Taken from your website, for you to confirm.",
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedAnswer:
+    """What actually gets stored for one question."""
+
+    value: str
+    is_assumption: bool
+
+
+def resolve_answer(question: Question, *, value: str | None, unsure: bool) -> ResolvedAnswer:
+    """Turn what the founder did into what is stored.
+
+    The whole point of Phase 6's "not sure yet": it must **never** produce a
+    null. A null is indistinguishable from a question nobody reached, so the
+    product cannot tell "we asked and they did not know" from "we never asked" —
+    and those want different behaviour everywhere downstream, from the dashboard
+    tile to the review gate to what the Brain is willing to assert.
+
+    `is_assumption` travels with the value so a caller cannot store one and
+    forget the other.
+    """
+    if unsure or value is None or not value.strip():
+        assumption = question.assumption_when_unsure
+        if assumption is None:
+            raise ValueError(
+                f"{question.key} has no assumption to fall back on, so "
+                '"not sure yet" would store a null. Give it one, or make the '
+                "question required."
+            )
+        return ResolvedAnswer(value=assumption, is_assumption=True)
+
+    return ResolvedAnswer(value=value.strip(), is_assumption=False)
+
+
+# Phase 6's questions join the lookup. Appended rather than merged into the
+# literal above because `COMPANY_QUESTIONS` is defined after it, and a lookup
+# that silently disagrees with the catalogue it indexes is worse than one built
+# in two steps with a comment saying so.
+BY_KEY.update({q.key: q for q in COMPANY_QUESTIONS})
+BY_KEY.update({q.key: q for q in CONFIRMABLE_FROM_CRAWL})

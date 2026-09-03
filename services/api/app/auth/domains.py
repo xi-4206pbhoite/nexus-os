@@ -36,6 +36,7 @@ from app.connectors.domain_check import (
     new_challenge,
     normalise_domain,
 )
+from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
 
@@ -324,6 +325,16 @@ async def create_workspace_for_claim(
         ),
         {"ws": str(workspace_id), "u": str(user_id)},
     )
+    await audit.record(
+        db,
+        workspace_id=workspace_id,
+        action=audit.AuditAction.WORKSPACE_CREATED,
+        actor_user_id=user_id,
+        target_type="workspace",
+        target_id=str(workspace_id),
+        reason=f"domain {claim.domain} verified by {claim.method.value}",
+    )
+
     await db.execute(
         text("UPDATE domain_claim SET workspace_id = :ws WHERE id = :id"),
         {"ws": str(workspace_id), "id": str(claim.id)},

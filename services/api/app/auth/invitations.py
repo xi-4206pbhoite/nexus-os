@@ -26,6 +26,7 @@ from sqlalchemy import CursorResult, RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import hash_token, new_token
+from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.domain.scopes import Department, Role
 from app.logging import get_logger
@@ -166,6 +167,19 @@ async def issue(
     )
 
     log.info("invitation.issued", role=role.value, departments=len(departments))
+    await audit.record(
+        db,
+        workspace_id=workspace_id,
+        action=audit.AuditAction.INVITATION_ISSUED,
+        actor_user_id=invited_by_user_id,
+        target_type="invitation",
+        target_id=str(row["id"]),
+        # The role, because that is the part an administrator is asked about
+        # later. Not the address: the log is read by people who can already see
+        # the member list, but a trail is a place data outlives its purpose.
+        reason=f"role {role.value}",
+    )
+
     return IssuedInvitation(invitation=_row_to_invitation(row), token=token)
 
 
@@ -297,6 +311,17 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
     )
 
     already_member = not result.rowcount
+
+    if not already_member:
+        await audit.record(
+            db,
+            workspace_id=invitation.workspace_id,
+            action=audit.AuditAction.INVITATION_ACCEPTED,
+            actor_user_id=user_id,
+            target_type="invitation",
+            target_id=str(invitation.id),
+            reason=f"role {invitation.role.value}",
+        )
 
     # Burn the token either way. A link that has been through this once must not
     # work again, whether or not it changed anything.

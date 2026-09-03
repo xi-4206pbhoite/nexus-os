@@ -41,6 +41,7 @@ from app.auth import invitations as invites
 from app.auth.csrf import require_csrf
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
+from app.domain import audit
 from app.domain.access import AccessDecision, Aggregate, decide_l3_access
 from app.domain.invitations import InvitationError, check_invitation, may_administer
 from app.domain.membership import UserAlreadyInAWorkspaceError
@@ -493,6 +494,20 @@ async def save_answers(payload: AnswersIn, scope: CurrentScope) -> SavedOut:
 
         for question, value in questions_to_write:
             await store_answer(session, caller=scope, question=question, value=value)
+
+        # One row for the step, not one per answer. A wizard step is what a
+        # person did; six rows for six fields would bury the trail in a way that
+        # makes the interesting entries harder to find, which is the failure
+        # mode of a log nobody reads.
+        if questions_to_write:
+            await audit.record(
+                session,
+                workspace_id=scope.workspace_id,
+                action=audit.AuditAction.ANSWER_WRITTEN,
+                actor_user_id=scope.user_id,
+                target_type="onboarding_answer",
+                target_id=",".join(q.key for q, _ in questions_to_write),
+            )
 
     log.info("onboarding.answers.saved", count=len(questions_to_write))
     return SavedOut(saved=[q.key for q, _ in questions_to_write])

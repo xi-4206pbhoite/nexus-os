@@ -49,6 +49,7 @@ from app.connectors.rate_limit import (
 )
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
+from app.domain import audit
 from app.logging import get_logger
 from app.mail import Email, Mailer, build_mailer
 
@@ -355,6 +356,19 @@ async def login(
             active_workspace_id=active,
             user_agent=request.headers.get("user-agent"),
         )
+        # I9. Only when the session lands in a workspace: `audit_log` is
+        # workspace-scoped, and an account with no membership has no tenant to
+        # own the row. `app/domain/audit.py` explains why a NULL would be worse
+        # than an absence — the isolation predicate makes such a row invisible
+        # to everyone, which is a log entry that exists and cannot be read.
+        if active is not None:
+            await audit.record(
+                db,
+                workspace_id=active,
+                action=audit.AuditAction.LOGIN,
+                actor_user_id=user_id,
+            )
+
         await db.commit()
 
     # A success is throttled on the same curve. Otherwise the *absence* of the
@@ -388,6 +402,16 @@ async def logout(
         async with _unscoped_session() as db:
             resolved = await resolve_session(db, token=nexus_session)
             if resolved is not None:
+                # Logged before the revocation, while the session still names a
+                # workspace. `revoke_session` does not clear the pointer, but
+                # reading it first keeps the row's meaning independent of that.
+                if resolved.active_workspace_id is not None:
+                    await audit.record(
+                        db,
+                        workspace_id=resolved.active_workspace_id,
+                        action=audit.AuditAction.LOGOUT,
+                        actor_user_id=resolved.user_id,
+                    )
                 await revoke_session(db, session_id=resolved.session_id)
                 await db.commit()
 

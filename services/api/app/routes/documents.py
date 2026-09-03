@@ -57,6 +57,7 @@ from app.documents.classify import (
 )
 from app.documents.parse import MAX_FILE_BYTES, ParseOutcome, parse_document
 from app.documents.status import DocumentStatus
+from app.domain import audit
 from app.domain.access import Sensitivity
 from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
@@ -348,6 +349,15 @@ async def _record(
                 },
             )
 
+        await audit.record(
+            session,
+            workspace_id=scope.workspace_id,
+            action=audit.AuditAction.DOCUMENT_UPLOADED,
+            actor_user_id=scope.user_id,
+            target_type="document",
+            target_id=str(document_id),
+        )
+
         if supersedes_id is not None:
             # Doc 06 s6 - a superseded document does not hand its scope to its
             # replacement. The replacement was classified from scratch above;
@@ -503,6 +513,25 @@ async def decide_review(
                 "id": str(chunk_id),
             },
         )
+
+        # Inside the same transaction and the same scoped session as the
+        # decision, so a logged review is a review that happened. Skipped when
+        # nothing was updated — a 404 below is "no such chunk", and logging it
+        # would fill the trail with rows for actions that did not occur.
+        if result.rowcount:
+            await audit.record(
+                session,
+                workspace_id=scope.workspace_id,
+                action=audit.AuditAction.REVIEW_DECISION,
+                actor_user_id=scope.user_id,
+                target_type="chunk",
+                target_id=str(chunk_id),
+                reason=(
+                    f"approved into {scope_code(target)}"
+                    if decision.approve and target
+                    else ("approved" if decision.approve else "rejected")
+                ),
+            )
 
     if result.rowcount == 0:
         # Does not exist, belongs to another workspace (RLS made it invisible),

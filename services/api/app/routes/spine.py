@@ -18,7 +18,8 @@ from sqlalchemy import text
 from app.auth.csrf import require_csrf
 from app.db import _unscoped_session
 from app.deps import CurrentScope
-from app.domain import audit
+from app.domain import audit, persona_chat
+from app.domain import company_brain as brain
 from app.domain.department_answers import (
     AnswerState,
     may_answer_department_question,
@@ -169,6 +170,208 @@ async def save_company_stage(payload: CompanyAnswersIn, scope: CurrentScope) -> 
         stages=list(STAGES),
         finished=progress.finished,
     )
+
+
+class BrainOut(BaseModel):
+    """The company brain, and what it is made of.
+
+    `provenance` and `assumptions` are part of the response rather than an
+    internal detail: a brain the founder cannot audit is a brain they have to
+    take on trust, and this product's whole claim is that they never have to.
+    """
+
+    version: int
+    generated_by: str
+    unavailable_reason: str
+    profile: str | None
+    products_services: str | None
+    target_customers: str | None
+    goals: str | None
+    assumptions: list[str]
+    provenance: list[str]
+
+
+@router.post("/brain", response_model=BrainOut, dependencies=[Depends(require_csrf)])
+async def rebuild_brain(scope: CurrentScope) -> BrainOut:
+    """Rebuild the brain from the workspace's current answers.
+
+    A POST because it writes a new version, and versioned because a founder who
+    changes an answer should be able to see that the brain changed with it. The
+    old one is superseded rather than deleted — `ux_company_brain_current`
+    guarantees exactly one is live.
+    """
+    async with scoped_connection(scope) as db:
+        built = await brain.build(db, workspace_id=scope.workspace_id)
+        version = await brain.store(db, workspace_id=scope.workspace_id, brain=built)
+        await db.commit()
+
+    log.info("brain.rebuilt", version=version, generated_by=built.generated_by)
+    return _brain_out(built, version)
+
+
+@router.get("/brain", response_model=BrainOut)
+async def read_brain(scope: CurrentScope) -> BrainOut:
+    """The current brain, built on demand if it has never been built.
+
+    Built rather than 404 because the brain is derived: everything it needs is
+    already in the workspace, so "not built yet" is an implementation detail the
+    founder has no way to act on and no reason to see.
+    """
+    async with scoped_connection(scope) as db:
+        held = await brain.current(db, workspace_id=scope.workspace_id)
+        if held is None:
+            built = await brain.build(db, workspace_id=scope.workspace_id)
+            version = await brain.store(db, workspace_id=scope.workspace_id, brain=built)
+            await db.commit()
+            return _brain_out(built, version)
+
+    row = None
+    async with scoped_connection(scope) as db:
+        row = (
+            await db.execute(
+                text(
+                    "SELECT version FROM company_brain"
+                    " WHERE workspace_id = :w AND superseded_at IS NULL"
+                ),
+                {"w": str(scope.workspace_id)},
+            )
+        ).scalar_one()
+    return _brain_out(held, int(row))
+
+
+def _brain_out(built: brain.Brain, version: int) -> BrainOut:
+    return BrainOut(
+        version=version,
+        generated_by=built.generated_by,
+        unavailable_reason=built.unavailable_reason,
+        profile=built.profile,
+        products_services=built.products_services,
+        target_customers=built.target_customers,
+        goals=built.goals,
+        assumptions=built.assumptions,
+        provenance=built.provenance,
+    )
+
+
+class PersonaTurnOut(BaseModel):
+    """One turn of the interview: what is being asked, and what is known so far."""
+
+    question: dict[str, object] | None
+    """`None` when the interview is finished."""
+    answered: dict[str, str]
+    complete: bool
+
+
+class PersonaAnswerIn(BaseModel):
+    key: str
+    value: str = Field(min_length=1, max_length=2000)
+
+
+def _turn(answered: dict[str, str]) -> PersonaTurnOut:
+    question = persona_chat.next_question(answered)
+    built = persona_chat.apply(answered)
+    return PersonaTurnOut(
+        question=(
+            {
+                "key": question.key,
+                "prompt": question.prompt,
+                "why": question.why,
+                "choices": list(question.choices),
+                "free_text": question.free_text,
+            }
+            if question
+            else None
+        ),
+        answered=answered,
+        complete=built.complete,
+    )
+
+
+async def _persona_answers(scope: ScopedSession) -> dict[str, str]:
+    async with scoped_connection(scope) as db:
+        row = (
+            await db.execute(
+                text(
+                    "SELECT stated_purpose, priority_topics, communication_style, language"
+                    "  FROM persona WHERE user_id = :u"
+                ),
+                {"u": str(scope.user_id)},
+            )
+        ).first()
+    if row is None:
+        return {}
+    return {
+        k: v
+        for k, v in {
+            "stated_purpose": row.stated_purpose or "",
+            "priority_topics": ", ".join(row.priority_topics or []),
+            "communication_style": row.communication_style or "",
+            "language": row.language or "",
+        }.items()
+        if v
+    }
+
+
+@router.get("/persona/chat", response_model=PersonaTurnOut)
+async def persona_chat_state(scope: CurrentScope) -> PersonaTurnOut:
+    """Where this person is in the interview.
+
+    Derived from what is stored rather than from a cursor the client holds, so
+    closing the tab loses nothing — the same reason onboarding is resumable.
+    """
+    return _turn(await _persona_answers(scope))
+
+
+@router.post("/persona/chat", response_model=PersonaTurnOut, dependencies=[Depends(require_csrf)])
+async def persona_chat_answer(payload: PersonaAnswerIn, scope: CurrentScope) -> PersonaTurnOut:
+    """Answer one question and get the next.
+
+    **Nothing here can widen access** (`doc/05` §2.6). Unknown keys are refused
+    rather than stored, and the four that are accepted are presentation only —
+    `ScopedSession` carries none of them, so a persona cannot reach a query even
+    if somebody later tries. Role and departments come from the invitation,
+    which somebody else issued: typing "I'm the CFO" into a chat is not a
+    promotion.
+    """
+    if payload.key not in persona_chat.ANSWERABLE:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"{payload.key} is not part of this conversation.",
+        )
+
+    answered = await _persona_answers(scope)
+    answered[payload.key] = payload.value.strip()
+    built = persona_chat.apply(answered)
+
+    async with scoped_connection(scope) as db:
+        await db.execute(
+            text(
+                "INSERT INTO persona (workspace_id, user_id, stated_purpose, priority_topics,"
+                "                     communication_style, language)"
+                " VALUES (:w, :u, :purpose, :topics, :style, :lang)"
+                " ON CONFLICT (workspace_id, user_id) DO UPDATE SET"
+                "   stated_purpose = EXCLUDED.stated_purpose,"
+                "   priority_topics = EXCLUDED.priority_topics,"
+                "   communication_style = EXCLUDED.communication_style,"
+                "   language = EXCLUDED.language"
+            ),
+            {
+                "w": str(scope.workspace_id),
+                "u": str(scope.user_id),
+                "purpose": built.stated_purpose,
+                "topics": built.priority_topics,
+                "style": built.communication_style,
+                # `language` is NOT NULL with a default of `en`, and an INSERT
+                # naming the column overrides the default with NULL rather than
+                # falling back to it. Mid-interview the answer legitimately does
+                # not exist yet, so the default has to be written explicitly.
+                "lang": built.language or "en",
+            },
+        )
+        await db.commit()
+
+    log.info("persona.answered", key=payload.key, complete=built.complete)
+    return _turn(answered)
 
 
 class DepartmentsIn(BaseModel):

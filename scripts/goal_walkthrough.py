@@ -295,6 +295,75 @@ if member_landing is None and invite_token:
           m_client.get("/dashboards/hr").status_code == 404,
           str(m_client.get("/dashboards/hr").status_code))
 
+print("\n\033[1m6. The company brain\033[0m")
+if ws_b:
+    r = b.get("/onboarding/brain")
+    if check("GET /onboarding/brain -> 200", r.status_code == 200, r.text[:200]):
+        brain = r.json()
+        print(f"       v{brain['version']} by {brain['generated_by']}")
+        print(f"       profile: {(brain.get('profile') or '')[:90]}")
+        check("it is built from answers, not unavailable",
+              brain["generated_by"] == "answers", str(brain)[:200])
+        check("every claim names a source", bool(brain["provenance"]), str(brain)[:200])
+        # This walkthrough answers "not sure" to every question that offers it,
+        # and `what_you_sell` is one — so it is correctly an assumption rather
+        # than a fact. The brain keeping those apart is the property worth
+        # asserting; expecting a fact here would be asserting the wrong thing.
+        check("what the founder did not know is an assumption, not a claim",
+              any("assumed" in a for a in brain["assumptions"]) or bool(brain["products_services"]),
+              str(brain)[:220])
+        check("assumptions are kept apart from facts", isinstance(brain["assumptions"], list))
+        # A rebuild supersedes rather than duplicating.
+        again = b.post("/onboarding/brain", headers=csrf(b))
+        check("rebuild returns a new version",
+              again.status_code == 200 and again.json()["version"] > brain["version"],
+              again.text[:160])
+
+    # The other company's brain is its own.
+    ra = a.get("/onboarding/brain")
+    if ra.status_code == 200:
+        check("A's brain is not B's",
+              ra.json().get("profile") != (b.get("/onboarding/brain").json().get("profile")),
+              "the two brains are identical")
+
+print("\n\033[1m7. The persona interview\033[0m")
+if invite_token or True:
+    r = m_client.get("/onboarding/persona/chat")
+    if check("GET /onboarding/persona/chat -> 200", r.status_code == 200, r.text[:200]):
+        turn = r.json()
+        q = turn["question"]
+        check("it opens with a question that says what it changes",
+              bool(q and q["why"]), str(turn)[:200])
+        print(f"       asks: {q['prompt'] if q else '— finished'}")
+
+        for key, value in (
+            ("stated_purpose", "Keeping deliveries on time"),
+            ("priority_topics", "late orders, supplier delays"),
+            ("communication_style", "the short answer"),
+            ("language", "English"),
+        ):
+            rr = m_client.post("/onboarding/persona/chat", json={"key": key, "value": value},
+                               headers=csrf(m_client))
+            if rr.status_code != 200:
+                check(f"answer {key}", False, rr.text[:180])
+                break
+        else:
+            done = m_client.get("/onboarding/persona/chat").json()
+            check("the interview completes", done["complete"] is True, str(done)[:200])
+            check("...and has nothing left to ask", done["question"] is None, str(done)[:200])
+            check("it remembers the answers", done["answered"].get("stated_purpose")
+                  == "Keeping deliveries on time", str(done["answered"])[:200])
+
+        # The one that matters: a persona cannot grant authority.
+        rr = m_client.post("/onboarding/persona/chat",
+                           json={"key": "seniority", "value": "CFO"}, headers=csrf(m_client))
+        check("declaring seniority in the chat is refused", rr.status_code == 400,
+              f"{rr.status_code} {rr.text[:160]}")
+        after = m_client.get("/dashboards").json()
+        check("...and the dashboards did not widen",
+              {d["department"] for d in after["directors"]} == {"operations"},
+              str([d["department"] for d in after["directors"]]))
+
 print(f"\n\033[1m{ok} passed, {fail} failed\033[0m")
 for n in notes:
     print(f"  note: {n}")

@@ -31,6 +31,7 @@ from app.connectors.domain_check import Method, Strength
 from app.documents.classify import ReviewState
 from app.documents.status import DocumentStatus
 from app.domain.access import Sensitivity
+from app.domain.department_answers import AnswerState
 from app.domain.registration import JoinRequestState, ResearchRunState
 from app.domain.scopes import Role, Scope, scope_code
 from tests.dburl import database_url
@@ -53,6 +54,11 @@ class Mapping:
 
 
 MAPPINGS: tuple[Mapping, ...] = (
+    Mapping(
+        "ck_onboarding_answer_state",
+        "app.domain.department_answers.AnswerState",
+        frozenset(state.value for state in AnswerState),
+    ),
     Mapping(
         "ck_research_run_state",
         "app.domain.registration.ResearchRunState",

@@ -25,6 +25,7 @@ from app.auth.passwords import (
     verify_password_async,
 )
 from app.auth.tokens import hash_token, new_token
+from app.config import get_settings
 from app.domain.scopes import Department, Role
 from app.domain.session import ScopedSession
 
@@ -176,21 +177,51 @@ class ResolvedSession:
     active_workspace_id: UUID | None
 
 
-async def resolve_session(db: AsyncSession, *, token: str) -> ResolvedSession | None:
-    """Look a session up by token hash. Expired or revoked sessions are absent.
+async def resolve_session(
+    db: AsyncSession, *, token: str, ttl_seconds: int | None = None
+) -> ResolvedSession | None:
+    """Look a session up by token hash, and extend it if it is running out.
 
     The lookup is by hash, so the plaintext token is never compared in SQL and
     never stored.
+
+    **Rolling refresh** (`doc/11` §5.2). Twelve hours alone is the wrong shape
+    for both parties: someone working a long day is signed out mid-task, and a
+    fixed window is one an attacker can simply wait out.
+
+    Three things make this safe and affordable, and each is in the statement
+    below rather than in a comment asking a caller to be careful:
+
+    - **It is one statement.** An `UPDATE ... RETURNING` that carries its own
+      `revoked_at IS NULL AND expires_at > now()`, so resolving and refreshing
+      cannot disagree. A read followed by a write could extend a session revoked
+      between the two — which is how a logout, a password reset or an
+      administrator ending a session gets quietly undone.
+    - **It only writes when there is something to gain.** The extension applies
+      once more than half the window is spent. Refreshing on every request would
+      turn every authenticated read into a write, which on a serverless Postgres
+      billed per statement is a cost bug wearing a security feature's clothes.
+    - **A dead session is never revived.** The `WHERE` is the same predicate the
+      old read used, so an expired or revoked row matches nothing and is neither
+      returned nor extended.
     """
+    window = ttl_seconds if ttl_seconds is not None else get_settings().session_max_age_seconds
+
     row = (
         await db.execute(
             text(
-                "SELECT id, user_id, active_workspace_id FROM user_session"
+                "UPDATE user_session"
+                "   SET expires_at = CASE"
+                "         WHEN expires_at < now() + make_interval(secs => :half)"
+                "           THEN now() + make_interval(secs => :window)"
+                "         ELSE expires_at"
+                "       END"
                 " WHERE token_hash = :hash"
                 "   AND revoked_at IS NULL"
                 "   AND expires_at > now()"
+                " RETURNING id, user_id, active_workspace_id"
             ),
-            {"hash": hash_token(token)},
+            {"hash": hash_token(token), "half": window / 2, "window": window},
         )
     ).first()
 

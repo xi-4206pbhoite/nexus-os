@@ -61,7 +61,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
-| **P4 — The security surface** | 🟨 **mostly done** | C9, the audit trail, and four of the five named findings — all green in CI. **Two items remain**: RLS on `domain_claim` (**blocked on D24**) and session refresh with H9's two mirrors. Finding #5 is re-deferred with a reason. See §9 |
+| **P4 — The security surface** | 🟨 **one item from done** | C9, the audit trail, four of the five named findings and session refresh — all green in CI. **Only RLS on `domain_claim` remains, and it is blocked on D24.** Findings #5 and half of H9 are re-deferred with reasons. See §9 |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -351,7 +351,7 @@ exist yet.
 | 🟠 | H5 | Write the audit trail | P4 | `audit_log` is dead schema | none | 2 d |
 | 🟠 | H7 | RLS on `domain_claim` | P4 | No policy, 12 SQL sites | none | 1 d |
 | 🟠 | H8 | Frontend test harness — Vitest + Playwright | P9 | Zero tests, no framework | C11 | 3 d |
-| 🟠 | H9 | Retire the two remaining test mirrors | P4 | `expire_previews`' mirror died with the preview, as predicted. `check_and_increment` is still mirrored by a synchronous `consume` in `test_rate_limit.py` — so the re-keyed limiter is proved through a copy of its SQL, not through itself — and `scoped_connection` is mirrored too. Not folded into P2: the brief's build list does not carry it, and `scoped_connection` is P10's ground | C5 ✅ | 1.5 d |
+| 🟠 | H9 | Retire the `check_and_increment` test mirror | P5 | **One of three left.** `expire_previews`' mirror died with the preview product; `test_tenant_isolation.py`'s hand-set GUCs are **deliberately kept** and now guarded against drift (see that file). The remaining one is `consume` in `test_rate_limit.py`, a synchronous copy of the limiter's upsert. Attempted in P4 and reverted: driving the real async function from a sync test needs an engine per call, which turned a 30-second module into a ten-minute one against Neon. The fix is a module-scoped loop and engine, or making the module async | C5 ✅ | 0.5 d |
 | 🟠 | H11 | Privacy and Terms pages | P16 | Deliberately absent; signups are live | content | 1 d |
 | 🟠 | H12 | Grounding pipeline + `generation` table | P14 | 8% — one calculator | H1, D13 | 8 d |
 | 🟠 | H13 | Close the 14 open items in `AUDIT-FINDINGS.md` | P4 | Open and scheduled | C9 for three | 3 d |
@@ -450,8 +450,8 @@ silent `local` (ADR 0015).
 
 | Item | Note |
 |---|---|
-| **RLS on `domain_claim`** | **Blocked on D24.** A literal `user_id` predicate silently breaks the expiry sweep and the dispute write — both fail by matching zero rows and reporting success. Three options costed in `DECISIONS-REQUIRED.md` |
-| **Session refresh, and H9's mirrors** | Rolling 12-hour expiry on activity. Two mirrors left — `check_and_increment` and `scoped_connection` |
+| **RLS on `domain_claim`** | The only item left, and **blocked on D24.** A literal `user_id` predicate silently breaks the expiry sweep and the dispute write — both fail by matching zero rows and reporting success. Three options costed in `DECISIONS-REQUIRED.md` |
+| ~~Session refresh~~ | **Done.** One `UPDATE ... RETURNING` that resolves and refreshes together, extending only once the window is more than half spent |
 | ~~Finding #5~~ | **Re-deferred, not skipped.** `validate_url` is synchronous and called from six places including the 89-case SSRF suite; making it `async` ripples through all of them, and `run_in_executor` inside a sync function needs a loop it cannot assume. Its reach shrank in P2 and P4 put a counter in front of the one path that reaches it. Take it with P5's work on those routes |
 
 **Account-level auditing is a gap this phase created and named.** `audit_log` is

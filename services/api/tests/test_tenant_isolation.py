@@ -305,3 +305,45 @@ def test_switching_workspace_changes_visibility_immediately(
 
     set_workspace(conn, ws_a)
     assert conn.execute(sa.text("SELECT name FROM workspace")).scalar() == "Workspace A"
+
+
+# ── The bridge to the application's own helper (H9) ───────────
+
+
+def test_scoped_connection_sets_the_same_gucs_this_suite_hand_sets() -> None:
+    """H9 lists this file's hand-set GUCs as a "test mirror" to retire by
+    driving `scoped_connection` instead. **It is deliberately not retired**, and
+    this test is what makes that safe rather than lazy.
+
+    The suite above asserts a *database* behaviour: that the RLS policies in
+    migration 0002 isolate tenants, whatever the application does. It runs plain
+    synchronous SQL as the real unprivileged role for exactly that reason — the
+    same reason `pyproject.toml` carries `psycopg2-binary` as a test-only
+    dependency. Routing it through `scoped_connection` would change what is
+    proved from "the policy isolates" to "our helper sets a GUC", which is
+    strictly weaker: a bug in the helper would then hide a working policy, and a
+    missing policy would be masked by a correct helper.
+
+    What the mirror argument *is* right about is drift — two places that name
+    `nexus.workspace_id` can disagree. So the coupling is asserted here rather
+    than removed: if `scoped_connection` ever sets a different GUC, or stops
+    setting one, this fails and the isolation suite above is known to be
+    testing something the application no longer does.
+    """
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "retrieval" / "scoped.py").read_text(
+        encoding="utf-8"
+    )
+    helper_gucs = set(re.findall(r"set_config\(\s*'([a-z_.]+)'", source))
+
+    this_file = Path(__file__).read_text(encoding="utf-8")
+    suite_gucs = set(re.findall(r"set_config\('([a-z_.]+)'", this_file))
+
+    assert "nexus.workspace_id" in helper_gucs
+    assert suite_gucs <= helper_gucs, (
+        f"this suite sets {sorted(suite_gucs - helper_gucs)}, which "
+        "`scoped_connection` does not — so it is proving isolation against a "
+        "scope the application never establishes."
+    )

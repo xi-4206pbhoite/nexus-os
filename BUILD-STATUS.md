@@ -18,11 +18,11 @@ analysis of a company they do not own.
 
 | | Before Phase 0 | Now |
 |---|---|---|
-| Database tests in CI | **94 skipped, exit 0** | 714 executed, exit 0 |
+| Database tests in CI | **94 skipped, exit 0** | 667 executed, exit 0 — and **actually executed**: until Phase 2 the pytest step never ran at all, see §3 |
 | Row-level security proved automatically | no | yes — 12 isolation tests, executed |
 | Migrations ever run in reverse | no | yes, every run: `upgrade → downgrade base → upgrade` |
-| `mypy --strict` over `tests/` | no | yes, 107 files clean |
-| Coverage measured | no | 75.86% branch, with a floor that only rises |
+| `mypy --strict` over `tests/` | no | yes, 105 files clean — and passing on a *clean runner*, which it had not been doing |
+| Coverage measured | no | 76.43% branch in CI, with a floor that only rises |
 | A skipped database test | invisible | fails the build, by name |
 | Document upload against Postgres | **rolled back, every time** | writes, and reaches the review queue |
 | Superseding a document | **raised** | retires the earlier row |
@@ -57,9 +57,9 @@ that split is unchanged, and Phase 5 is where it starts to close.
 
 | Phase | State | Note |
 |---|---|---|
-| **P0 — CI and the remote** | ✅ **complete** | Confirmed green on the remote, with `test_tenant_isolation.py`'s 12 tests **executed**. One sub-step — watching CI go red with the RLS policy removed — was exercised locally rather than on the remote |
+| **P0 — CI and the remote** | ✅ complete, with one claim withdrawn | The workflow, the Postgres service and the skip guard are all real and all working. But **"confirmed green on the remote" was wrong**: the run it referred to was red, and every run since has been, because `mypy` failed on an undeclared `bs4` before pytest was reached. The isolation tests were confirmed executed *locally*. They first ran on a remote runner in Phase 2 |
 | **P1 — Correctness** | ✅ complete, with one claim withdrawn | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test all hold. The fourth item — four database timeouts — is correct in code and green in CI, and **does not take effect on Neon** (§4.7, finding #15) |
-| **P2 — Retire the preview product** | ✅ **complete** | `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
+| **P2 — Retire the preview product** | ✅ **complete, green in CI** | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | P3 — Identity | next | Email that actually sends, password reset, one person to one company. Blocked on nothing — `doc/11` settled SMTP |
 | P4 — Security | pending | |
 | P5–P9 — the onboarding spine | pending | |
@@ -129,7 +129,8 @@ reason:** P11 builds the research job model and will know what a run costs.
 | **The redirect suite too** | `tests/test_crawler_redirects.py` — 18 cases, two import lines |
 | **The exemption list pruned itself** | Removing `ck_preview_session_status` from `UNMAPPED` made `test_every_value_list_constraint_is_registered` fail against a database that still has the table — which is the tripwire Phase 1 built, firing on schedule |
 | **The landing page has no URL field and builds** | `npx tsc --noEmit` clean, `npx next lint` clean, `npx next build` succeeds with no `/api/preview` route in the manifest |
-| The suite is green | **660 passed**, coverage **76.49%** against a floor of 75 — up from 75.86%, because the deleted code took its own uncovered branches with it |
+| The suite is green **in CI** | **667 passed in 25s**, coverage **76.43%** against a floor of 75 — up from 75.86%, because the deleted code took its own uncovered branches with it. No `requires_db` test skipped, or `conftest.py` would have failed the session |
+| **Migration 0011 runs both directions on a clean Postgres** | The workflow's `upgrade head → downgrade base → upgrade head`, with `Running upgrade 0010 -> 0011` and `Running downgrade 0011 -> 0010` both in the log |
 
 **CI was red before this phase started, for two reasons, and neither was
 visible.**
@@ -153,11 +154,10 @@ Both are the same class of defect: **an unpinned dependency set means CI resolve
 a different environment than the developer, and the difference is only visible on
 the run.** The workflow has no lockfile, so this will recur.
 
-**The seven local failures against Neon are a separate cause, and not the code.**
-The developer's Neon instance is at migration `0009`; head is now `0011`. Four
-failures are Phase 1's migration 0010 missing and 0011 not yet applied; the other
-three are §4.7. **The acceptance test's real venue is CI**, which builds a clean
-Postgres and migrates both directions — standing rule 1.
+**Locally, against Neon, seven tests still fail — and that is the database, not
+the code.** The developer's instance is at migration `0009`; head is `0011`. Four
+failures are Phase 1's `0010` missing and `0011` not yet applied; the other three
+are §4.7. CI, on a clean Postgres migrated both directions, is **green**.
 
 ### What the tests found that the plan did not anticipate
 
@@ -314,7 +314,8 @@ was code, it went with the tree.
 
 | # | What | Blocks |
 |---|---|---|
-| ~~**The Actions run**~~ | ✅ Confirmed green, 12 isolation tests executed. The red run remains optional and unwitnessed on the remote — see §3 | — |
+| **The Actions run** | ✅ **Green in Phase 2** — run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386), 667 tests executed on a remote runner. Phase 0's claim that this was already true was wrong; see §2 | — |
+| **Push access** | This machine authenticates as `xi-4206pbhoite` and is **denied on `upstream` (`parul-bhoite/nexus-os`)**, which is what `dev` tracks. Phase 2 was pushed to `origin` (`xi-4206pbhoite/nexus-os`) instead, and CI ran there. The two remotes have now diverged and only you can reconcile them | Landing Phase 2 on the canonical repository |
 | ~~**D23**~~ | ✅ Answered and done — Neon reset to the repository's head, schema recorded first in `doc/archive/` | — |
 | **D3** | Google API credentials | P18 (GA4, Search Console), Google sign-in |
 | **D10** | Confirm Zoho as the CRM with the first design partner | P18, P19 |

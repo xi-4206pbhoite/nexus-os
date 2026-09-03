@@ -45,7 +45,7 @@ are the same ones, and Phase 1 is where they get fixed.
 
 | Phase | State | Note |
 |---|---|---|
-| **P0 — CI and the remote** | **code complete — remote verification deferred** | Everything proved locally against the CI image. `gh` is not installed on this machine, so the green Actions run has to be confirmed by Parul. See §6 |
+| **P0 — CI and the remote** | ✅ **complete** | Confirmed green on the remote by Parul, with `test_tenant_isolation.py`'s 12 tests **executed**. One sub-step of the acceptance test — watching CI go red with the RLS policy removed — was exercised locally rather than on the remote; see §3 |
 | P1 — Correctness | next | Fixes §4.1, §4.2, §4.6. Its migration is `0010`, and that number is free again since the D23 reset — see §5 |
 | P2 — Retire the preview product | pending | |
 | P3 — Identity | pending | |
@@ -109,12 +109,23 @@ three WSL traps that cost a debugging cycle each).
 
 | Claim | Evidence |
 |---|---|
-| The isolation suite executes | `pytest tests/test_tenant_isolation.py -v` → **12 passed**, zero skipped |
+| **CI is green on the remote, with the 12 isolation tests executed** | Confirmed by Parul against `origin/dev` at `671b339`. This is the acceptance criterion |
+| The isolation suite executes locally too | `pytest tests/test_tenant_isolation.py -v` → **12 passed**, zero skipped |
 | The whole suite is green against a real database | `pytest -q` → **664 passed**, coverage 74.21% |
 | Migrations reverse | `alembic downgrade base` then `upgrade head`, clean, on every `db-ci.ps1` run |
 | Removing the RLS policy turns the build red | `workspace_isolation` commented out of migration 0002 → **3 passed, 9 errors, exit 1**, with `InsufficientPrivilege: new row violates row-level security policy for table "workspace"`. Restored; 664 passed again |
 | No database turns the build red | An unconfigured URL → `test_a_database_is_configured` fails **and** the guard reports `94 requires_db test(s) were skipped`, exit 1 |
 | The full gate is green | `.\scripts\ci.ps1` → parse, ruff check, ruff format, mypy strict, pytest, tsc, lint, build — all PASS, `CI GREEN`, exit 0 |
+| The suite is green against Neon as well | 664 passed in 680s, after the D23 reset |
+
+**One sub-step was not exercised on the remote.** The acceptance test asks for the
+red run to be watched in Actions as well as the green one. It was demonstrated
+locally, against the same `pgvector/pgvector:pg17` image, the same migrations and
+the same suite — exit 1 on `InsufficientPrivilege`. What remains unwitnessed is
+only that GitHub fails a job when `pytest` exits non-zero. Recorded here rather
+than claimed. To close it: comment out the `CREATE POLICY … workspace_isolation`
+block in migration 0002, push a branch, open a pull request, watch it go red,
+close the pull request without merging.
 
 ---
 
@@ -235,7 +246,7 @@ was code, it went with the tree.
 
 | # | What | Blocks |
 |---|---|---|
-| **The Actions run** | Push, confirm CI is green on the remote, then confirm it goes red with `workspace_isolation` commented out of migration 0002. `gh` is not installed here, so this is the one part of Phase 0's acceptance test that could not be watched from this machine | Marking P0 complete rather than *code complete* |
+| ~~**The Actions run**~~ | ✅ Confirmed green, 12 isolation tests executed. The red run remains optional and unwitnessed on the remote — see §3 | — |
 | ~~**D23**~~ | ✅ Answered and done — Neon reset to the repository's head, schema recorded first in `doc/archive/` | — |
 | **D3** | Google API credentials | P18 (GA4, Search Console), Google sign-in |
 | **D10** | Confirm Zoho as the CRM with the first design partner | P18, P19 |

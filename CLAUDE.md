@@ -122,9 +122,20 @@ the test that found this. The schema was recorded before the reset in
 13's central table and `question`/`question_choice` are Phase 7's catalogue, so
 read it before designing either.
 
-**Still prefer `scripts\db-ci.ps1` for the gate.** Neon and the repository agree
-again, but the container is ~25 seconds against Neon's ~5 minutes, and it is
-rebuilt from `bootstrap.sql` every run, so it cannot drift at all.
+**Neon is behind again — at `0009`, against a head of `0011`.** Phase 1 added
+`0010` and Phase 2 added `0011`, and neither has been applied there. `alembic
+upgrade head` fixes it, but **`0011` drops `preview_session`**, so it destroys
+data and is yours to run rather than an agent's. Until then, seven tests fail
+locally against Neon and pass in CI.
+
+**Still prefer `scripts\db-ci.ps1` for the gate.** The container is ~25 seconds
+against Neon's ~5 minutes, and it is rebuilt from `bootstrap.sql` every run, so
+it cannot drift at all.
+
+**But run against Neon before believing a database claim.** The container and CI
+are plain Postgres; production is not. That difference is what hid finding #15
+(three of the four timeouts silently discarded by Neon's proxy) through a green
+Phase 1.
 
 ## Local stack (ADR 0001 native; ADR 0006/0007 Docker for the offline fallback)
 
@@ -262,10 +273,22 @@ it belongs in a separate worker.
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.
-Fourteen findings are open and scheduled. The three worth knowing before touching
-auth or deployment: **argon2 blocks the event loop**, **`/auth/login` has no rate
-limit** (both D14), and **`env` defaults to `local`** - so a missing `NEXUS_ENV`
-in production serves `/docs` and sets `secure=False` on both cookies.
+**Eleven findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
+the register had said fourteen for a month after Phase 1 closed three of them.
+The three worth knowing before touching auth, the database or deployment:
+
+- **argon2 blocks the event loop** and **`/auth/login` has no rate limit** (both
+  D14, both still open).
+- **Three of the four database timeouts do not apply on Neon** (finding #15).
+  `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout`
+  go out in asyncpg's `server_settings` and come back from `SHOW` as the
+  defaults; `application_name`, sent the same way, arrives. Neon's proxy filters
+  the startup packet. The code is right and CI is green because **CI runs plain
+  Postgres**, so this is invisible there and real in production.
+
+The third is the same shape as the D23 incident below, and worth internalising as
+one rule rather than two anecdotes: **a test that meets a different Postgres than
+production can be green in the place nobody deploys to.**
 
 ## Content rule
 

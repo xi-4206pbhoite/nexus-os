@@ -1,6 +1,6 @@
 # NEXUS OS — Build Status
 
-**Regenerated:** 3 September 2026, at the end of **Phase 1** of
+**Regenerated:** 3 September 2026, at the end of **Phase 2** of
 `doc/12-IMPLEMENTATION-PLAN.md`.
 **Method:** every claim below was run, not read. Where a figure is quoted, the
 command that produced it is named.
@@ -9,10 +9,12 @@ command that produced it is named.
 
 ## 1. Where this stands
 
-**~34% of the product.** Phase 0 and Phase 1 between them added no product
-surface, deliberately. What they changed is whether the rest can be trusted:
-Phase 0 made the suite capable of proving something, and Phase 1 used it to make
-the claims already in the repository true.
+**~33% of the product.** Three phases in, and the percentage has gone *down*.
+That is the honest reading and not a rounding artefact: Phase 2 deleted a
+feature that worked. Phase 0 made the suite capable of proving something, Phase 1
+used it to make the repository's existing claims true, and Phase 2 removed the
+one thing a stranger could use — because what they could use it for was an
+analysis of a company they do not own.
 
 | | Before Phase 0 | Now |
 |---|---|---|
@@ -27,7 +29,9 @@ the claims already in the repository true.
 | A deployed env with no secrets | booted | refuses to start, naming the variable |
 | A missing `NEXUS_ENV` | insecure cookies, public `/docs` | refuses to start |
 | An unhandled exception | uncorrelatable 500 | carries the `x-request-id` in the log |
-| Database timeouts | none set | four, asserted with `SHOW` |
+| Database timeouts | none set | four in code — and see §4.7, three are inert on Neon |
+| A server-side fetch without a session | `POST /preview`, open to anyone | none, and an import-graph test fails the build if one returns |
+| Data held about a company with no account | retained under a TTL and a sweep | **not collected** — D9 void |
 
 Two of the three 🔴 defects are cleared. The engineering foundation is now
 genuinely strong, and almost none of the product is still reachable by a user —
@@ -35,15 +39,16 @@ that split is unchanged, and Phase 5 is where it starts to close.
 
 | Area | Complete | Basis |
 |---|---|---|
-| Foundation — repo, config, logging, health, CI, migrations | **100%** | Real Postgres in CI both directions; config fails closed; four DB timeouts; correlated 500s. Nothing outstanding |
+| Foundation — repo, config, logging, health, CI, migrations | **95%** | Real Postgres in CI both directions; config fails closed; correlated 500s. **Was 100%** — the database timeouts turn out not to apply on Neon (§4.7), so a claim this table made has been withdrawn |
 | Tenancy, RLS, auth, sessions, roles→scope | **82%** | Proved in CI. Cookies now `Secure` outside local. Gaps: no login rate limit, no audit trail written |
-| Preview audit (unauthenticated) | **90%** | Works end to end. Being retired in Phase 2 (`doc/11` Q1) and re-homed as the research engine |
+| ~~Preview audit (unauthenticated)~~ | **retired** | Deleted in Phase 2 (`doc/11` Q1). The entry point is gone; the engine moved to `app/research/` |
+| Research engine (`app/research/`) | **35%** | Guard, single-page crawler and extractor, all behind authentication and all passing from the new location. No job model, no multi-page crawl, no callers — P11 |
 | Domain verification (backend) | **70%** | DNS + file work. EMAIL method structurally dead; no transfer; no UI |
 | Onboarding + invitations | **65%** | Wizard and API real. Delivery by copy-pasted URL |
 | Documents / classification / indexing | **45%** | Upload, chunking, withholding and the review queue all work against Postgres. Gaps: no classifier, no UI |
 | Scoped retrieval layer (the security core) | **5%** | `scoped_connection` exists; no retrieval query of any kind |
 | Company Brain + review gate | **0%** | Not started |
-| Grounding + calculators | **8%** | One calculator, wired only to Preview |
+| Grounding + calculators | **8%** | One calculator, and since Phase 2 it is wired to nothing. It survives because P11 needs it — `doc/11` §3.1 calls its scores the dashboard's first real numbers |
 | Dashboards / seven directors | **12%** | Shell + 67 offering specs as data. Zero widgets, zero numbers |
 
 ---
@@ -53,9 +58,9 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | Phase | State | Note |
 |---|---|---|
 | **P0 — CI and the remote** | ✅ **complete** | Confirmed green on the remote, with `test_tenant_isolation.py`'s 12 tests **executed**. One sub-step — watching CI go red with the RLS policy removed — was exercised locally rather than on the remote |
-| **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, four database timeouts, a correlated exception handler, and a constraint-versus-enum test. Every acceptance criterion proved locally; see §3 |
-| P2 — Retire the preview product | next | Deletes `preview.py`, the hero URL form, `client-address.ts`, three test modules and the `preview_session` table. `test_constraint_enum_parity.py` will fail until its `UNMAPPED` entry for `ck_preview_session_status` goes with the table — deliberately |
-| P3 — Identity | pending | |
+| **P1 — Correctness** | ✅ complete, with one claim withdrawn | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test all hold. The fourth item — four database timeouts — is correct in code and green in CI, and **does not take effect on Neon** (§4.7, finding #15) |
+| **P2 — Retire the preview product** | ✅ **complete** | `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
+| P3 — Identity | next | Email that actually sends, password reset, one person to one company. Blocked on nothing — `doc/11` settled SMTP |
 | P4 — Security | pending | |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
@@ -64,96 +69,115 @@ that split is unchanged, and Phase 5 is where it starts to close.
 
 ---
 
-## 3. What Phase 1 built
+## 3. What Phase 2 built
 
-**Migration 0010, and two enums that did not exist.** The two check constraints
-no code path could satisfy are the reason this phase exists.
+Nothing. That is the phase.
 
-`ck_chunk_review_state` permitted `auto_approved · pending_review · approved ·
-rejected`; `ReviewState` produced `auto_approved · needs_review ·
-human_approved · quarantined`. One value of four overlapped, and since
-`_classify_all` always withholds — there is no classifier yet, which is I4
-working as intended — **every chunk of every upload rolled the transaction
-back**. The SQL vocabulary won, because three things already depended on it, so
-the migration changes no SQL here and the enum moved instead.
+**`POST /preview` is gone**, and with it the only endpoint in the product that
+performed a server-side fetch for a caller who had not identified themselves.
+The reason is the one its own docstring gave: *"anyone can type a competitor's
+URL, and without that limit NEXUS would crawl a company the requester does not
+own, name its competitors, and hand that to a stranger — a competitive-
+intelligence product sold by accident."* The docstring was right and the mitigation
+— a reduced audit — was the wrong shape of answer. `doc/11` Q1 gave the right one.
 
-`ck_document_status` is changed: `'superseded'` was written by the supersede
-path and permitted by nothing. `'parsing'` and `'parsed'` were removed at the
-same time — nothing has ever written them, and a constraint wider than the code
-is vocabulary a later reader takes for a supported state.
+Deleted: the route (339 lines), `apps/web/app/api/preview/route.ts`,
+`PreviewForm.tsx`, `PreviewResult.tsx`, `lib/client-address.ts` and the whole
+`X-Forwarded-For` trust chain, the hero URL form, `preview_ttl_hours`,
+`trusted_proxy_ips`, `expire_previews`, `delete_previews_for_domain`, three test
+modules, and — in migration 0011 — the `preview_session` table.
 
-`app/documents/status.py` is the point rather than a detail. That constraint had
-**no** Python counterpart, so there was nowhere for the mistake to be visible.
-`review_state_code()` is the same idea for the other one: a named write path, so
-no call site reaches for `.value` or a literal of its own.
+**The engine moved rather than died.** `ssrf.py`, `crawler.py` and `extract.py`
+are now `app/research/`, and the package docstring says what the directory is
+for. `app/calculators/audit.py` deliberately stayed where it is: it scores what
+the extractor finds, and I1 keeps every calculation in one place.
 
-**Configuration that fails closed** (ADR 0015). `_required_in_deployed_envs` was
-a validator with the body `return v` — it enforced nothing while presenting as a
-security control. `env` defaulted to `local` and `is_local` answered true for
-`ci`, so a deployment that forgot `NEXUS_ENV` served `/docs` publicly and set
-`secure=False` on both cookies. Now: `NEXUS_ENV` is required with no default,
-the validator is real and names every missing secret at once, `is_local` splits
-into `cookies_secure` and `docs_enabled`, and `session_secret` — declared,
-documented, pinned, and read by no line of code — is deleted.
+**`test_no_unauthenticated_crawl.py` is the part that outlives the phase.**
+Deleting a route removes today's exposure; nothing about the deletion stops the
+next one being added. So the invariant is asserted structurally: an `ast` walk
+over `app/`, from every route that declares no session dependency, failing if any
+of them can reach `app.research.crawler` or `app.research.extract` at any depth.
+It replaces `test_preview_scope.py`, which could only ever describe the one
+endpoint it was written for.
 
-**Four database timeouts**, none redundant, asserted with `SHOW` against the
-application's own engine. And the pooler switch becomes explicit configuration
-rather than `"-pooler" in url`.
+Two details in it were not obvious and are worth carrying:
 
-**A correlated 500.** There was no exception handler at all. The response now
-carries the request id and nothing else — not the exception type, not its
-message, not a traceback.
+- **The walk is over the source, not `sys.modules`.** A runtime check sees only
+  what the test session happened to import, and would go quiet exactly when a new
+  import path appeared.
+- **`app.research.ssrf` is exempted, narrowly.** It is the guard, not the fetch,
+  and `connectors/domain_check.py` — which proves a domain claim by fetching a
+  well-known file — has to use it. Forbidding it would push that path towards its
+  own copy of the SSRF guard, which is the worst available outcome.
 
-**A test for the class, not the instances.** `test_constraint_enum_parity.py`
-requires every value-list `CHECK` to equal its enum in *both* directions, and
-requires every such constraint to be registered, so a new one added without a
-mapping fails the build.
+**The rate limiter is re-keyed**, `(ip, domain, global)` → `(workspace, global)`.
+The first two limits lost their subject: there is no address to attribute a crawl
+to when every caller is authenticated, and no reflected-DoS shape when the target
+must be a claimed domain. No migration was needed — a bucket is an opaque string,
+so the old rows are simply never written again and age out through
+`purge_expired`. **The per-workspace number is a placeholder with a stated
+reason:** P11 builds the research job model and will know what a run costs.
 
-### What Phase 1 proved, and how
+### What Phase 2 proved, and how
 
 | Claim | Evidence |
 |---|---|
-| **A document uploads end to end against Postgres** | `POST /documents` with `_record` and the object store unpatched, authenticated by a real session cookie against a real `user_session` row. Chunks land at `review_state = 'pending_review'`, scope `L5`, owner the uploader |
-| **They appear in the review queue** | `GET /documents/review-queue` returns them — a queue that was previously unfillable, because index and query both filtered a value nothing could write |
-| **Superseding retires the earlier document** | The old row reaches `'superseded'`; the replacement stays `'indexed'` |
-| **A deployed env without its secret refuses to start** | `NEXUS_ENV=production` with an empty `NEXUS_STORAGE_SIGNING_SECRET` → `import app.main` exits **1**, naming the variable |
-| **An unhandled exception is correlatable** | The 500 body carries `request_id`, the `x-request-id` header matches, and the emitted log line carries the same value with the traceback. No customer content in the body |
-| **The timeouts are live on the server** | `SHOW statement_timeout` → `15s`, `lock_timeout` → `5s`, `idle_in_transaction_session_timeout` → `30s`; an overrunning statement is cancelled |
-| The suite is green | **714 passed**, coverage 75.86% against a floor of 75 |
-| The full gate is green | `.\scripts\ci.ps1` → `CI GREEN`, exit 0 |
-| The app still boots | `/health` 200, `/health/ready` 200 with `database: ok`, `/docs` **404 in `ci`** |
+| **Nothing answers at `/preview`** | `TestClient(create_app())` — `GET` and `POST` both **404**. Asserted through the app, so re-registering the router in `main.py` fails the build |
+| **No anonymous route can reach the crawler** | `test_no_anonymous_route_can_reach_the_crawler`. It found `app.routes.preview` while the route still existed, and went green when it was deleted |
+| **The guard suite passes unedited from its new home** | `tests/test_ssrf_guard.py` — **89 cases**. The diff against `dev` is three import lines. No assertion changed |
+| **The calculator suite too** | `tests/test_audit_calculators.py` — 29 cases, one import line changed |
+| **The redirect suite too** | `tests/test_crawler_redirects.py` — 18 cases, two import lines |
+| **The exemption list pruned itself** | Removing `ck_preview_session_status` from `UNMAPPED` made `test_every_value_list_constraint_is_registered` fail against a database that still has the table — which is the tripwire Phase 1 built, firing on schedule |
+| **The landing page has no URL field and builds** | `npx tsc --noEmit` clean, `npx next lint` clean, `npx next build` succeeds with no `/api/preview` route in the manifest |
+| The suite is green | **660 passed**, coverage **76.49%** against a floor of 75 — up from 75.86%, because the deleted code took its own uncovered branches with it |
 
-**Proved it can fail.** With `'superseded'` removed from migration 0010 the
-behavioural test went red *and* the parity test named the discrepancy exactly —
-`Only in Python: ['superseded']`. That is the class-level guard doing its job:
-it would catch the next such drift before anyone exercised the path. Restored;
-714 passed.
+**CI was red before this phase started, and the cause was one undeclared
+dependency.** `app/.../extract.py` imports `bs4`, and `beautifulsoup4` appeared
+in no dependency list. On a clean runner `pip install -e ".[dev]"` therefore did
+not install it, `mypy` failed with *"cannot find implementation or library stub
+for module named bs4"*, and the **test step never ran** — so every run since that
+file was written has been red, including the one that closed Phase 1. It passed
+on the developer's machine because another package pulled `bs4` in transitively.
+Declared in `pyproject.toml` here, because the file it breaks is the file this
+phase moves.
 
-### Three things the tests found that the plan did not anticipate
+**The seven local failures against Neon are a separate cause, and not the code.**
+The developer's Neon instance is at migration `0009`; head is now `0011`. Four
+failures are Phase 1's migration 0010 missing and 0011 not yet applied; the other
+three are §4.7. **The acceptance test's real venue is CI**, which builds a clean
+Postgres and migrates both directions — standing rule 1.
 
-- **The transaction-pooler branch in `app/db.py` had never worked.**
-  `prepared_statement_cache_size` was passed to `create_async_engine`, which
-  rejects it — SQLAlchemy's asyncpg adapter pops it from the *connect* keywords
-  — so the engine raised `TypeError` before it could connect. Nothing in the
-  suite used a pooler URL and production connects to Neon's direct host, so it
-  had never once been executed.
-- **The request id could not reach the exception handler.** When `call_next`
-  raises, the middleware's `finally` resets the `ContextVar` before
-  `ServerErrorMiddleware` — which sits *outside* it — invokes the handler, and
-  the line setting the response header is never reached. The id now travels on
-  the ASGI scope, which both share.
-- **The process never closed its connection pool.** Now disposed in `lifespan`
-  shutdown. In a test this was worse than untidy: transports created on the
-  app's loop were collected on a closed one, and `filterwarnings = ["error"]`
-  turned the unraisable exception into a failure of whichever test ran next.
+### What the tests found that the plan did not anticipate
+
+- **`onboarding.py` authenticates in its body, not in its signature.** Three of
+  its four routes call a local `_require_user(nexus_session)` instead of
+  depending on `CurrentSession`, so they are authenticated in fact and *anonymous
+  to any structural check*. The new test treats them as anonymous rather than
+  arguing the point — a check that cannot see an authentication decision cannot
+  rely on it — and the fix is to declare the dependency. **P5 owns those routes.**
+- **`domain_check.check_well_known_file` is a second server-side fetch**, on
+  `/domains/{claim_id}/check`, which is one of those routes. It is far narrower
+  than the preview was — SSRF-guarded, address-pinned, no redirects, and tied to
+  a claim the caller initiated — and the plan knowingly keeps it (`doc/12` §Phase
+  2 says findings #3–#5 survive *because* `domain_check.py` does). But it is now
+  the **only** unmetered outbound fetch in the product, and the per-domain bucket
+  that finding #4 cited as mitigation was deleted by this phase. Finding #4 is
+  updated to say so.
+- **`FastAPI.include_router` no longer flattens.** In this version an included
+  router appears in `app.routes` as one object holding its own routes, so a flat
+  pass sees three documentation endpoints and nothing else. The first version of
+  the import-graph test classified *every* route as authenticated and passed
+  vacuously. The guard test written alongside it — "some routes are anonymous or
+  this test proves nothing" — is what caught that, on the first run.
 
 ---
 
 ## 4. What is still broken
 
-Three of the six are cleared by Phase 1. The three that remain are all *absent
-features* rather than broken ones — nothing here fails at runtime; it simply
-does not exist yet, and each has a phase.
+Three of the seven are cleared. Of the four that remain, three are *absent
+features* rather than broken ones — nothing there fails at runtime; it simply
+does not exist yet, and each has a phase. The fourth, §4.7, is new: it fails
+silently, in production only, and CI cannot see it.
 
 ### 4.1 ✅ ~~Every document upload fails at the chunk INSERT~~ — fixed
 
@@ -203,6 +227,26 @@ nothing blocks it.
 `NEXUS_ENV` is required, the validator refuses to boot without the secrets a
 deployed environment needs, and `is_local` is replaced by `cookies_secure` and
 `docs_enabled`, which differ on `ci`. ADR 0015.
+
+### 4.7 🔴 Three of the four database timeouts do not exist in production
+
+**Found in Phase 2, and it is a Phase 1 claim being withdrawn.** `app/db.py`
+passes `statement_timeout`, `lock_timeout` and
+`idle_in_transaction_session_timeout` in asyncpg's `server_settings`. Against
+Neon, `SHOW` returns `0`, `0` and `5min` — the defaults. `application_name`, sent
+in the same dictionary, arrives intact, so the connection is healthy and Neon's
+proxy is filtering the startup packet to an allowlist.
+
+The code is right, `tests/test_db_timeouts.py` is right, and **CI is green on
+this because CI runs plain Postgres, where the same code works.** ADR 0008 makes
+Neon the production database, so the protection C12 was written to provide is not
+present where it matters. This is the same lesson as D23 in a new costume: a test
+whose result depends on which Postgres it met can be green in the place nobody
+deploys to and red in the place everyone does.
+
+The fix is not Phase 2's — it needs a decision between issuing the three as `SET`
+on connection checkout and accepting client-side `command_timeout` alone.
+Recorded as **finding #15** in `AUDIT-FINDINGS.md`.
 
 ---
 
@@ -264,8 +308,10 @@ was code, it went with the tree.
 | **D10** | Confirm Zoho as the CRM with the first design partner | P18, P19 |
 | **D13** | Anthropic access and model tier per execution mode | P14, P20 |
 | **`doc/11` §5.4** | The five business calls — B2, B3 and B5 shape the build | P16 onward |
+| **Neon is two migrations behind** | It is at `0009`; head is `0011`. `alembic upgrade head` applies Phase 1's `0010` and Phase 2's `0011`, and **0011 drops `preview_session`** — so it is a data-destroying step on your database and was deliberately left for you | Running the suite locally |
+| **Finding #15** | Three database timeouts are inert on Neon (§4.7). `SET` on checkout, or accept `command_timeout` alone? | Nothing yet — but it is a production gap today |
 
-Everything else `doc/11` settled. Nothing in Phase 1 is blocked.
+Everything else `doc/11` settled. Nothing in Phase 3 is blocked.
 
 ---
 
@@ -275,12 +321,19 @@ Cleared in Phase 0: **C5** (Postgres in CI, fail on skip), **C6** (Alembic both
 directions), **M9** (coverage, `--strict-markers`, type-check `tests/`).
 
 Cleared in Phase 1: **C1** (`review_state`), **C2** (`'superseded'`), **C7** (the
-no-op validator), **C8** (`NEXUS_ENV` fails closed), **C12** (database
-timeouts), **H10** (correlated exception handler), and **M6** (constraint drift
-detection, as `test_constraint_enum_parity.py`).
+no-op validator), **C8** (`NEXUS_ENV` fails closed), **H10** (correlated
+exception handler), and **M6** (constraint drift detection, as
+`test_constraint_enum_parity.py`). **C12** (database timeouts) is reopened —
+correct in code, inert on Neon, §4.7.
 
-**Nothing critical remains that fails at runtime.** Every 🔴 below is a feature
-that does not exist yet.
+Cleared in Phase 2: the preview retirement itself, which had no work-item ID —
+it is `doc/12` §Phase 2 in full. **H9** shrank rather than closed: of its three
+test mirrors,
+`expire_previews`' died with the code it mirrored, and `check_and_increment` and
+`scoped_connection` remain.
+
+**One critical item now fails at runtime again** — C12, and only on Neon.
+Everything else 🔴 below is a feature that does not exist yet.
 
 ### 🔴 Critical — blocks the application from being usable
 
@@ -291,6 +344,7 @@ that does not exist yet.
 | 🔴 | C9 | Rate-limit `/auth/login` and `/auth/register`; argon2 off the event loop | P4 | Unbounded; ~40–80 ms sync CPU per attempt | D14 settled | 1.5 d |
 | 🔴 | C10 | Wire email delivery | P3 | §4.5 | D4 settled — SMTP | 1.5 d |
 | 🔴 | C11 | API and web container images + a runnable stack | P9 | No Dockerfile anywhere | none | 2 d |
+| 🔴 | C12 | **Reopened** — make the three server-side database timeouts apply on Neon | P4 | §4.7. Correct in code, green in CI, discarded by Neon's proxy. `command_timeout` is the only one live in production | a decision: `SET` on checkout vs accept one timeout | 0.5 d |
 
 ### 🟠 High — required for a complete, production-ready application
 
@@ -303,7 +357,7 @@ that does not exist yet.
 | 🟠 | H5 | Write the audit trail | P4 | `audit_log` is dead schema | none | 2 d |
 | 🟠 | H7 | RLS on `domain_claim` | P4 | No policy, 12 SQL sites | none | 1 d |
 | 🟠 | H8 | Frontend test harness — Vitest + Playwright | P9 | Zero tests, no framework | C11 | 3 d |
-| 🟠 | H9 | Retire the three test mirrors | P2 | `expire_previews`, `check_and_increment`, `scoped_connection` all mirrored. Two of the three die with the preview product | C5 ✅ | 2 d |
+| 🟠 | H9 | Retire the two remaining test mirrors | P4 | `expire_previews`' mirror died with the preview, as predicted. `check_and_increment` is still mirrored by a synchronous `consume` in `test_rate_limit.py` — so the re-keyed limiter is proved through a copy of its SQL, not through itself — and `scoped_connection` is mirrored too. Not folded into P2: the brief's build list does not carry it, and `scoped_connection` is P10's ground | C5 ✅ | 1.5 d |
 | 🟠 | H11 | Privacy and Terms pages | P16 | Deliberately absent; signups are live | content | 1 d |
 | 🟠 | H12 | Grounding pipeline + `generation` table | P14 | 8% — one calculator | H1, D13 | 8 d |
 | 🟠 | H13 | Close the 14 open items in `AUDIT-FINDINGS.md` | P4 | Open and scheduled | C9 for three | 3 d |
@@ -332,8 +386,11 @@ company. ~2 days saved.
 | 🟡 | M14 | Reconcile the scoreable count — data says five, copy says six | P15 | D8 ✅ | 0.5 d |
 | 🟡 | M15 | Move the embedding pass out of the API process | P9 | C11 | 1.5 d |
 
-**M2 (preview deletion path) is void** — `doc/11` D9: no preview data is retained
-once P2 retires the product, so there is nothing to expire or delete.
+**M2 (preview deletion path) is void, and now actually so** — Phase 2 deleted
+`POST /preview` and migration 0011 dropped `preview_session`, so no data about a
+company without an account is collected and there is nothing to expire or
+delete. **D9 is marked void in `DECISIONS-REQUIRED.md`**, and finding #14 in
+`AUDIT-FINDINGS.md` narrows to re-verification alone.
 
 ### 🟢 Low — polish
 
@@ -378,22 +435,28 @@ silent `local` (ADR 0015).
 
 ## 9. Next
 
-**Phase 2 — Retire the preview product.** Per `doc/11` Q1 the unauthenticated
-audit is removed and its engine re-homed as the research engine. Deletes
-`app/routes/preview.py`, the hero URL form, `lib/client-address.ts`, three test
-modules and — in migration 0011 — the `preview_session` table. The SSRF guard
-with its 89 test cases, the pinned crawler, the extractor and the scoring
-calculators all survive and move behind authentication.
+**Phase 3 — Identity.** Email that actually sends, password reset, and one
+person to one company. `doc/11` settled the transport, so nothing external
+blocks it: `FileMailer` writes `.eml` files into `.mail\`, which means the whole
+verification and invitation chain can be built and tested locally and **D4 gates
+deployment rather than development**.
 
-Two things Phase 1 leaves for it deliberately:
+It closes §4.5 — `send_verification` has zero callers today, so
+`email_verified_at` can never be set, the EMAIL domain-verification method is
+unreachable, and an invitation is delivered by the inviter copy-pasting a raw
+token URL. It also picks up **M7**, the four config settings held back until
+email exists.
 
-- `test_constraint_enum_parity.py` carries an `UNMAPPED` entry for
-  `ck_preview_session_status` saying the table is dropped in Phase 2. When it is,
-  `test_no_unmapped_entry_outlives_its_constraint` fails until the entry goes.
-  That is the design: an exemption list nobody prunes becomes a list of things
-  nobody checks.
-- **H9**, the three test mirrors. Two of the three — `expire_previews` and
-  `check_and_increment` — die with the preview product, so the cheapest moment
-  to retire them is while the code around them is being deleted anyway.
+Two things Phase 2 hands it, neither of them blocking:
 
-Nothing blocks it.
+- **Finding #15 / C12** (§4.7). Three database timeouts are inert on Neon. It
+  needs a decision from you, not a phase; it is filed against P4 but it is a
+  production gap today, so it can be taken earlier if you would rather.
+- **Neon is two migrations behind.** `alembic upgrade head` applies `0010` and
+  `0011`. `0011` drops `preview_session`, so it destroys data on your database —
+  which is why Phase 2 did not run it for you.
+
+And one it hands **P5**, which owns the domain-claim routes: three of the four
+routes in `app/routes/onboarding.py` authenticate inside the handler rather than
+through `CurrentSession`, so no structural check can see it. `/domains/{id}/check`
+performs a server-side fetch, and it is now the only unmetered one left.

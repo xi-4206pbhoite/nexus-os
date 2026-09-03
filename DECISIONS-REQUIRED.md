@@ -110,12 +110,14 @@ Doc 04 §6 specifies the completeness meter as *"6 of 21 capabilities"*; doc 05 
 
 **My recommendation:** build a capability registry as data — each capability declaring its required sources — and derive the denominator from it. Then the number is computed rather than asserted, and it self-corrects as scope changes. I would still want you to ratify the registry contents at M9.
 
-### D9 — Preview data TTL *(needs ratification, not a decision from scratch)*
-Doc 06 §1.1 and §10 say "short TTL" without a value. This governs crawl data held for a domain whose owner has no account and has not consented.
+### ~~D9 — Preview data TTL~~ — **void, 3 September 2026 (Phase 2)**
+This asked you to ratify a retention period for crawl data held about a domain whose owner has no account and never consented, and flagged that the deletion-request path doc 06 §10 requires did not exist.
 
-**The code has moved ahead of this entry.** `preview_ttl_hours` is now **24 hours**, changed alongside the preview cache with the reasoning that the subject is a company that never consented to the crawl, and a day is long enough to serve a reload. That supersedes the 7 days originally recommended here.
+**Neither question survives.** D18 removed the pre-signup audit; Phase 2 deleted `POST /preview`, and migration 0011 dropped `preview_session`. Nothing now crawls a website until a workspace has claimed the domain, so no data is held about a third party — there is no TTL to ratify and no deletion request to answer.
 
-**What is still needed from you:** ratify 24 hours, or name a different number. And the deletion-request path doc 06 §10 requires **does not exist** — there is no way for a domain owner to ask for their audit to be removed before it expires. That is the part of D9 still genuinely open.
+Worth stating plainly, because it is the rare case where a decision is retired by being made unnecessary rather than by being made: **the strongest answer to "how long do we keep a stranger's data and how do they ask us to delete it" turned out to be not collecting it.** `tests/test_no_unauthenticated_crawl.py` is what keeps that answer true — it walks the import graph and fails if any route without a session can reach the crawler.
+
+Finding #14 in `AUDIT-FINDINGS.md` is narrowed to re-verification alone for the same reason.
 
 ### D10 — Which CRM connector? *(blocks M10)*
 Doc 05 §9 names Zoho and HubSpot as a *working assumption on expected GCC SME prevalence*, explicitly flags that no source contains regional market-share data, and says confirm with design partners rather than building on the guess. Doc 07 M10 narrows it to **one** connector and doc 07 §8 puts a second out of scope.
@@ -247,10 +249,20 @@ preview cache — and it is the only flow that works end to end today.
 **The engine survives either way**, because "do a full Research" needs all of it.
 What is in question is only the unauthenticated entry point.
 
-**My recommendation: a signup lead-in.** Keep the URL field on the landing page,
-start the crawl the moment it is entered, and show the audit *after* registration
-as the first thing in the Brain. Better conversion than a standalone audit, and it
-pre-warms the research the flow depends on.
+**My recommendation was a signup lead-in** — keep the URL field, start the crawl
+on entry, show the audit after registration.
+
+**You decided otherwise** (`doc/11` Q1): no URL capture at all. The landing page
+is marketing with one action, sign up, and the crawl starts at stage 2 once a
+company's website is given by someone with an account.
+
+**Delivered in Phase 2, 3 September 2026.** The route, the two components, the
+proxy, the `X-Forwarded-For` trust chain and the `preview_session` table are
+gone; the guard, crawler, extractor and calculators moved behind authentication
+into `app/research/`. **D9 went void with it** — see above. One consequence is
+worth carrying forward: `doc/11` §3.1 notes the audit was the product's
+first-value moment at minute seven, and with it removed the review gate at
+minute twenty is the only one left.
 
 ### D19 — Where exactly does domain verification gate? *(blocks doc 09 stage 2)*
 

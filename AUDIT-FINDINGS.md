@@ -172,22 +172,29 @@ instance serves several sessions.
 
 ## Open - real, and scheduled
 
+Reconciled with `BUILD-STATUS.md` in Phase 2. Four rows (#6, #7, #8, and the
+code half of #12) had been fixed in Phase 1 and never struck from this table, so
+the register said fourteen open findings while the code said ten. One new
+finding, **#15**, was added in the same pass: it is what running the suite
+against Neon rather than the CI container turned up.
+
 | # | Finding | Where | Why not now |
 |---|---|---|---|
 | 1 | **argon2 blocks the event loop** - sync CPU work in `async def`, ~40-80ms each. 30 rps of logins against non-existent accounts stalls every endpoint, health probes included | `auth/service.py` | Fix is `anyio.to_thread`, but belongs with the rate limiting it compounds - **D14** |
 | 2 | **No rate limiting on `/auth/login` or `/auth/register`** - unlimited credential stuffing; register is an unbounded `app_user` growth vector | `routes/auth.py` | **D14** - needs your answer, a per-account lock is a DoS vector against a named user |
-| 3 | **Unbounded response buffering** - `FILE_MAX_BYTES` applied after httpx reads the whole body; a multi-GB response OOMs the API | `connectors/domain_check.py:163` | Fix is the crawler streaming pattern; needs its own test |
-| 4 | **`/domains/{id}/check` is an unmetered outbound reflector** - the reflected-DoS shape `PER_DOMAIN` stops on the preview path | `routes/onboarding.py:147` | Needs the rate-limit decision alongside #2 |
-| 5 | **Blocking untimed `getaddrinfo` on the event loop**, from the one unauthenticated endpoint | `connectors/ssrf.py:138` | `run_in_executor` with a timeout, or `dns.asyncresolver` with a `lifetime` |
-| 6 | **`env` defaults to `local`** - a missing `NEXUS_ENV` in production serves `/docs` and sets `secure=False` on both cookies. **Cookies over plain HTTP from one unset variable** | `config.py` | Wants a startup refusal - a deployment-behaviour decision |
-| 7 | **The no-usable-default guarantee is a no-op validator**; `session_secret` is declared and referenced nowhere - dead config presenting as a security control | `config.py:102` | Same change as #6 |
-| 8 | **No global exception handler**, and `x-request-id` is dropped on the error path - every 500 is uncorrelatable, the one case the header exists for | `main.py` | Grouped with #6/#7 |
+| 3 | **Unbounded response buffering** - `FILE_MAX_BYTES` applied after httpx reads the whole body; a multi-GB response OOMs the API | `connectors/domain_check.py:174` | Fix is the crawler streaming pattern; needs its own test. Phase 2 did not touch it - `domain_check.py` was never part of the preview product |
+| 4 | **`/domains/{id}/check` is an unmetered outbound reflector** | `routes/onboarding.py:147` | Needs the rate-limit decision alongside #2. **Phase 2 made this worse, not better:** the note used to read "the reflected-DoS shape `PER_DOMAIN` stops on the preview path", and `PER_DOMAIN` is now deleted. This is the only unmetered outbound fetch left, and the route declares no session dependency |
+| 5 | **Blocking untimed `getaddrinfo` on the event loop** | `research/ssrf.py:138` | `run_in_executor` with a timeout, or `dns.asyncresolver` with a `lifetime`. The reach shrank with the preview - it used to be called from an endpoint open to anyone, and is now reached only through the domain-claim path |
+| ~~6~~ | ~~**`env` defaults to `local`**~~ - **fixed in Phase 1.** `env` has no default, so a missing `NEXUS_ENV` refuses to boot; `is_local` was replaced by `cookies_secure` and `docs_enabled`. ADR 0015 | `config.py:34` | Closed |
+| ~~7~~ | ~~**The no-usable-default guarantee is a no-op validator**~~ - **fixed in Phase 1.** `session_secret` is deleted and `_required_in_deployed_envs` is a real startup refusal | `config.py:89` | Closed |
+| ~~8~~ | ~~**No global exception handler**~~ - **fixed in Phase 1.** A 500 now carries `x-request-id` in the body and the header; `tests/test_error_correlation.py` asserts it | `main.py` | Closed |
 | 9 | **Double-clicking create-workspace self-disputes the user own claim**, permanently breaking onboarding. Concurrent race handled, sequential one not | `auth/domains.py:232` | Needs the idempotency test |
 | 10 | **Register race returns a 500**, defeating the anti-enumeration response - a distinguishable reply is what that design prevents | `auth/service.py:64` | Catch `IntegrityError` |
 | 11 | **Network I/O inside an open DB transaction** - ten concurrent slow checks exhaust the pool | `routes/onboarding.py:156` | |
-| 12 | **No connect or statement timeout** on the database | `db.py:37` | |
+| 12 | **No connect or statement timeout** on the database | `db.py:37` | **Fixed in Phase 1 and inert in production.** See #15 - the code is right, CI proves it on plain Postgres, and Neon discards three of the four |
 | 13 | **Email verification never wired** - `send_verification` has zero callers, so no token can exist, so the EMAIL domain method is structurally dead | `auth/email_verification.py` | Blocked on **D4** |
-| 14 | **Re-verification and third-party deletion unimplemented**, not merely uncalled - the second is the deletion path a crawled company would use | `auth/domains.py:341` | Part of **D9** |
+| 14 | **Re-verification unimplemented**, not merely uncalled | `auth/domains.py:341` | The third-party deletion half of this finding is **closed by Phase 2**: no unauthenticated crawl means no crawled company, so there is nothing for such a path to delete (**D9 void**). Re-verification remains open |
+| 15 | **Neon silently discards three of the four database timeouts** - `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` are passed in asyncpg's `server_settings` and come back from `SHOW` as `0`, `0` and `5min`. `application_name`, sent the same way, arrives intact, so the connection is fine and the GUCs are being filtered by Neon's proxy. **C12's protection does not exist in production** (ADR 0008 makes Neon the target), and CI cannot see it because CI runs plain Postgres, where the same code passes | `db.py:49` | Found in Phase 2 by running the suite against Neon. Needs a decision: issue them as `SET` on checkout instead of in the startup packet, or accept `command_timeout` alone. Not Phase 2's to fix |
 
 ---
 

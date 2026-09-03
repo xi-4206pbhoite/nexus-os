@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated, Any, Final, NamedTuple
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -61,6 +61,8 @@ from app.documents.parse import ParseOutcome, parse_document
 from app.documents.status import DocumentStatus
 from app.domain import audit
 from app.domain.access import Sensitivity
+from app.domain.departments import selected_departments
+from app.domain.document_asks import asks_for
 from app.domain.progress import progress_for
 from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
@@ -93,6 +95,11 @@ class UploadOut(BaseModel):
     page_count: int | None
     message: str
     """Empty when the upload succeeded. Never empty when it did not."""
+
+
+class DownloadOut(BaseModel):
+    url: str
+    expires_in_seconds: int
 
 
 class DocumentSummary(BaseModel):
@@ -447,6 +454,137 @@ class ReviewQueue(BaseModel):
     items: list[ReviewItem]
     total: int
     """Total pending, which may exceed the returned list — this is paged."""
+
+
+DOWNLOAD_TTL_SECONDS: Final = 300
+"""Five minutes. Long enough to click, short enough that a link pasted into a
+chat is dead before anyone else opens it."""
+
+
+@router.get("", response_model=list[DocumentSummary])
+async def list_documents(scope: CurrentScope, limit: int = 100) -> list[DocumentSummary]:
+    """The caller's own uploads, newest first.
+
+    **Own uploads, not the workspace's.** RLS makes `document` workspace-wide
+    and that is right for the row — the storage quota is shared, so the bytes
+    are everyone's business. The *filename* is not: "Salary review 2026.xlsx"
+    names its own contents, and listing it to the whole company would leak
+    precisely what chunk-level withholding (I4, L5 uploader-only) exists to
+    protect. `chunks_held_for_review` is a personal count in the same way.
+
+    A reviewer still sees what has been **proposed** for workspace visibility,
+    through `/documents/review-queue`, which is the surface built for that. This
+    route is "what have I given NEXUS", not "what does the company hold".
+    """
+    async with scoped_connection(scope) as db:
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT d.id, d.filename, d.status, d.page_count, d.failure_reason,"
+                    "       d.created_at,"
+                    "       (SELECT count(*) FROM chunk c"
+                    "         WHERE c.document_id = d.id AND c.review_state = :pending)"
+                    "         AS held"
+                    "  FROM document d"
+                    " WHERE d.uploaded_by_user_id = :user"
+                    " ORDER BY d.created_at DESC"
+                    " LIMIT :n"
+                ),
+                {
+                    "user": str(scope.user_id),
+                    "pending": ReviewState.PENDING_REVIEW.value,
+                    "n": limit,
+                },
+            )
+        ).all()
+
+    return [
+        DocumentSummary(
+            document_id=row.id,
+            filename=row.filename,
+            status=row.status,
+            page_count=row.page_count,
+            failure_reason=row.failure_reason,
+            created_at=row.created_at,
+            chunks_held_for_review=int(row.held),
+        )
+        for row in rows
+    ]
+
+
+class DocumentAskOut(BaseModel):
+    name: str
+    unlocks: str
+
+
+class DepartmentAsksOut(BaseModel):
+    department: str
+    asks: list[DocumentAskOut]
+
+
+@router.get("/asks", response_model=list[DepartmentAsksOut])
+async def document_asks(scope: CurrentScope) -> list[DepartmentAsksOut]:
+    """Three named documents per department this company runs (Q35).
+
+    Declared **before** `/{document_id}/download` in this module because
+    FastAPI matches routes in definition order and `asks` is a valid UUID-shaped
+    path segment as far as the router is concerned — the reverse order gives a
+    422 about a malformed UUID for a route that has nothing to do with one.
+
+    Served from the selected departments rather than all seven: asking a company
+    with no finance function for its chart of accounts is the same mistake as
+    showing it a Finance dashboard.
+    """
+    async with _unscoped_session() as db:
+        chosen = await selected_departments(db, workspace_id=scope.workspace_id)
+
+    return [
+        DepartmentAsksOut(
+            department=department.value,
+            asks=[DocumentAskOut(name=a.name, unlocks=a.unlocks) for a in asks],
+        )
+        for department, asks in asks_for(chosen).items()
+    ]
+
+
+@router.get("/{document_id}/download", response_model=DownloadOut)
+async def download_document(
+    document_id: UUID,
+    scope: CurrentScope,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DownloadOut:
+    """A short-lived signed URL for a document the caller uploaded.
+
+    The URL is minted rather than the bytes streamed, because the same contract
+    holds against S3 in production — `FilesystemObjectStore` exists to behave
+    like the thing it will be replaced by, including the expiry.
+
+    Authorised **here**, once, against the uploader. The signature that follows
+    proves the URL was issued by us and has not expired; it says nothing about
+    who is holding it, and treating possession as authorisation is how a link
+    pasted into a group chat becomes an access-control decision.
+    """
+    async with scoped_connection(scope) as db:
+        row = (
+            await db.execute(
+                text(
+                    "SELECT storage_key FROM document"
+                    " WHERE id = :id AND uploaded_by_user_id = :user"
+                ),
+                {"id": str(document_id), "user": str(scope.user_id)},
+            )
+        ).first()
+
+    # 404 rather than 403 for a document that exists and is not the caller's:
+    # "this exists and you may not have it" is itself a disclosure, and the
+    # neighbouring routes already answer that way.
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such document.")
+
+    return DownloadOut(
+        url=_object_store(settings).signed_url(row.storage_key, ttl_seconds=DOWNLOAD_TTL_SECONDS),
+        expires_in_seconds=DOWNLOAD_TTL_SECONDS,
+    )
 
 
 @router.get("/review-queue", response_model=ReviewQueue)

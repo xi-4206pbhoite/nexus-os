@@ -423,16 +423,26 @@ def test_a_deployed_env_refuses_to_start_without_the_maintenance_role(env: Env) 
         )
 
 
-def test_the_jobs_engine_refuses_rather_than_falling_back() -> None:
+def test_the_jobs_engine_refuses_rather_than_falling_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The same rule one layer down, because `local` and `ci` are permitted to
-    leave it unset and something has to refuse when a caller then uses it."""
+    leave it unset and something has to refuse when a caller then uses it.
+
+    The variable is cleared explicitly: CI *does* set it (the maintenance role
+    is bootstrapped there), so without this the engine builds happily and the
+    test passes for the wrong reason. It did, on the first run.
+    """
     from app.db import get_engine, get_jobs_engine
 
+    monkeypatch.setenv("NEXUS_JOBS_DATABASE_URL", "")
+    get_settings.cache_clear()
     get_jobs_engine.cache_clear()
     get_engine.cache_clear()
     try:
         with pytest.raises(RuntimeError, match="NEXUS_JOBS_DATABASE_URL"):
             get_jobs_engine()
     finally:
+        get_settings.cache_clear()
         get_jobs_engine.cache_clear()
         get_engine.cache_clear()

@@ -67,6 +67,9 @@ def test_stale_pending_claims_are_expired_not_deleted(conn: Connection) -> None:
         {"i": str(uid), "e": f"u-{uid}@example.com"},
     )
     cid = uuid4()
+    # `domain_claim` is row-level secured on `user_id` since migration 0013, so
+    # an insert with no `nexus.user_id` fails the WITH CHECK.
+    conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(uid)})
     conn.execute(
         text(
             "INSERT INTO domain_claim"
@@ -97,6 +100,9 @@ def test_a_verified_claim_is_not_expired_by_the_sweep(conn: Connection) -> None:
         {"i": str(uid), "e": f"u-{uid}@example.com"},
     )
     cid = uuid4()
+    # `domain_claim` is row-level secured on `user_id` since migration 0013, so
+    # an insert with no `nexus.user_id` fails the WITH CHECK.
+    conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(uid)})
     conn.execute(
         text(
             "INSERT INTO domain_claim"

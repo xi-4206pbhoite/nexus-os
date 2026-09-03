@@ -132,38 +132,71 @@ def test_a_user_cannot_update_somebody_elses_claim(
 
 
 @requires_db
-def test_the_maintenance_role_can_sweep_every_claim(
-    two_claims: tuple[UUID, UUID, UUID, UUID],
-) -> None:
+def test_the_maintenance_role_can_sweep_every_claim(engine: Engine) -> None:
     """ADR 0018's escape hatch, asserted — because if it did not work the
     expiry sweep would match zero rows and report success for ever, and nothing
     would look wrong.
 
-    A separate connection as `nexus_jobs`, so this also proves the role exists
-    and has its grant. It reads rather than writes: the sweep's own behaviour is
-    covered in `test_expiry.py`, and what is in question here is visibility.
+    **This one commits**, unlike every other test here, and that is forced by
+    what it checks. `nexus_jobs` connects separately, so it cannot see rows
+    sitting in another connection's open transaction — the first version used
+    the rolled-back fixture and failed with "cannot see every claim", which was
+    perfectly true and had nothing to do with the policy. Rows are cleaned up
+    explicitly instead.
     """
     assert JOBS_URL is not None, (
         "NEXUS_JOBS_DATABASE_URL is not configured — the maintenance role is "
         "not optional since ADR 0018"
     )
-    _alice, _bob, claim_a, claim_b = two_claims
+    alice, bob = uuid4(), uuid4()
+    claim_a, claim_b = uuid4(), uuid4()
 
-    eng = create_engine(JOBS_URL, poolclass=sa.pool.NullPool)
+    with engine.connect() as setup:
+        for user, claim in ((alice, claim_a), (bob, claim_b)):
+            setup.execute(
+                sa.text("INSERT INTO app_user (id, email) VALUES (:i,:e)"),
+                {"i": str(user), "e": f"sweep-{user.hex[:8]}@example.com"},
+            )
+            as_user(setup, user)
+            setup.execute(
+                sa.text(
+                    "INSERT INTO domain_claim"
+                    " (id, domain, user_id, method, strength, challenge_token, state,"
+                    "  expires_at)"
+                    " VALUES (:i,:d,:u,'dns_txt','strong','tok','pending',"
+                    "         now() + interval '14 days')"
+                ),
+                {"i": str(claim), "d": f"s-{claim.hex[:8]}.om", "u": str(user)},
+            )
+        setup.commit()
+
     try:
-        with eng.connect() as jobs:
-            # No GUC set at all, deliberately: the maintenance policy is keyed
-            # on the role, not on anything the caller says about itself.
-            visible = {
-                UUID(str(r.id)) for r in jobs.execute(sa.text("SELECT id FROM domain_claim")).all()
-            }
-    finally:
-        eng.dispose()
+        eng = create_engine(JOBS_URL, poolclass=sa.pool.NullPool)
+        try:
+            with eng.connect() as jobs:
+                # No GUC set at all, deliberately: the maintenance policy is
+                # keyed on the role, not on anything the caller says about
+                # itself.
+                visible = {
+                    UUID(str(r.id))
+                    for r in jobs.execute(sa.text("SELECT id FROM domain_claim")).all()
+                }
+        finally:
+            eng.dispose()
 
-    assert {claim_a, claim_b} <= visible, (
-        "nexus_jobs cannot see every claim, so the expiry sweep will match zero "
-        "rows and report a clean pass"
-    )
+        assert {claim_a, claim_b} <= visible, (
+            "nexus_jobs cannot see every claim, so the expiry sweep will match "
+            "zero rows and report a clean pass"
+        )
+    finally:
+        with engine.connect() as cleanup:
+            for user in (alice, bob):
+                as_user(cleanup, user)
+                cleanup.execute(
+                    sa.text("DELETE FROM domain_claim WHERE user_id = :u"), {"u": str(user)}
+                )
+                cleanup.execute(sa.text("DELETE FROM app_user WHERE id = :u"), {"u": str(user)})
+            cleanup.commit()
 
 
 @requires_db

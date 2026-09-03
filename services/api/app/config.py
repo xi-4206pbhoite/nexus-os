@@ -114,6 +114,22 @@ class Settings(BaseSettings):
     mailer_backend: str = "file"
     mail_root: Path = REPO_ROOT / ".mail"
 
+    run_scheduler: bool = False
+    """Whether this process runs the scheduled jobs. **Off by default.**
+
+    It used to be every API process, unconditionally — the note in
+    `AUDIT-FINDINGS.md` under "by design" said so and named the threshold at
+    which it stops being acceptable. That threshold is a second replica: three
+    API containers behind a proxy means three copies of every sweep, and the
+    jobs are idempotent rather than exclusive, so the symptom is triple the load
+    rather than an error anybody sees.
+
+    The other reason is the ~2 GB embedding model. Once `[embeddings]` is
+    installed, the process that runs the embedding pass holds those weights
+    resident — and that must not be the process serving requests.
+
+    `docker-compose.yml` sets this true on exactly one container: the worker."""
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

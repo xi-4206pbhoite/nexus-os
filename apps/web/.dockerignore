@@ -1,0 +1,8 @@
+node_modules
+.next
+.env*
+test-results
+playwright-report
+blob-report
+e2e
+**/__tests__

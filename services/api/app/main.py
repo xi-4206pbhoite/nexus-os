@@ -62,10 +62,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             "Run db/bootstrap.sql to create the role, then set the second URL."
         )
 
-    # Only run scheduled work when there is a database to run it against.
-    # Starting a sweep that cannot connect would log a failure every hour.
+    # **Off unless this process is the worker** (`NEXUS_RUN_SCHEDULER`).
+    #
+    # Every API process used to run every job. With one container that is merely
+    # untidy; with three behind a proxy it is three copies of every sweep, and
+    # because the jobs are idempotent rather than exclusive the symptom is
+    # triple the load and no error anyone sees. `docker-compose.yml` turns it on
+    # for the worker and off for the API, which is the whole difference between
+    # the two containers.
+    #
+    # Still also conditional on a database: starting a sweep that cannot connect
+    # would log a failure every hour.
     scheduler = None
-    if settings.database_url.get_secret_value():
+    if settings.run_scheduler and settings.database_url.get_secret_value():
         scheduler = build_scheduler()
         scheduler.start()
         log.info("scheduler.started", jobs=[j.id for j in scheduler.get_jobs()])

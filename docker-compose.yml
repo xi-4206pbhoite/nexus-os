@@ -4,15 +4,31 @@
 # supersedes 0004: pgvector arrives via the official image rather than being
 # deferred, so M5 can hard-require the extension.
 #
-# Only the database is here. The object store and mailer remain the filesystem
-# drivers from ADR 0001 — they work, they are tested, and containerising them
-# would add moving parts to replace something that is not a problem.
+# The object store and mailer remain the filesystem drivers from ADR 0001 — they
+# work, they are tested, and containerising them would add moving parts to
+# replace something that is not a problem.
+#
+# **Four services and one job.** `db`, `api`, `web`, `worker` — and `migrate`,
+# which is a job rather than a service: it runs `alembic upgrade head`, exits,
+# and everything that needs a migrated schema waits for it to exit zero.
+#
+# Migrations are **not** an application-startup side effect. Three API replicas
+# starting together would each try to migrate; whichever loses takes a lock and
+# blocks, or worse, half-applies. A schema change is a deploy step you can watch
+# fail, not something that happens invisibly during a rollout.
+#
+# `api` and `worker` are the **same image with different commands**. They are
+# the same application — the worker runs the scheduler and, from P11, the
+# research jobs — and a second image built from the same source is a second
+# thing to keep in step with the first.
 #
 # Usage:
-#   docker compose up -d db
-#   docker compose ps
-#   docker compose down          # keeps data
-#   docker compose down -v       # destroys data
+#   docker compose up -d              # the whole stack
+#   docker compose up -d db           # just the database, as before
+#   docker compose run --rm migrate   # migrate without starting anything else
+#   docker compose logs -f api
+#   docker compose down               # keeps data
+#   docker compose down -v            # destroys data
 
 services:
   db:
@@ -56,6 +72,116 @@ services:
       retries: 20
       start_period: 20s
 
+  # ── Migrations, as their own step ──────────────────────────
+  migrate:
+    build:
+      context: ./services/api
+    image: nexus-api
+    environment:
+      NEXUS_ENV: ${NEXUS_ENV:-production}
+      # Migrations run as the owner, which is the app role: `nexus_app` owns
+      # every table, and that ownership is what makes FORCE ROW LEVEL SECURITY
+      # settable at all. Running them as the superuser would silently reassign
+      # ownership and leave RLS unenforceable on anything new.
+      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ── The API ────────────────────────────────────────────────
+  api:
+    build:
+      context: ./services/api
+    image: nexus-api
+    restart: unless-stopped
+    environment:
+      NEXUS_ENV: ${NEXUS_ENV:-production}
+      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+      NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
+      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
+      NEXUS_PUBLIC_BASE_URL: ${NEXUS_PUBLIC_BASE_URL:-https://localhost}
+      # Off in the API. The worker owns it — see below.
+      NEXUS_RUN_SCHEDULER: "false"
+    volumes:
+      - nexus_storage:/app/.storage
+      - nexus_mail:/app/.mail
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        # Not "started". The API must not serve a request against a schema that
+        # is mid-upgrade, and `service_completed_successfully` is the only
+        # condition that means the migration finished *and* passed.
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # ── The worker: same image, different command ──────────────
+  worker:
+    build:
+      context: ./services/api
+    image: nexus-api
+    restart: unless-stopped
+    environment:
+      NEXUS_ENV: ${NEXUS_ENV:-production}
+      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+      NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
+      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
+      NEXUS_RUN_SCHEDULER: "true"
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - nexus_storage:/app/.storage
+      - nexus_mail:/app/.mail
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # ── The web app ────────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+    image: nexus-web
+    restart: unless-stopped
+    environment:
+      # Reached over the compose network, not through the proxy. The BFF is
+      # server-side; routing its calls back out through TLS to come in again
+      # would add a hop and a certificate to a request that never leaves the
+      # host.
+      NEXUS_API_BASE_URL: http://api:8000
+      NEXUS_PROXY_TIMEOUT_MS: ${NEXUS_PROXY_TIMEOUT_MS:-30000}
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  # ── TLS termination ────────────────────────────────────────
+  #
+  # Here for one reason: `secure=True` cookies. A session cookie marked secure
+  # is not sent over plain HTTP, so without TLS the whole session layer either
+  # stops working or has to be weakened for local use — and a cookie flag that
+  # is off in development is a flag nobody tests.
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - nexus_caddy_data:/data
+      - nexus_caddy_config:/config
+    depends_on:
+      - web
+      - api
+
 volumes:
   nexus_pgdata:
     name: nexus_pgdata
+  nexus_storage:
+  nexus_mail:
+  nexus_caddy_data:
+  nexus_caddy_config:

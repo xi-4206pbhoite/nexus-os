@@ -1,0 +1,32 @@
+# TLS termination, so `secure=True` cookies work.
+#
+# A session cookie marked secure is not sent over plain HTTP. Without this the
+# session layer either stops working locally or has to be weakened for local
+# use — and a cookie flag that is off in development is a flag nobody tests.
+#
+# `localhost` makes Caddy mint and trust a local certificate with no ACME round
+# trip. Replace it with the real hostname in production and Caddy fetches a
+# real certificate on its own; nothing else here changes.
+{$NEXUS_SITE_ADDRESS:localhost} {
+	encode gzip
+
+	# The API first, and by prefix. `handle_path` strips `/api/v1` before
+	# forwarding, so the API's own routes stay unprefixed and it does not have
+	# to know it is behind anything.
+	handle_path /api/v1/* {
+		reverse_proxy api:8000
+	}
+
+	# Everything else is the Next.js app, which serves the BFF at `/api/*` for
+	# the browser. Two different `/api` paths on purpose: the browser's talks to
+	# the BFF, and `/api/v1` reaches the API directly for anything that needs it.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		# HSTS. Only meaningful over TLS, which is the point of this file.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

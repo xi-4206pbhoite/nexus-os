@@ -48,8 +48,15 @@ from app.auth.csrf import require_csrf
 from app.config import Settings, get_settings
 from app.deps import CurrentScope
 from app.documents.chunk import Chunk, chunk_document
-from app.documents.classify import Classification, ClassificationInput, classify_chunk
+from app.documents.classify import (
+    Classification,
+    ClassificationInput,
+    ReviewState,
+    classify_chunk,
+    review_state_code,
+)
 from app.documents.parse import MAX_FILE_BYTES, ParseOutcome, parse_document
+from app.documents.status import DocumentStatus
 from app.domain.access import Sensitivity
 from app.domain.scopes import Scope, scope_code
 from app.domain.session import ScopedSession
@@ -159,7 +166,11 @@ async def upload_document(
             size_bytes=len(data),
             storage_key=key,
             digest=digest,
-            state="quarantined" if parsed.outcome is ParseOutcome.UNSUPPORTED_TYPE else "failed",
+            state=(
+                DocumentStatus.QUARANTINED
+                if parsed.outcome is ParseOutcome.UNSUPPORTED_TYPE
+                else DocumentStatus.FAILED
+            ),
             failure_reason=parsed.message,
             page_count=parsed.page_count or None,
             supersedes_id=supersedes_id,
@@ -185,14 +196,14 @@ async def upload_document(
         size_bytes=len(data),
         storage_key=key,
         digest=digest,
-        state="indexed",
+        state=DocumentStatus.INDEXED,
         failure_reason=None,
         page_count=parsed.page_count,
         supersedes_id=supersedes_id,
         chunks=classified,
     )
 
-    held = sum(1 for _, c in classified if c.review_state.value != "auto_approved")
+    held = sum(1 for _, c in classified if c.review_state is not ReviewState.AUTO_APPROVED)
     log.info(
         "document.indexed",
         chunks=len(classified),
@@ -270,7 +281,7 @@ async def _record(
     size_bytes: int,
     storage_key: str,
     digest: str,
-    state: str,
+    state: DocumentStatus,
     failure_reason: str | None,
     page_count: int | None,
     supersedes_id: UUID | None,
@@ -288,7 +299,7 @@ async def _record(
     leave a document claiming to be `indexed` with only part of its content
     reachable - the silent-failure shape doc 07 M5 forbids.
     """
-    consent_at = datetime.now(UTC) if state == "indexed" else None
+    consent_at = datetime.now(UTC) if state is DocumentStatus.INDEXED else None
 
     async with scoped_connection(scope) as session:
         await session.execute(
@@ -302,7 +313,7 @@ async def _record(
                 "size": size_bytes,
                 "key": storage_key,
                 "digest": digest,
-                "status": state,
+                "status": state.value,
                 # Only on the indexed path. The check constraint requires it
                 # there, and a failed upload was never indexed, so recording
                 # consent for it would overstate what happened.
@@ -333,7 +344,7 @@ async def _record(
                     "sensitivity": classification.sensitivity.value,
                     "classified_by": classification.classified_by,
                     "confidence": classification.confidence,
-                    "review": classification.review_state.value,
+                    "review": review_state_code(classification.review_state),
                 },
             )
 
@@ -344,10 +355,14 @@ async def _record(
             # while the row survives for provenance.
             await session.execute(
                 text(
-                    "UPDATE document SET status = 'superseded'"
+                    "UPDATE document SET status = :superseded"
                     " WHERE id = :old AND workspace_id = :ws"
                 ),
-                {"old": str(supersedes_id), "ws": str(scope.workspace_id)},
+                {
+                    "superseded": DocumentStatus.SUPERSEDED.value,
+                    "old": str(supersedes_id),
+                    "ws": str(scope.workspace_id),
+                },
             )
 
 
@@ -396,11 +411,11 @@ async def review_queue(scope: CurrentScope, limit: int = 50) -> ReviewQueue:
                         "       c.source_label, left(c.content, 400) AS excerpt,"
                         "       c.scope, c.sensitivity, c.confidence, c.classified_by"
                         "  FROM chunk c JOIN document d ON d.id = c.document_id"
-                        "  WHERE c.review_state = 'pending_review'"
+                        "  WHERE c.review_state = :pending"
                         "  ORDER BY c.created_at DESC"
                         "  LIMIT :limit"
                     ),
-                    {"limit": limit},
+                    {"limit": limit, "pending": review_state_code(ReviewState.PENDING_REVIEW)},
                 )
             )
             .mappings()
@@ -409,7 +424,8 @@ async def review_queue(scope: CurrentScope, limit: int = 50) -> ReviewQueue:
 
         total = (
             await session.execute(
-                text("SELECT count(*) FROM chunk WHERE review_state = 'pending_review'")
+                text("SELECT count(*) FROM chunk WHERE review_state = :pending"),
+                {"pending": review_state_code(ReviewState.PENDING_REVIEW)},
             )
         ).scalar_one()
 
@@ -475,10 +491,13 @@ async def decide_review(
                 "       scope = COALESCE(:scope, scope),"
                 "       reviewed_by_user_id = :reviewer,"
                 "       reviewed_at = now()"
-                " WHERE id = :id AND review_state = 'pending_review'"
+                " WHERE id = :id AND review_state = :pending"
             ),
             {
-                "state": "approved" if decision.approve else "rejected",
+                "pending": review_state_code(ReviewState.PENDING_REVIEW),
+                "state": review_state_code(
+                    ReviewState.APPROVED if decision.approve else ReviewState.REJECTED
+                ),
                 "scope": scope_code(target) if target else None,
                 "reviewer": str(scope.user_id),
                 "id": str(chunk_id),

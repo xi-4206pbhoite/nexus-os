@@ -30,10 +30,46 @@ CONFIDENCE_THRESHOLD = 0.85
 
 
 class ReviewState(StrEnum):
+    """The value written to `chunk.review_state`, in the column's own vocabulary.
+
+    These four strings were once a different four — `needs_review`,
+    `human_approved`, `quarantined` — while `ck_chunk_review_state` permitted
+    `pending_review`, `approved`, `rejected`. Two independent lists, and nothing
+    could see they had drifted: the enum type-checked, the constraint was valid
+    SQL, and the only place they met was an INSERT no test had ever run. Every
+    chunk of every upload violated the constraint, and the partial index
+    `ix_chunk_pending_review` and both review-queue queries filtered on a value
+    nothing could write, so the queue was permanently empty.
+
+    The SQL vocabulary won because three things already depended on it. The
+    enum is now the single source of truth in the other direction, and
+    `tests/test_constraint_enum_parity.py` asserts the two are set-equal.
+    """
+
     AUTO_APPROVED = "auto_approved"
-    NEEDS_REVIEW = "needs_review"
-    HUMAN_APPROVED = "human_approved"
-    QUARANTINED = "quarantined"
+    """Classified with enough confidence to be reachable without a human."""
+
+    PENDING_REVIEW = "pending_review"
+    """Withheld, awaiting a person. Every default-deny path lands here."""
+
+    APPROVED = "approved"
+    """A person confirmed it, and it holds the scope they granted."""
+
+    REJECTED = "rejected"
+    """A person declined it. It stays unreachable."""
+
+
+def review_state_code(state: ReviewState) -> str:
+    """The value to write to `chunk.review_state`.
+
+    An identity today, and deliberately still a function. It is the named write
+    path — the counterpart of `scope_code`, whose translation is not an identity
+    — so that every INSERT and UPDATE goes through one place. The reason the
+    drift above was invisible is that there was no such place: each call site
+    reached for `.value` or a bare literal of its own, so nothing tied the SQL
+    vocabulary to the enum except the hope that both would be edited together.
+    """
+    return state.value
 
 
 # Scopes an automatic classifier may assign.
@@ -85,7 +121,7 @@ def _withhold(
         scope=Scope.L5_PERSONAL,
         department=None,
         sensitivity=source.suggested_sensitivity,
-        review_state=ReviewState.NEEDS_REVIEW,
+        review_state=ReviewState.PENDING_REVIEW,
         classified_by=classified_by,
         confidence=source.confidence,
         owner_user_id=uploader_id,
@@ -131,7 +167,7 @@ def classify_chunk(
             scope=Scope.L5_PERSONAL,
             department=source.suggested_department,
             sensitivity=source.suggested_sensitivity,
-            review_state=ReviewState.NEEDS_REVIEW,
+            review_state=ReviewState.PENDING_REVIEW,
             classified_by=classifier_name,
             confidence=source.confidence,
             owner_user_id=uploader_id,

@@ -145,7 +145,7 @@ def test_a_sensitive_document_is_not_workspace_visible_until_reviewed(client) ->
     assert chunks, "a readable document must produce chunks"
     for _, classification in chunks:
         assert classification.scope.name.startswith("L5"), "withheld chunks sit at L5"
-        assert classification.review_state is ReviewState.NEEDS_REVIEW
+        assert classification.review_state is ReviewState.PENDING_REVIEW
         assert classification.owner_user_id == str(USER), (
             "an L5 chunk with no owner is visible to nobody, or to everyone if a "
             "predicate treats NULL as a wildcard"
@@ -230,7 +230,7 @@ def test_a_replacement_is_classified_from_scratch(client) -> None:  # type: igno
     assert response.status_code == 201
     assert recorded[0]["supersedes_id"] == old
     for _, classification in recorded[0]["chunks"]:
-        assert classification.review_state is ReviewState.NEEDS_REVIEW
+        assert classification.review_state is ReviewState.PENDING_REVIEW
 
 
 # ── The route is guarded ──────────────────────────────────────

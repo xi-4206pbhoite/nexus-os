@@ -45,6 +45,10 @@ services:
       POSTGRES_DB: nexus
       # Consumed by the init script to create the non-superuser app role.
       NEXUS_APP_DB_PASSWORD: ${NEXUS_APP_DB_PASSWORD:?set NEXUS_APP_DB_PASSWORD in .env}
+      # The maintenance role (ADR 0018). Defaults to the app password so a local
+      # stack needs one fewer variable; give it its own in anything deployed,
+      # because two roles sharing a secret is one role wearing two hats.
+      NEXUS_JOBS_DB_PASSWORD: ${NEXUS_JOBS_DB_PASSWORD:-${NEXUS_APP_DB_PASSWORD}}
       # Deterministic collation, matching the native cluster's initdb.
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     ports:
@@ -99,6 +103,10 @@ services:
     environment:
       NEXUS_ENV: ${NEXUS_ENV:-production}
       NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+      # Required whenever a database is configured: company registration checks
+      # whether a domain is already claimed as `nexus_jobs`, because `workspace`
+      # is row-level secured and the app role cannot see another company's row.
+      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
       NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
       NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
       NEXUS_PUBLIC_BASE_URL: ${NEXUS_PUBLIC_BASE_URL:-https://localhost}
@@ -127,6 +135,10 @@ services:
     environment:
       NEXUS_ENV: ${NEXUS_ENV:-production}
       NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+      # Required whenever a database is configured: company registration checks
+      # whether a domain is already claimed as `nexus_jobs`, because `workspace`
+      # is row-level secured and the app role cannot see another company's row.
+      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
       NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
       NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
       NEXUS_RUN_SCHEDULER: "true"

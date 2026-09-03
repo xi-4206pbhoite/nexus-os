@@ -175,6 +175,110 @@ jobs:
       - name: Build
         run: npx next build
 
+  e2e:
+    name: E2E — the journey, against the composed stack
+    runs-on: ubuntu-latest
+    # After the cheap jobs. A browser journey that fails because of a type error
+    # wastes four minutes proving something `tsc` proves in forty seconds.
+    needs: [api, web]
+    env:
+      # Test credentials for a database that lives and dies with this job. Not
+      # secrets: nothing here outlives the runner, and putting them in the repo
+      # secret store would imply they protect something.
+      NEXUS_DB_SUPERUSER_PASSWORD: ci-superuser-password
+      NEXUS_APP_DB_PASSWORD: ci-app-password
+      NEXUS_ENV: production
+      NEXUS_DATABASE_URL: postgresql+asyncpg://nexus_app:ci-app-password@db:5432/nexus
+      NEXUS_JOBS_DATABASE_URL: postgresql+asyncpg://nexus_jobs:ci-jobs-password@db:5432/nexus
+      NEXUS_JOBS_DB_PASSWORD: ci-jobs-password
+      NEXUS_SESSION_SIGNING_SECRET: ci-session-signing-secret-not-a-real-one
+      NEXUS_STORAGE_SIGNING_SECRET: ci-storage-signing-secret-not-a-real-one
+      NEXUS_PUBLIC_BASE_URL: https://localhost
+      # `production` rather than a test env on purpose: it is the only setting
+      # under which cookies are `secure` and the docs page is closed, and those
+      # are two of the things this job exists to prove.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      # The journey reads the verification link out of the `.eml` the API
+      # actually wrote. The bind mount in docker-compose.ci.yml needs the
+      # directory to exist first, or Docker creates it owned by root and the
+      # container cannot write to it.
+      - name: Prepare the mail sink
+        run: mkdir -p .mail && chmod 777 .mail
+
+      - name: Build the images
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+
+      - name: Bring up the stack
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+      # `migrate` is a job: it runs and exits. `api` and `worker` wait on it
+      # completing successfully, so if it failed they never started and the wait
+      # below is what surfaces it.
+      - name: Wait for the site
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsSk https://localhost/ >/dev/null 2>&1; then
+              echo "up after ${i}0s"; exit 0
+            fi
+            sleep 10
+          done
+          echo "the site never answered"; exit 1
+
+      # The reason the proxy exists. A session cookie marked secure is not sent
+      # over plain HTTP, so a stack that serves the app but not TLS would pass
+      # the journey and still be undeployable.
+      - name: The session cookie is Secure and HttpOnly
+        run: |
+          set -euo pipefail
+          headers=$(curl -sSk -D - -o /dev/null -X POST https://localhost/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"nobody@example.om","password":"not-a-real-password"}')
+          echo "$headers"
+          # A failed login sets no session cookie, which is correct — so assert
+          # on the CSRF cookie, which is set regardless and carries the same
+          # flags. Asserting on a cookie that is never present would be a test
+          # that cannot fail.
+          echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'Secure'
+          echo "$headers" | grep -i '^set-cookie:.*nexus_csrf' | grep -qi 'HttpOnly'
+
+      - name: The journey
+        working-directory: apps/web
+        env:
+          NEXUS_E2E_BASE_URL: https://localhost
+          NEXUS_E2E_MAIL_DIR: ../../.mail
+        run: npx playwright test
+
+      - name: What the stack said
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --tail=200
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

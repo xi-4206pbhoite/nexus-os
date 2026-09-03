@@ -33,6 +33,12 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
   use: {
     baseURL: process.env.NEXUS_E2E_BASE_URL ?? 'http://localhost:3001',
+    // Caddy mints its own certificate for `localhost`, which no CI runner
+    // trusts. Accepting it is the only way to exercise the thing the proxy is
+    // there for — `secure=True` cookies, which are not sent over plain HTTP at
+    // all. Scoped to an HTTPS base URL, so a plain-HTTP dev run does not
+    // quietly gain the same permission.
+    ignoreHTTPSErrors: (process.env.NEXUS_E2E_BASE_URL ?? '').startsWith('https://'),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

@@ -14,8 +14,13 @@ set -euo pipefail
 
 # The value is quoted twice on purpose: psql substitutes :app_password
 # literally, so the SQL string quotes must be part of the variable itself.
+# `jobs_password` as well as `app_password`. `bootstrap.sql` creates both roles
+# and references `:'jobs_password'`, so omitting it fails the whole script on an
+# unset variable — which is how the composed database went without the
+# `nexus_jobs` role that company registration needs (ADR 0018).
 psql -v ON_ERROR_STOP=1 \
      -v app_password="'${NEXUS_APP_DB_PASSWORD}'" \
+     -v jobs_password="'${NEXUS_JOBS_DB_PASSWORD:-${NEXUS_APP_DB_PASSWORD}}'" \
      --username "$POSTGRES_USER" \
      --dbname "$POSTGRES_DB" \
      -f /bootstrap/bootstrap.sql

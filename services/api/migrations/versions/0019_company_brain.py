@@ -94,8 +94,14 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE POLICY company_brain_workspace_isolation ON company_brain
-            USING      (workspace_id = NULLIF(current_setting('nexus.workspace_id', true), '')::uuid)
-            WITH CHECK (workspace_id = NULLIF(current_setting('nexus.workspace_id', true), '')::uuid)
+            USING (
+                workspace_id
+                = NULLIF(current_setting('nexus.workspace_id', true), '')::uuid
+            )
+            WITH CHECK (
+                workspace_id
+                = NULLIF(current_setting('nexus.workspace_id', true), '')::uuid
+            )
         """
     )
 

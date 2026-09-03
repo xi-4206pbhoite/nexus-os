@@ -30,6 +30,22 @@
 #   docker compose down               # keeps data
 #   docker compose down -v            # destroys data
 
+# Every service that imports `app.config` validates the **whole** of `Settings`,
+# regardless of what that entry point actually uses. `migrate` sends no mail and
+# builds no links, and it still needs the mailer configuration and the public
+# base URL — because a validator that fired for some entry points and not others
+# would be worse than one that fires for all of them.
+#
+# This anchor exists because I learned that three times in a row, one variable
+# per CI run: storage secret, then mailer, then base URL. One block, shared.
+x-api-env: &api-env
+  NEXUS_ENV: ${NEXUS_ENV:-production}
+  NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
+  NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
+  NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
+  NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
+  NEXUS_PUBLIC_BASE_URL: ${NEXUS_PUBLIC_BASE_URL:-https://localhost}
+
 services:
   db:
     # Official pgvector image, tracking the Postgres version the native cluster
@@ -82,18 +98,7 @@ services:
       context: ./services/api
     image: nexus-api
     environment:
-      NEXUS_ENV: ${NEXUS_ENV:-production}
-      # Migrations run as the owner, which is the app role: `nexus_app` owns
-      # every table, and that ownership is what makes FORCE ROW LEVEL SECURITY
-      # settable at all. Running them as the superuser would silently reassign
-      # ownership and leave RLS unenforceable on anything new.
-      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
-      # `migrations/env.py` imports `app.config`, which refuses to build in a
-      # deployed environment with a required secret missing. Migrations do not
-      # use these, but the import does not know that — and a validator that only
-      # fires for some entry points is a validator nobody can reason about.
-      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
-      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
+      <<: *api-env
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
@@ -107,17 +112,9 @@ services:
     image: nexus-api
     restart: unless-stopped
     environment:
-      NEXUS_ENV: ${NEXUS_ENV:-production}
-      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
-      # Required whenever a database is configured: company registration checks
-      # whether a domain is already claimed as `nexus_jobs`, because `workspace`
-      # is row-level secured and the app role cannot see another company's row.
-      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
-      NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
-      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
-      NEXUS_PUBLIC_BASE_URL: ${NEXUS_PUBLIC_BASE_URL:-https://localhost}
-      # Off in the API. The worker owns it — see below.
-      NEXUS_RUN_SCHEDULER: "false"
+      <<: *api-env
+      # Off in the API. The worker owns it.
+      NEXUS_RUN_SCHEDULER: \"false\"
     volumes:
       - nexus_storage:/app/.storage
       - nexus_mail:/app/.mail
@@ -139,15 +136,8 @@ services:
     image: nexus-api
     restart: unless-stopped
     environment:
-      NEXUS_ENV: ${NEXUS_ENV:-production}
-      NEXUS_DATABASE_URL: ${NEXUS_DATABASE_URL:?set NEXUS_DATABASE_URL in .env}
-      # Required whenever a database is configured: company registration checks
-      # whether a domain is already claimed as `nexus_jobs`, because `workspace`
-      # is row-level secured and the app role cannot see another company's row.
-      NEXUS_JOBS_DATABASE_URL: ${NEXUS_JOBS_DATABASE_URL:?set NEXUS_JOBS_DATABASE_URL in .env}
-      NEXUS_SESSION_SIGNING_SECRET: ${NEXUS_SESSION_SIGNING_SECRET:?set it in .env}
-      NEXUS_STORAGE_SIGNING_SECRET: ${NEXUS_STORAGE_SIGNING_SECRET:?set it in .env}
-      NEXUS_RUN_SCHEDULER: "true"
+      <<: *api-env
+      NEXUS_RUN_SCHEDULER: \"true\"
     command: ["python", "-m", "app.worker"]
     volumes:
       - nexus_storage:/app/.storage

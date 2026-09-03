@@ -30,6 +30,8 @@ The re-keying needed no migration. A bucket is an opaque string, so the old
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -65,6 +67,61 @@ class Limit:
 PER_WORKSPACE = Limit("workspace", max_count=50, window=timedelta(hours=24))
 GLOBAL_DAILY = Limit("global", max_count=500, window=timedelta(days=1))
 
+# ── Credential endpoints (D14, P4) ────────────────────────────
+#
+# Two counters, because either alone is defeated by the obvious move: per-IP
+# falls to a botnet, per-email falls to rotating the target. Both, and an
+# attacker has to spread across addresses *and* sources to stay under.
+#
+# **These do not gate the request.** Exceeding them costs a delay, applied
+# before an identical 401 — never a 429, never a lock. `app/routes/auth.py`
+# explains why at the call site, and `tests/test_login_rate_limit.py` is what
+# holds it to it. The numbers are the point at which a human stops looking like
+# a human: nobody types their own password wrong ten times in an hour, and
+# nobody registers five accounts from one address in one.
+LOGIN_PER_IP = Limit("login_ip", max_count=10, window=timedelta(hours=1))
+LOGIN_PER_EMAIL = Limit("login_email", max_count=10, window=timedelta(hours=1))
+REGISTER_PER_IP = Limit("register_ip", max_count=5, window=timedelta(hours=1))
+
+# Doubling from a quarter of a second, capped. The cap matters: an uncapped
+# curve turns the twentieth attempt into a request that holds a worker for
+# minutes, so the backoff becomes a way to exhaust the server it protects.
+BACKOFF_BASE_SECONDS = 0.25
+BACKOFF_MAX_SECONDS = 8.0
+
+
+def hash_bucket_key(value: str, *, secret: str) -> str:
+    """Keyed hash of whatever identifies the caller.
+
+    Written for the retired per-IP Preview bucket and kept for the same reason
+    it existed: without it, `rate_limit_counter` becomes a plaintext list of
+    every address anyone has tried to sign in as — readable by anything that can
+    read the table, and retained for the life of the window. Counting somebody
+    does not require naming them.
+
+    Keyed rather than a plain digest, so the table is not a rainbow-table lookup
+    of a namespace as small and guessable as email addresses.
+    """
+    return hmac.new(secret.encode(), value.strip().lower().encode(), hashlib.sha256).hexdigest()
+
+
+def backoff_seconds(
+    attempts: int,
+    *,
+    base: float = BACKOFF_BASE_SECONDS,
+    cap: float = BACKOFF_MAX_SECONDS,
+) -> float:
+    """How long to stall before answering, given the attempts so far.
+
+    Zero while under the limit, then doubling to a cap. Returned rather than
+    slept here so the caller decides *when* to spend it — which for the login
+    path is after the work, not before, so the delay cannot be measured
+    separately from the response.
+    """
+    if attempts <= 0:
+        return 0.0
+    return float(min(base * (2 ** (attempts - 1)), cap))
+
 
 class RateLimitedError(Exception):
     def __init__(self, scope: str, retry_after_seconds: int) -> None:
@@ -77,6 +134,35 @@ def _window_start(now: datetime, window: timedelta) -> datetime:
     seconds = int(window.total_seconds())
     epoch = int(now.timestamp())
     return datetime.fromtimestamp(epoch - (epoch % seconds), tz=UTC)
+
+
+async def consume(db: AsyncSession, limit: Limit, key: str, *, now: datetime | None = None) -> int:
+    """Count one attempt and report how far **over** the limit it is.
+
+    The counting sibling of `check_and_increment`, for the credential path,
+    which must never refuse — D14 requires an identical 401 whatever the
+    counters say, so a function that raises would be the wrong shape and the
+    temptation to let the exception reach the client would be permanent.
+
+    Returns 0 while under the limit; 1 for the first attempt over, 2 for the
+    second, and so on. That number is the exponent the backoff curve uses.
+    """
+    moment = now or datetime.now(UTC)
+    start = _window_start(moment, limit.window)
+
+    result = await db.execute(
+        text(
+            """
+            INSERT INTO rate_limit_counter (bucket, window_start, count)
+            VALUES (:bucket, :start, 1)
+            ON CONFLICT (bucket, window_start)
+            DO UPDATE SET count = rate_limit_counter.count + 1
+            RETURNING count
+            """
+        ),
+        {"bucket": f"{limit.bucket_prefix}:{key}", "start": start},
+    )
+    return max(0, int(result.scalar_one()) - limit.max_count)
 
 
 async def check_and_increment(

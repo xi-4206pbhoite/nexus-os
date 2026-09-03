@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
+import anyio
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -38,6 +39,14 @@ from app.auth.service import (
 )
 from app.auth.tokens import new_csrf_token
 from app.config import Settings, get_settings
+from app.connectors.rate_limit import (
+    LOGIN_PER_EMAIL,
+    LOGIN_PER_IP,
+    REGISTER_PER_IP,
+    backoff_seconds,
+    consume,
+    hash_bucket_key,
+)
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.logging import get_logger
@@ -97,6 +106,37 @@ def _set_session_cookie(response: Response, token: str, settings: Settings) -> s
     return csrf
 
 
+def _caller_key(request: Request, settings: Settings) -> str:
+    """A hashed, stable identifier for the source of a credential attempt.
+
+    The direct peer, never `X-Forwarded-For`. That header is attacker-controlled
+    unless a trusted proxy list says otherwise, and this repository deleted its
+    trusted-proxy configuration with the preview product in P2 — so believing it
+    now would let one client mint unlimited rate-limit identities and walk
+    straight through the per-IP counter.
+
+    The consequence is stated rather than hidden: **behind a proxy every visitor
+    shares one bucket**, and the per-IP limit collapses towards a global one.
+    That is the safe direction to fail, and the per-email counter is what keeps
+    the limit meaningful while it is true. A deployment that terminates TLS
+    elsewhere needs the trusted-proxy list back before this counter means
+    anything.
+    """
+    peer = request.client.host if request.client else "unknown"
+    return hash_bucket_key(peer, secret=settings.require("storage_signing_secret"))
+
+
+async def _throttle(delay: float) -> None:
+    """Spend the backoff.
+
+    After the work, never instead of it. A delay applied *before* authenticating
+    would be separable from the response by anyone timing the two, and the whole
+    of D14 rests on a caller being unable to tell one reply from another.
+    """
+    if delay > 0:
+        await anyio.sleep(delay)
+
+
 def _send_later(background: BackgroundTasks, mailer: Mailer, message: Email) -> None:
     """Queue a message so the response does not wait for the transport.
 
@@ -112,6 +152,7 @@ def _send_later(background: BackgroundTasks, mailer: Mailer, message: Email) -> 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(
     payload: RegisterRequest,
+    request: Request,
     background: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str]:
@@ -130,6 +171,23 @@ async def register(
     a second email would confirm to whoever triggered it that the first account
     exists.
     """
+    # Metered per source address. This is the more expensive of the two
+    # credential endpoints — every call hashes a password whether or not the
+    # address is new — and it is an unbounded `app_user` growth vector besides.
+    #
+    # Backoff rather than refusal, for the same reason as login: a 429 here
+    # would be observable, and the response is supposed to be identical
+    # regardless of what the caller has been doing.
+    caller = _caller_key(request, settings)
+    async with _unscoped_session() as db:
+        over = await consume(db, REGISTER_PER_IP, caller)
+        await db.commit()
+    delay = backoff_seconds(
+        over,
+        base=settings.login_backoff_base_seconds,
+        cap=settings.login_backoff_max_seconds,
+    )
+
     try:
         async with _unscoped_session() as db:
             user_id = await register_user(
@@ -142,6 +200,7 @@ async def register(
             await db.commit()
     except EmailAlreadyRegisteredError:
         log.info("auth.register.duplicate")
+        await _throttle(delay)
         return {"status": "check_your_email"}
     except WeakPasswordError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
@@ -154,6 +213,7 @@ async def register(
         ),
     )
     log.info("auth.register.verification_queued")
+    await _throttle(delay)
     return {"status": "check_your_email"}
 
 
@@ -237,10 +297,50 @@ async def login(
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SessionResponse:
+    """Sign in.
+
+    **Rate limited without becoming an oracle** (D14, `doc/11` §5.2). Two
+    counters — the caller's address and the address being guessed at — because
+    either alone has an obvious defeat: per-IP falls to a botnet, per-email
+    falls to rotating the target.
+
+    Being over the limit costs a **delay, then the same 401 as always**. Not a
+    429, and not a lock:
+
+    - A **429 keyed by email is a confirmation the address exists**, available
+      to anyone for the price of a few requests. It would undo M1's
+      account-enumeration work in the act of adding security, which is why the
+      status, the body and the headers here are identical whatever the counters
+      say.
+    - A **lock is a denial-of-service vector against a named user.** Anyone who
+      knows an Owner's address could hold them out of their own workspace during
+      an incident. Backoff slows an attacker without handing them that.
+
+    The delay is spent *after* authenticating, so it cannot be timed separately
+    from the work. `tests/test_login_rate_limit.py` holds all of this.
+    """
+    caller = _caller_key(request, settings)
+    email_key = hash_bucket_key(payload.email, secret=settings.require("storage_signing_secret"))
+
+    async with _unscoped_session() as db:
+        # Counted before the attempt, and committed even when it fails — an
+        # increment rolled back with a failed login is an attempt that did not
+        # count, which is every attempt an attacker makes.
+        over_ip = await consume(db, LOGIN_PER_IP, caller)
+        over_email = await consume(db, LOGIN_PER_EMAIL, email_key)
+        await db.commit()
+
+    delay = backoff_seconds(
+        max(over_ip, over_email),
+        base=settings.login_backoff_base_seconds,
+        cap=settings.login_backoff_max_seconds,
+    )
+
     async with _unscoped_session() as db:
         try:
             user_id = await authenticate(db, email=payload.email, password=payload.password)
         except AuthError as exc:
+            await _throttle(delay)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password") from exc
 
         memberships = await memberships_for_user(db, user_id=user_id)
@@ -257,8 +357,13 @@ async def login(
         )
         await db.commit()
 
+    # A success is throttled on the same curve. Otherwise the *absence* of the
+    # delay announces that the password was right, and a guesser who has crossed
+    # the limit learns exactly what they were trying to learn.
+    await _throttle(delay)
+
     _set_session_cookie(response, issued.token, settings)
-    log.info("auth.login", workspace_count=len(memberships))
+    log.info("auth.login", workspace_count=len(memberships), backed_off=delay > 0)
 
     return SessionResponse(
         user_id=user_id,

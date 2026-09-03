@@ -61,7 +61,7 @@ that split is unchanged, and Phase 5 is where it starts to close.
 | **P1 — Correctness** | ✅ **complete** | Migration 0010, a real config validator, a correlated exception handler and a constraint-versus-enum test. The fourth item — four database timeouts — was correct in code and green in CI while doing nothing on Neon; that gap (finding #15) is closed, so the phase's claims now all hold where it matters |
 | **P2 — Retire the preview product** | ✅ complete, green in CI | Run [33730363386](https://github.com/xi-4206pbhoite/nexus-os/actions/runs/33730363386) — 667 passed, migrations both directions, coverage 76.43%. `POST /preview`, the hero URL form, both components, the BFF proxy, `client-address.ts`, three test modules and the `preview_session` table are gone. The guard, crawler and extractor moved to `app/research/`; the rate limiter is re-keyed to `(workspace, global)`. See §3 |
 | **P3 — Identity** | ✅ **complete** | Registration sends; password reset end to end; one person to one company; `POST /auth/workspace` and `_teardown_on_switch` deleted; `SmtpMailer` behind `mailer_backend`, with a deployed environment refusing to boot on the file backend. Migration 0012. See §3 |
-| P4 — The security surface | next | Login and register rate limiting, argon2 off the event loop, RLS on `domain_claim`, the audit trail. Blocked on **D14** |
+| **P4 — The security surface** | in progress | Login and register rate limiting, argon2 off the event loop, RLS on `domain_claim`, the audit trail. **Not blocked** — D14 was answered in `doc/11` §5.2 and this row said otherwise while the C9 row two sections down said "D14 settled" |
 | P5–P9 — the onboarding spine | pending | |
 | P10–P13 — the Brain | pending | |
 | P14–P17 — product surface | pending | |
@@ -435,9 +435,12 @@ the product can be exposed publicly at all.
 credential stuffing is unbounded, and argon2 runs on the event loop at ~40–80 ms
 of synchronous CPU per attempt — the two compound, because the cheapest way to
 stall every endpoint including the health probes is to guess passwords at an
-account that does not exist. **It needs D14 from you**: a per-account lock is
-itself a denial-of-service vector against a named user, so the shape of the
-limit is a product decision rather than an engineering one.
+account that does not exist. **D14 is settled** (`doc/11` §5.2): per-IP *and*
+per-email counters, exponential backoff rather than a lock, and an identical 401
+in every case with the delay applied silently. The lock was rejected for the
+reason that made it a decision at all — a per-account lock is a
+denial-of-service vector against a named user, and anyone who knows an Owner's
+address could use it.
 
 Then the rest of `AUDIT-FINDINGS.md`: RLS on `domain_claim`, and the audit trail
 that I9 needs and that nothing currently writes.

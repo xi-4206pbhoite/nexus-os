@@ -18,10 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import (
-    hash_password,
+    hash_password_async,
     needs_rehash,
-    spend_dummy_verification,
-    verify_password,
+    spend_dummy_verification_async,
+    verify_password_async,
 )
 from app.auth.tokens import hash_token, new_token
 from app.domain.scopes import Department, Role
@@ -59,7 +59,7 @@ async def register_user(
     db: AsyncSession, *, email: str, password: str, display_name: str | None = None
 ) -> UUID:
     normalised = email.strip().lower()
-    password_hash = hash_password(password)
+    password_hash = await hash_password_async(password)
 
     existing = await db.execute(
         text("SELECT 1 FROM app_user WHERE lower(email) = :email"), {"email": normalised}
@@ -97,10 +97,10 @@ async def authenticate(db: AsyncSession, *, email: str, password: str) -> UUID:
 
     if row is None or row.password_hash is None:
         # Spend comparable time so absence is not measurably faster.
-        spend_dummy_verification()
+        await spend_dummy_verification_async()
         raise AuthError("invalid credentials")
 
-    if not verify_password(row.password_hash, password):
+    if not await verify_password_async(row.password_hash, password):
         raise AuthError("invalid credentials")
 
     if row.disabled_at is not None:
@@ -109,7 +109,7 @@ async def authenticate(db: AsyncSession, *, email: str, password: str) -> UUID:
     if needs_rehash(row.password_hash):
         await db.execute(
             text("UPDATE app_user SET password_hash = :hash WHERE id = :id"),
-            {"hash": hash_password(password), "id": str(row.id)},
+            {"hash": await hash_password_async(password), "id": str(row.id)},
         )
 
     return UUID(str(row.id))

@@ -7,6 +7,7 @@ hash string, so raising them later does not invalidate existing hashes —
 
 from __future__ import annotations
 
+from anyio import to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
@@ -68,3 +69,33 @@ DUMMY_HASH = _hasher.hash("nexus-timing-equaliser-not-a-real-password")
 
 def spend_dummy_verification() -> None:
     verify_password(DUMMY_HASH, "wrong")
+
+
+# ── Off the event loop (finding #1, P4) ───────────────────────
+#
+# argon2id is deliberately expensive: ~40-80 ms of *synchronous* CPU per call,
+# by design, because that is what defeats offline cracking. Called directly from
+# an `async def` it holds the only thread the event loop has, so thirty login
+# attempts a second against a non-existent account stall **every** endpoint —
+# dashboards, uploads, and `/health`, which is how a load balancer decides the
+# process is dead. The attacker does not need a valid account: the dummy-hash
+# equaliser above means a guess at an unknown address costs exactly as much.
+#
+# It compounds with the rate limit rather than being fixed by it, which is why
+# `doc/12` §Phase 4 pairs them: backoff makes each attacker slower, and moving
+# the work off the loop is what stops the attempts they do make from taking the
+# service down with them.
+
+
+async def hash_password_async(password: str) -> str:
+    """`hash_password`, on a worker thread."""
+    validate_password(password)
+    return await to_thread.run_sync(_hasher.hash, password)
+
+
+async def verify_password_async(password_hash: str, password: str) -> bool:
+    return await to_thread.run_sync(verify_password, password_hash, password)
+
+
+async def spend_dummy_verification_async() -> None:
+    await to_thread.run_sync(spend_dummy_verification)

@@ -123,6 +123,18 @@ class Settings(BaseSettings):
     # refuses that combination in a deployed environment.
     smtp_tls: bool = True
 
+    # ── Credential backoff (D14) ──────────────────────────────
+    # The curve `app/routes/auth.py` spends when a caller is over the login or
+    # register limit: doubling from `base`, capped at `max`.
+    #
+    # Configurable because the cap is a real operational trade-off — too low and
+    # a determined guesser is barely slowed, too high and each attempt holds a
+    # worker long enough that the backoff becomes a way to exhaust the service
+    # it protects. And because the suite would otherwise spend minutes asleep
+    # proving a property that has nothing to do with the wall clock.
+    login_backoff_base_seconds: float = 0.25
+    login_backoff_max_seconds: float = 8.0
+
     # Where the links in those emails point. Not derived from the request:
     # `Host` is attacker-controlled, and a verification link built from it is a
     # working account-takeover primitive — the attacker registers, receives a

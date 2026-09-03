@@ -134,7 +134,12 @@ Doc 05 §4.12 proposes a minimal deal tracker inside the Ops layer so the Sales 
 ### D13 — Anthropic API access *(blocks M12)*
 The Agent SDK needs an API key and a decision on which model tier backs each execution mode. Also relevant to doc 06 §8.4's cheap-model routing, which is only permitted where that module's evals pass.
 
-### D14 — Login rate limiting *(blocks exposing the sign-in UI publicly)*
+### ~~D14 — Login rate limiting~~ — **answered** (`doc/11` §5.2), built in Phase 4
+
+**The answer was the recommendation below**: per-IP *and* per-email counters,
+exponential backoff rather than a lock, an identical 401 in every case with the
+delay applied silently. The question is kept for the reasoning, because the
+third part of it is the one that shapes the code.
 
 **Raised by ADR 0009.** `POST /auth/login` accepts unlimited attempts. `rate_limit.py` covers only the Preview path, so nothing bounds password guessing. argon2id and the dummy-hash timing equalisation defeat offline cracking and the timing oracle; **online guessing against a weak password is unmitigated.**
 

@@ -273,7 +273,7 @@ it belongs in a separate worker.
 ## Known defects
 
 `AUDIT-FINDINGS.md` records what four audits found and what was done about each.
-**Eight findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
+**Five findings are open**, reconciled against `BUILD-STATUS.md` in Phase 2 —
 the register had said fourteen for a month after Phase 1 closed three of them.
 The three worth knowing before touching auth, the database or deployment:
 

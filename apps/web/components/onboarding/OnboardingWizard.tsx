@@ -16,8 +16,9 @@ import { fetchCatalogue, saveAnswers, type Catalogue, type Question } from '@/li
  * next, team last. Two of its stages are not this milestone's to build, and the
  * screen says so rather than staging a version of them —
  *
- * - **the audit** (§5 stage 1) is M7, and the free Preview audit on the landing
- *   page is the same engine running on the outside-in half;
+ * - **the audit** (§5 stage 1) is M7. It was once previewed on the landing page
+ *   by the same engine; Phase 2 retired that entry point (`doc/11` Q1), so the
+ *   audit now exists nowhere until this stage builds it;
  * - **connections** (§5 stage 4) are M10.
  *
  * Skipping straight from the basics to the money questions is *worse* than the

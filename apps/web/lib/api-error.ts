@@ -1,8 +1,9 @@
 /**
  * Turning whatever the API returned into a string a person can read.
  *
- * Extracted because the absence of it caused a real crash. `PreviewForm`
- * assigned `payload.detail` straight into a `string` and rendered it. That
+ * Extracted because the absence of it caused a real crash. `PreviewForm` —
+ * since retired with the rest of the pre-signup audit — assigned
+ * `payload.detail` straight into a `string` and rendered it. That
  * holds for every error the API raises deliberately — those carry a string —
  * but **FastAPI's own validation errors carry an array of objects**. A URL over
  * the 2048-character limit produced one, React was handed an object as a child,

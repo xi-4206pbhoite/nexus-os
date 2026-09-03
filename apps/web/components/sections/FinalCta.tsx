@@ -83,7 +83,7 @@ export function FinalCta() {
               <Button href="/register" size="lg" icon={<ArrowRight />}>
                 {finalCta.primary}
               </Button>
-              <Button href="#top" size="lg" variant="secondary">
+              <Button href="#loop" size="lg" variant="secondary">
                 {finalCta.secondary}
               </Button>
             </div>

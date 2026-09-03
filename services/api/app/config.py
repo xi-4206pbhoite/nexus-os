@@ -143,20 +143,14 @@ class Settings(BaseSettings):
     tenant_daily_token_budget: int = 2_000_000
     user_daily_token_budget: int = 200_000
 
-    # ── Trusted proxies ───────────────────────────────────────
-    # X-Forwarded-For is attacker-controlled by default: anyone can send it,
-    # and believing it lets one client mint unlimited rate-limit identities.
-    # It is honoured *only* when the direct peer is listed here. Empty means
-    # trust nothing and use the direct peer — the safe default, at the cost of
-    # every visitor behind a proxy sharing one bucket.
-    trusted_proxy_ips: str = ""
-
-    # ── Preview crawl (doc 06 §1.1, §1.2) ─────────────────────
-    # Doc 06 §1.1 says "short TTL", and the subject of this data is a company
-    # that has no account here and never consented to the crawl. A day is long
-    # enough to serve a repeat visit and reload, and short enough that we are
-    # not sitting on an audit of a third party for a week.
-    preview_ttl_hours: int = 24
+    # ── Crawl budget (doc 06 §1.2) ────────────────────────────
+    # `trusted_proxy_ips` and `preview_ttl_hours` sat here until Phase 2. Both
+    # existed only for the unauthenticated audit: the first decided whose
+    # `X-Forwarded-For` to believe when rate-limiting anonymous callers, the
+    # second bounded how long a third party's crawled data was retained. With
+    # no anonymous crawl there is no address to attribute and no third-party
+    # data to expire (`doc/11` Q1, D9 void). The limits below survive because a
+    # crawl still has to be bounded, whoever asked for it.
     crawl_max_bytes: int = 5_000_000
     crawl_timeout_seconds: int = 15
     crawl_max_redirects: int = 5
@@ -222,10 +216,6 @@ class Settings(BaseSettings):
         excluded — nobody reads `/docs` there.
         """
         return self.env is Env.local
-
-    @property
-    def trusted_proxies(self) -> frozenset[str]:
-        return frozenset(p.strip() for p in self.trusted_proxy_ips.split(",") if p.strip())
 
     @property
     def disabled_ai_skills_set(self) -> frozenset[str]:

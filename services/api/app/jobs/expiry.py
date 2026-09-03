@@ -1,20 +1,21 @@
-"""Expiring Preview data.
+"""Expiring what is time-bound.
 
-Doc 07 M3's acceptance is *"no workspace exists without a verified domain, **and
-Preview data expires**"*, and doc 06 §10 names the obligation precisely:
+Until Phase 2 this module's centre of gravity was Preview data, and the reason
+was unusual enough to be worth remembering: **the subject of that data was not
+our user.** A company whose site had been crawled by a stranger evaluating them
+had no login here, could not see what we held, and could not ask an account
+manager to remove it. Doc 06 §10 answered that with a short TTL and a
+deletion-request path keyed on the domain rather than on an account, and this
+job is what carried it out.
 
-> *Crawl data for unverified domains: short TTL, and a deletion request path for
-> the crawled company, which has no account.*
+`doc/11` Q1 retired the unauthenticated crawl, so no third-party data is
+collected and the obligation does not arise — **D9 is void rather than
+satisfied.** `expire_previews` and `delete_previews_for_domain` went with
+migration 0011, and the deletion path they implemented is the strongest kind:
+there is nothing to delete.
 
-That last clause is the unusual part and the reason this is a job rather than a
-lazy filter. **The subject of this data is not our user.** A company whose site
-was crawled by a stranger evaluating them has no login here, cannot see what we
-hold, and cannot ask an account manager to remove it. Retaining it past its TTL
-because nothing swept it would be indefensible, so expiry is an action taken on
-a schedule rather than a predicate applied at read time.
-
-A claimed preview is exempt: once its domain is verified, the data belongs to a
-workspace and falls under that workspace's retention instead.
+What remains is time-bound data about our own users — abandoned domain claims,
+and rate-limit counters for windows that have closed.
 """
 
 from __future__ import annotations
@@ -32,52 +33,8 @@ log = get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ExpiryReport:
-    previews_deleted: int
     rate_limit_rows_deleted: int
     claims_expired: int
-
-
-async def expire_previews(db: AsyncSession, *, now: datetime | None = None) -> int:
-    """Delete Preview sessions past their TTL.
-
-    Deleted, not soft-deleted. A `deleted_at` column would leave the crawled
-    company's data in the table indefinitely, which is the situation this exists
-    to prevent.
-    """
-    moment = now or datetime.now(UTC)
-    result = await db.execute(
-        text(
-            "WITH gone AS ("
-            "  DELETE FROM preview_session"
-            "   WHERE expires_at <= :now AND claimed_by_workspace_id IS NULL"
-            "  RETURNING 1"
-            ") SELECT count(*) FROM gone"
-        ),
-        {"now": moment},
-    )
-    return int(result.scalar_one())
-
-
-async def delete_previews_for_domain(db: AsyncSession, *, domain: str) -> int:
-    """The deletion-request path for a crawled company with no account.
-
-    Doc 06 §10. Deliberately keyed on the domain rather than on an account,
-    because the requester has neither — they are the subject of the data, not a
-    customer.
-    """
-    result = await db.execute(
-        text(
-            "WITH gone AS ("
-            "  DELETE FROM preview_session"
-            "   WHERE lower(domain) = lower(:d) AND claimed_by_workspace_id IS NULL"
-            "  RETURNING 1"
-            ") SELECT count(*) FROM gone"
-        ),
-        {"d": domain},
-    )
-    deleted = int(result.scalar_one())
-    log.info("preview.deletion_request", deleted=deleted)
-    return deleted
 
 
 async def expire_stale_claims(db: AsyncSession, *, now: datetime | None = None) -> int:
@@ -104,17 +61,11 @@ async def run_expiry_sweep(db: AsyncSession, *, now: datetime | None = None) -> 
     """One pass of everything time-bound. Safe to run repeatedly."""
     from app.connectors.rate_limit import purge_expired
 
-    previews = await expire_previews(db, now=now)
     claims = await expire_stale_claims(db, now=now)
     counters = await purge_expired(db)
     await db.commit()
 
-    report = ExpiryReport(previews, counters, claims)
-    if previews or claims or counters:
-        log.info(
-            "expiry.sweep",
-            previews_deleted=previews,
-            claims_expired=claims,
-            rate_limit_rows_deleted=counters,
-        )
+    report = ExpiryReport(counters, claims)
+    if claims or counters:
+        log.info("expiry.sweep", claims_expired=claims, rate_limit_rows_deleted=counters)
     return report

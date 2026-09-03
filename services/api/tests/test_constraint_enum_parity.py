@@ -108,9 +108,6 @@ UNMAPPED: dict[str, str] = {
     # verification and should do it there rather than have Phase 1 rewrite SQL
     # it is not otherwise touching.
     "ck_domain_claim_state": "no enum yet; app/auth/domains.py writes literals. Phase 3.",
-    # The preview product is removed in Phase 2 (doc/11 Q1) and migration 0011
-    # drops this table, so an enum for it would be written to be deleted.
-    "ck_preview_session_status": "table is dropped in Phase 2; an enum would outlive nothing.",
 }
 
 _VALUE_LIST = re.compile(r"'([^']+)'::text")
@@ -223,9 +220,11 @@ def test_every_value_list_constraint_is_registered(discovered: dict[str, Discove
 def test_no_unmapped_entry_outlives_its_constraint(discovered: dict[str, Discovered]) -> None:
     """A dropped constraint takes its excuse with it.
 
-    `ck_preview_session_status` is exempted because Phase 2 deletes the table.
-    When it does, this fails until the entry goes — which is the point: an
-    exemption list nobody prunes becomes a list of things nobody checks.
+    This has already earned itself once. `ck_preview_session_status` was
+    exempted here with "table is dropped in Phase 2", and when migration 0011
+    dropped it this test failed until the entry was removed — which is the
+    point. An exemption list nobody prunes becomes a list of things nobody
+    checks.
     """
     stale = sorted(name for name in UNMAPPED if name not in discovered)
     assert not stale, (

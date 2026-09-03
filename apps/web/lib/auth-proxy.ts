@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server'
 /**
  * Server-side proxy for the auth endpoints.
  *
- * Same reasoning as the Preview proxy: the browser never learns the API's
- * address and there is no CORS surface. For auth it buys something further.
+ * The browser never learns the API's address and there is no CORS surface —
+ * the reasoning the Preview proxy was built on, and the reason this pattern
+ * outlived it. For auth it buys something further.
  * The session cookie is `httponly` and `SameSite=Lax`, and both properties only
  * hold if the cookie belongs to the origin the browser is actually talking to.
  * Calling the API directly from the page would make every auth request

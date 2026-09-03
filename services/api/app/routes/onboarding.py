@@ -219,16 +219,6 @@ async def create_workspace(
         except DomainClaimError as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
-        # Claim any Preview data for this domain so it stops being subject to
-        # the unverified-domain TTL and comes under the workspace's retention.
-        await db.execute(
-            text(
-                "UPDATE preview_session SET claimed_by_workspace_id = :ws"
-                " WHERE lower(domain) = (SELECT lower(domain) FROM domain_claim WHERE id = :c)"
-                "   AND claimed_by_workspace_id IS NULL"
-            ),
-            {"ws": str(workspace_id), "c": str(claim_id)},
-        )
         await db.commit()
 
     return WorkspaceOut(workspace_id=workspace_id, name=payload.name)

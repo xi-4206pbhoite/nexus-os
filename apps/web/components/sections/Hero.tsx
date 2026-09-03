@@ -3,7 +3,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { PaperLandscape } from '@/components/art/PaperLandscape'
 import { Button, ArrowRight } from '@/components/ui/Button'
-import { PreviewForm } from '@/components/preview/PreviewForm'
 import { RevealWords } from '@/components/motion/Reveal'
 import { IconSparkle, IconCheck } from '@/components/art/Icons'
 import { hero } from '@/lib/content'
@@ -182,16 +181,22 @@ export function Hero() {
               {hero.sub}
             </p>
 
-            {/* Doc 06 §1: one primary action — enter your website. The URL is
-                captured before registration and becomes the first fact NEXUS
-                holds. */}
-            <div style={{ animationDelay: '0.84s' }} className="animate-rise mt-9">
-              <PreviewForm />
-              <div className="mt-4">
-                <Button href="#loop" size="md" variant="ghost">
-                  {hero.secondaryCta}
-                </Button>
-              </div>
+            {/* `doc/11` Q1 (D18): one action, and it is sign up. This was a URL
+                field feeding the unauthenticated Preview audit, which Phase 2
+                retired — a stranger could type a competitor's address and be
+                handed an analysis of a company they do not own. The website is
+                asked for at stage 2 instead, once there is an account to attach
+                it to, and the crawl starts there. */}
+            <div
+              style={{ animationDelay: '0.84s' }}
+              className="animate-rise mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center"
+            >
+              <Button href="/register" size="lg" icon={<ArrowRight />}>
+                {hero.primaryCta}
+              </Button>
+              <Button href="#loop" size="lg" variant="ghost">
+                {hero.secondaryCta}
+              </Button>
             </div>
 
             <p

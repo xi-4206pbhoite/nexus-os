@@ -31,7 +31,7 @@ export const hero = {
   headlineAccent: 'executive team.',
   headlineBottom: 'Built around your company.',
   sub: 'Connect your website, documents and tools once. NEXUS learns how your business works, tells you what needs attention, helps you decide — and does the work.',
-  primaryCta: 'Start the 7-minute audit',
+  primaryCta: 'Create your account',
   secondaryCta: 'See how it works',
   note: 'Built for Oman and the wider GCC — OMR/AED/SAR, regional business norms, Arabic on the roadmap.',
   ticker: [
@@ -437,10 +437,11 @@ export const finalCta = {
   headline: 'Seven minutes from now, you could be reading an honest audit of your own business.',
   sub: 'Connect your website. NEXUS does the rest.',
   primary: 'Create your account',
-  // Was "Book a walkthrough". There is no booking system, and a button that
-  // opens nothing is worse than one fewer button. This points at the audit,
-  // which is real, needs no account, and is the better first step anyway.
-  secondary: 'Run a free audit first',
+  // Was "Book a walkthrough", then "Run a free audit first". There is no
+  // booking system, and Phase 2 retired the pre-signup audit — so both labels
+  // named something that does not exist. A button that opens nothing is worse
+  // than one fewer button. This one points back up the page, which is real.
+  secondary: 'See how it works',
   reassure: 'No card required for the trial · Cancel any time',
 } as const
 

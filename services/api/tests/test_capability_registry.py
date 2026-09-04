@@ -98,3 +98,32 @@ def test_impact_is_a_declared_dependency_not_a_guess() -> None:
     """Q59's input. A fact matters because things depend on it, and the
     dependency is declared rather than inferred from how often it is mentioned."""
     assert consumers_of("a_fact_nothing_uses") == ()
+
+
+# ── The shell carries its denominator (P15) ───────────────────
+
+
+def test_the_shell_never_reports_a_score_of_zero() -> None:
+    """I10. Nothing is delivered, so nothing is computable — and `0` would be a
+    statement about the customer's business rather than about our data.
+
+    This is the failure the whole phase guards against: a dashboard showing
+    0/100 to a company that has simply connected nothing looks like a verdict.
+    """
+    from app.routes.dashboards import ShellOut
+
+    shell = ShellOut(
+        score=None, score_denominator=3, capabilities_delivered=0, capabilities_total=24
+    )
+    assert shell.score is None
+    assert shell.score_denominator == 3, "the denominator travels with the score"
+
+
+def test_the_assistant_panel_is_reserved_rather_than_absent() -> None:
+    """Q67. A blank region where a feature is coming reads as a bug; a fake one
+    reads as a lie. Reserved, with an honest empty state naming what it will do."""
+    from app.routes.dashboards import ShellOut
+
+    assert ShellOut(
+        score=None, score_denominator=0, capabilities_delivered=0, capabilities_total=0
+    ).assistant_reserved

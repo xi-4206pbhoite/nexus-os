@@ -58,6 +58,16 @@ export type DirectorSummary = {
 export type Dashboards = {
   directors: DirectorSummary[]
   /** Where to send this person. `null` when they hold no department. */
+  shell?: {
+    score: number | null
+    score_denominator: number
+    capabilities_delivered: number
+    capabilities_total: number
+    assistant_reserved: boolean
+  }
+  /** Optional so a client built against an older API gets `undefined` rather
+   *  than a wrong zero — the same reason `unanswered_questions` is optional. */
+
   landing: string | null
   delivered_count: number
 }

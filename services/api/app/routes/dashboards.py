@@ -47,6 +47,7 @@ from app.domain.departments import runs_department, selected_departments
 # Aliased: `BY_DEPARTMENT` already means the dashboard *offerings* here, and two
 # dictionaries with one name is how the wrong one gets read.
 from app.domain.question_bank import BY_DEPARTMENT as QUESTIONS_BY_DEPARTMENT
+from app.domain.registry import completeness, score_denominator
 from app.domain.scopes import Department
 from app.retrieval.scoped import apply_workspace_scope, scoped_connection
 
@@ -262,6 +263,33 @@ class DepartmentSection(BaseModel):
     theirs, and the page leads with those."""
 
 
+class ShellOut(BaseModel):
+    """The global shell (`doc/12` P15), with every number derived.
+
+    **The denominator travels with the score**, and that is the point of this
+    object. A score shown alone is a claim the founder cannot check; "out of
+    three" lets them count their own departments and agree. It is also why
+    `score` is `None` rather than `0` when nothing is computable — zero is a
+    statement about their business, and absence is a statement about our data
+    (I10).
+    """
+
+    score: float | None
+    score_denominator: int
+    """Derived from the registry against the departments this company runs. No
+    literal 6 anywhere — see finding #27 for what deriving it turned up."""
+
+    capabilities_delivered: int
+    capabilities_total: int
+    """A pair, not a percentage. A percentage hides the denominator, and the
+    denominator is the part that makes the claim checkable."""
+
+    assistant_reserved: bool = True
+    """Q67. The panel is reserved and renders an honest empty state naming what
+    it will do — a blank region where a feature is coming reads as a bug, and a
+    fake one reads as a lie."""
+
+
 class CompanyDashboardOut(BaseModel):
     """**The** company dashboard — one page, the same URL for everybody.
 
@@ -284,6 +312,7 @@ class CompanyDashboardOut(BaseModel):
     brain itself: this page says what exists, and `/onboarding/brain` serves the
     content to whoever asks for it."""
 
+    shell: ShellOut
     departments: list[DepartmentSection]
     yours: list[str]
     """The departments this caller is in. The page leads with these."""
@@ -356,7 +385,16 @@ async def company_dashboard(
     # is the one you came here for.
     sections.sort(key=lambda s: (not s.is_yours, s.department))
 
+    delivered, total = completeness(chosen)
     return CompanyDashboardOut(
+        shell=ShellOut(
+            # `None`, never `0`. Nothing is delivered, so nothing is computable,
+            # and a zero would be a statement about their business (I10).
+            score=None,
+            score_denominator=score_denominator(chosen),
+            capabilities_delivered=delivered,
+            capabilities_total=total,
+        ),
         company=name or "Your company",
         brain_available=has_brain,
         departments=sections,

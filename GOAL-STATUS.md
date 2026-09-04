@@ -6,7 +6,7 @@ Regenerate the evidence with:
 services/api/.venv/bin/python scripts/goal_walkthrough.py
 ```
 
-**36 checks, 0 failures**, against a real API and Neon. Re-runnable.
+**50 checks, 0 failures**, against a real API and Neon. Re-runnable.
 
 ## Working, verified through HTTP
 
@@ -18,6 +18,8 @@ services/api/.venv/bin/python scripts/goal_walkthrough.py
 | The link carries the company | Its token names workspace *and* role, so the joiner never picks a company and structurally cannot pick the wrong one |
 | The invitation is emailed | Wired this session — it had only ever been handed back to the inviter |
 | Member lands on a dashboard | Scoped to **operations only**; `hr` is 404, not merely hidden |
+| The company brain | Built from the founder's own answers, versioned, every claim naming its source |
+| The persona interview | Four questions, resumable; declaring seniority is refused and the dashboards do not widen |
 
 **Plus-addressing is not a workaround.** One company per founder (`doc/11` Q8)
 is a rule the product means, so two companies need two founders. Both inboxes
@@ -35,24 +37,43 @@ downstream of the gate is exercised for real.
 To make it real: register a founder at an address on the company's own domain,
 and the EMAIL method verifies with no DNS at all.
 
+## The brain, and why it needs no model
+
+`generated_by = 'answers'`. By the end of onboarding the founder has typed what
+they sell, who they sell it to and how each department works, every answer still
+carrying its question — so **assembling that is not generating**. It invents
+nothing and names a source for every line, which is I1 exactly.
+
+The archived design had only `model` and `unavailable`, which would have meant
+no API key, no brain. The model's job when it arrives is to enrich a real brain
+rather than to be the only way to have one.
+
+Three rules the schema enforces, not just the code: a grounded brain cannot be
+stored with empty provenance; an unavailable one cannot be stored without a
+reason; and a partial unique index makes two current brains impossible rather
+than merely unlikely.
+
+## The persona interview, and the line it must not cross
+
+`doc/05` §2.6 was already an invariant, and this is the feature that would break
+it — a chat is exactly where you would let someone describe themselves into more
+access.
+
+**Role and departments are never asked.** They come from the invitation, which
+somebody else issued. Typing "I'm the CFO" into a chat box is not a promotion,
+and the walkthrough asserts both halves: the answer is refused *and* the
+dashboards do not widen afterwards.
+
+Scripted, so it works with no API key (ADR 0011). A model makes the wording
+conversational; it does not decide what is asked or what is stored.
+
 ## Not built
 
-**The company brain** is Phase 13, and Phase 10 (the retrieval core) comes
-first — the plan calls that one the security core that everything after depends
-on. The brain has no substrate until it exists.
-
-**The AI persona chat.** Before anyone builds it, read
-`services/api/tests/test_persona_and_invitations.py`. Doc 05 §2.6 is already
-enforced there as an invariant:
-
-> No persona field is ever an input to the retrieval predicate.
-
-The persona says **what to lead with**. It must never say **what you may see**.
-A chat that infers "this person is a finance lead" must not widen what finance
-data they can reach — that is `ScopedSession`'s job and its alone, and the test
-asserts `ScopedSession` carries no persona field so the mistake cannot compile.
-
-**Phases 10–21.** Phases 0–9 are complete and green in CI.
+**Phases 10–21.** Phases 0–9 are complete and green in CI, and the brain and
+persona above are Phase 13 and personalisation work pulled forward because the
+goal asked for them. What is not pulled forward is Phase 10, the retrieval core
+— so the brain is assembled directly from answers rather than retrieved through
+a scoped path. When P10 lands, that assembly should move behind it.
 
 ## Open findings
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 from app.domain.scopes import Department
 
@@ -109,8 +110,33 @@ class WidgetState(StrEnum):
     LIVE = "live"
     PARTIAL = "partial"
     LOCKED = "locked"
+
     WARMING = "warming"
+    """Connected, but not enough history to say anything yet.
+
+    Distinct from `PARTIAL` because the fix is different and only one of them
+    asks something of the customer: `PARTIAL` means connect another source,
+    `WARMING` means wait. Telling somebody to connect something they already
+    connected is how a product loses their trust in its own instructions."""
+
     SELF_REPORTED = "self_reported"
+    """Computed from what the founder told us, with no connected system behind
+    it. Labelled because a number they typed and a number we measured must never
+    look identical — the second can contradict them, and the first cannot."""
+
+    STALE = "stale"
+    """The data arrived, and it is too old to act on.
+
+    Not `LIVE` with a quiet timestamp: a figure that was true last quarter reads
+    as current unless the tile says otherwise, and someone will make a decision
+    on it. Not `UNAVAILABLE` either — the number is real and still worth seeing,
+    with its age attached."""
+
+    UNAVAILABLE = "unavailable"
+    """The pipeline could not produce an answer (P14). Carries the reason from
+    `UnavailableReason`, because "unavailable" alone tells a founder nothing
+    about whether to wait, connect something, or ask us."""
+
     PLANNED = "planned"
 
 
@@ -134,6 +160,16 @@ class Offering:
     """A constraint from doc 05 worth carrying to the screen — 'never estimated',
     'deterministic model in code; AI narrates only'."""
 
+
+WARMUP_DAYS: Final = 14
+"""Below this much history a trend is noise. Two weeks is enough to see a
+weekly cycle once, which is the shortest period over which "up" or "down" means
+anything for a business."""
+
+STALE_AFTER_DAYS: Final = 7
+"""Older than this and the tile says so. A week is chosen because it is the
+period a founder plans in — a figure from last week is context, and a figure
+from last month presented as current is a decision made on the wrong data."""
 
 DELIVERED: frozenset[str] = frozenset()
 """Offering ids with a real implementation behind them.
@@ -706,24 +742,63 @@ BY_DEPARTMENT: dict[Department, Director] = {d.department: d for d in DIRECTORS}
 # ── State ─────────────────────────────────────────────────────
 
 
-def state_for(offering: Offering, *, connected: frozenset[Source]) -> WidgetState:
+def state_for(
+    offering: Offering,
+    *,
+    connected: frozenset[Source],
+    history_days: int | None = None,
+    age_days: int | None = None,
+    self_reported: bool = False,
+    unavailable_reason: str = "",
+    warmup_days: int = WARMUP_DAYS,
+    stale_after_days: int = STALE_AFTER_DAYS,
+) -> WidgetState:
     """What this offering renders as, given what the workspace actually has.
 
-    Order matters. `PLANNED` is checked first because an unbuilt widget cannot be
-    unlocked by connecting anything, and telling someone otherwise is a promise
-    the product would then break. Only once an offering is delivered does the
-    question "what is missing?" have a useful answer.
+    **Order is the whole design**, and each step answers a question the next one
+    depends on:
+
+    1. `PLANNED` — an unbuilt widget cannot be unlocked by connecting anything,
+       and saying otherwise is a promise the product would then break.
+    2. `UNAVAILABLE` — the inputs being present says nothing about whether the
+       answer was computable, and rendering `LIVE` over a failed generation
+       shows a tile with no number in it.
+    3. `LOCKED` / `PARTIAL` — what is missing.
+    4. `WARMING` / `STALE` / `SELF_REPORTED` — everything arrived; is it usable?
+
+    The defaults keep every existing caller working: pass nothing and the last
+    four are unreachable, which is exactly the behaviour before this phase.
     """
     if offering.id not in DELIVERED:
         return WidgetState.PLANNED
 
+    if unavailable_reason:
+        # P14's pipeline could not produce an answer. Outranks everything below
+        # because the inputs being present says nothing about whether the answer
+        # was computable — and rendering `LIVE` over a failed generation shows a
+        # tile with no number in it.
+        return WidgetState.UNAVAILABLE
+
     missing = [source for source in offering.needs if source not in connected]
-    if not missing:
-        return WidgetState.LIVE
-    if len(missing) == len(offering.needs):
+    if len(missing) == len(offering.needs) and offering.needs:
         return WidgetState.LOCKED
-    # Some inputs present, so there is something real to show at reduced scope.
-    return WidgetState.PARTIAL
+    if missing:
+        # Some inputs present, so there is something real at reduced scope.
+        return WidgetState.PARTIAL
+
+    # Everything connected. Now the question is whether what arrived is usable.
+    if history_days is not None and history_days < warmup_days:
+        # Connected but not enough history. **Never `PARTIAL`** — that would
+        # tell somebody to connect a source they already connected.
+        return WidgetState.WARMING
+
+    if age_days is not None and age_days > stale_after_days:
+        return WidgetState.STALE
+
+    if self_reported:
+        return WidgetState.SELF_REPORTED
+
+    return WidgetState.LIVE
 
 
 def missing_sources(offering: Offering, *, connected: frozenset[Source]) -> tuple[Source, ...]:

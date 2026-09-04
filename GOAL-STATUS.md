@@ -113,11 +113,14 @@ whose token the caller holds. Each has its own primitive, and
 - **The `iterative_scan` regression guard does not yet discriminate.**
   `evals/test_recall_regression.py` asserts recall is high, and would catch a
   predicate that silently drops the caller's rows — but deleting `SET LOCAL
-  hnsw.iterative_scan` and re-running still passes, because at 400 rows Postgres
-  can scan the table and never consults the index. Reproducing ADR 0012's 5%
-  needs tens of thousands of rows. The file says this at the top, because a test
-  that looks like a guard and is not would be the exact failure it exists to
-  prevent.
+  hnsw.iterative_scan` and re-running still passes. Two attempts are recorded in
+  the file: forcing the index plan with `enable_seqscan = off` (the planner was
+  choosing an exhaustive sequential scan) got closer but was not enough — HNSW
+  at 400 rows still returns all 20, because the graph has no depth and there is
+  no long traversal for the filter to exhaust. **The corpus, not the plan, is
+  the missing ingredient** — tens of thousands of rows. The limitation is
+  written at the top of the file, because a test that looks like a guard and is
+  not would be the exact failure it exists to prevent.
 - **`[embeddings]` is not installed in CI.** It would pull ~2 GB of weights into
   every run to test whether `multilingual-e5-large` places similar text near
   each other — a real question, and a different one from the index behaviour

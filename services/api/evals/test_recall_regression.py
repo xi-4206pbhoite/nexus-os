@@ -23,13 +23,24 @@ criterion is that *removing* `SET LOCAL hnsw.iterative_scan` drops recall below
 still passes. At 400 rows Postgres does not need the HNSW index to answer at
 all — it can scan the table — so the setting has nothing to change.
 
-Reproducing ADR 0012's 5% requires a corpus large enough that the planner
-chooses the index, which is tens of thousands of rows and minutes of insert time
-against a remote database. Until that exists, this asserts that recall **is**
-high and would catch a predicate that silently drops the caller's own rows. It
-is **not** the `iterative_scan` regression guard, and calling it one would be
-the exact failure it was written to prevent: a test that certifies the thing it
-was meant to catch.
+Two attempts to make it discriminate, both recorded because the second is the
+more interesting failure:
+
+1. The planner was choosing a sequential scan, which is exhaustive — it finds
+   every matching row, so the setting had nothing to change. Fixed with
+   `SET LOCAL enable_seqscan = off`, which reproduces the *plan* ADR 0012
+   measured rather than its row count.
+2. It still passes without `iterative_scan`. With the index forced, HNSW at 400
+   rows still returns all 20. The graph has no depth at this size: there is no
+   long traversal for the filter to exhaust, which is the mechanism the 5%
+   comes from.
+
+So the corpus, not the plan, is the missing ingredient — tens of thousands of
+rows and minutes of insert time per run. Until that exists this asserts recall
+**is** high, and would catch a predicate that silently drops the caller's own
+rows. It is **not** the `iterative_scan` regression guard, and calling it one
+would be the exact failure it was written to prevent: a test that certifies the
+thing it was meant to catch.
 """
 
 from __future__ import annotations
@@ -169,6 +180,19 @@ async def test_recall_at_contributor_selectivity(app_db: None) -> None:
         user, ws, wanted = await _corpus(db)
         try:
             await apply_workspace_scope(db, ws)
+
+            # **Force the index.** At 400 rows the planner would rather scan the
+            # table, and a sequential scan is exhaustive — it finds every
+            # matching row, so `iterative_scan` has nothing to change and the
+            # test cannot tell a correct configuration from a broken one.
+            #
+            # Disabling seqscan is not cheating the measurement: production has
+            # far more than 400 rows and will use the index, so this reproduces
+            # the *plan* ADR 0012 measured rather than the row count. Growing
+            # the corpus to tens of thousands would reach the same plan by
+            # spending minutes of insert time per run.
+            await db.execute(sa.text("SET LOCAL enable_seqscan = off"))
+
             scope = ScopedSession(
                 user_id=user,
                 tenant_id=uuid4(),

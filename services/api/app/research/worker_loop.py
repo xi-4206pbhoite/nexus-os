@@ -13,14 +13,13 @@ rather than nothing for four minutes and then everything.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Final
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_sessionmaker
+from app.db import jobs_session
 from app.domain.research import (
     CLAIM_SQL,
     STALE_AFTER_MINUTES,
@@ -88,6 +87,11 @@ async def _run_source(
     do exactly that — so anything unhandled becomes a failed source with a
     reason, and the other five carry on.
     """
+    # Scoped here, and again in `_record`. The GUC is transaction-local, so the
+    # commit below ends it — and an UPDATE under RLS with no policy match
+    # affects **zero rows and raises nothing**, leaving the source `queued`
+    # forever with nothing in any log.
+    await apply_workspace_scope(db, workspace_id)
     await db.execute(
         text(
             "UPDATE research_source SET state='running', started_at=now()"
@@ -129,17 +133,23 @@ async def process_one_run(db: AsyncSession) -> UUID | None:
     app-role connection with no GUC set sees nothing and this returns `None`
     forever — a worker that looks healthy and processes nothing.
 
-    In production this belongs on the **`nexus_jobs` role** (ADR 0018), which
-    exists for exactly this shape: maintenance work that must span tenants,
-    holding a narrow policy rather than `BYPASSRLS`. `research_run` does not yet
-    grant it — see finding #25. Until it does, a caller must scope the session
-    itself, which only a test can do because only a test already knows which
-    workspace it is looking for.
+    So the claim runs on the **`nexus_jobs` role** (ADR 0018, migration 0021),
+    which exists for exactly this shape: maintenance that must span tenants
+    while holding a narrow policy rather than `BYPASSRLS`. It may SELECT and
+    UPDATE runs and sources and nothing else — it cannot create a run, because
+    queueing belongs to the founder who asked and is counted against their
+    allowance.
+
+    The `db` passed in is used for the **workspace-scoped** work that follows,
+    once the claim has told us which workspace that is.
     """
-    claimed = (await db.execute(text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})).first()
-    if claimed is None:
-        return None
-    await db.commit()
+    # Claimed on the jobs connection: it is the only one that can see a run
+    # before we know whose it is.
+    async with jobs_session() as jobs:
+        claimed = (await jobs.execute(text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})).first()
+        if claimed is None:
+            return None
+        await jobs.commit()
 
     run_id, workspace_id = claimed.id, claimed.workspace_id
     await apply_workspace_scope(db, workspace_id)
@@ -163,20 +173,22 @@ async def process_one_run(db: AsyncSession) -> UUID | None:
     # errors; the run simply never appears to finish.
     await db.commit()
 
-    limit = asyncio.Semaphore(CONCURRENT_SOURCES)
-
-    async def guarded(kind: SourceKind) -> None:
-        # **Its own session.** An `AsyncSession` is not safe to use from several
-        # tasks at once — asyncpg raises on the concurrent use, `gather` with
-        # `return_exceptions=True` swallows it, and every source is left sitting
-        # at `running` forever with nothing in the log. Found exactly that way.
-        async with limit, get_sessionmaker()() as own:
-            await _run_source(own, workspace_id=workspace_id, run_id=run_id, kind=kind, seeds=seeds)
-
-    # `gather` without `return_exceptions` would cancel the siblings of the
-    # first source to raise — the precise opposite of Q56. `_run_source` does
-    # not raise, and this says so a second time rather than relying on it.
-    await asyncio.gather(*(guarded(k) for k in SourceKind), return_exceptions=True)
+    # **Sequential, on the session already scoped to this workspace.**
+    #
+    # The concurrent version — one session per source under a semaphore — is
+    # written and does not work: the sources' updates matched zero rows under
+    # RLS and every source stayed `queued`, with the crash handler firing
+    # correctly and nothing in any log to say the write had been discarded.
+    # That is the third time in this file that a silently-zero-row UPDATE has
+    # looked exactly like work that never ran.
+    #
+    # Sequential is provably correct and six sources is not a throughput
+    # problem: the crawl dominates, and D20 caps it at ten minutes regardless.
+    # Concurrency here is an optimisation, and an optimisation that loses
+    # results is worse than a slow run. `CONCURRENT_SOURCES` stays as the
+    # documented intent for whoever finishes it.
+    for kind in SourceKind:
+        await _run_source(db, workspace_id=workspace_id, run_id=run_id, kind=kind, seeds=seeds)
 
     await apply_workspace_scope(db, workspace_id)
     states = [

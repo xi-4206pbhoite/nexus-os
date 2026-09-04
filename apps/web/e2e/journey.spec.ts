@@ -117,7 +117,11 @@ test('a founder can go from the landing page to their dashboard', async ({ page 
       ? await tokenFromMailApi(MAIL_API, before)
       : verificationToken(before)
     await page.goto(`/verify-email?token=${token}`)
-    await expect(page.getByText(/verified|confirmed|signed in/i)).toBeVisible()
+    // `.first()`: the confirmation page names the state in a heading *and* in
+    // the sentence below it, which is good copy and a strict-mode violation.
+    // Asserting the first match keeps the check about "did verification
+    // succeed" rather than about how many times the page says so.
+    await expect(page.getByText(/verified|confirmed|signed in/i).first()).toBeVisible()
   })
 
   await test.step('sign in', async () => {

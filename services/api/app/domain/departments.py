@@ -27,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.scopes import Department
+from app.retrieval.scoped import apply_workspace_scope
 
 # Always present, never selected. See the module docstring.
 AUTOMATIC = Department.EXECUTIVE
@@ -55,9 +56,7 @@ async def select_departments(
     """
     chosen = {d for d in departments if d is not AUTOMATIC}
 
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
-    )
+    await apply_workspace_scope(db, str(workspace_id))
     await db.execute(
         text("DELETE FROM workspace_department WHERE workspace_id = :w"),
         {"w": str(workspace_id)},
@@ -78,9 +77,7 @@ async def selected_departments(db: AsyncSession, *, workspace_id: UUID) -> froze
     than a stored set they must remember to add `executive` to. Every place that
     forgot would be a missing dashboard.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
-    )
+    await apply_workspace_scope(db, str(workspace_id))
     rows = (
         (
             await db.execute(

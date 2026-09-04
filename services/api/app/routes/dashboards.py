@@ -48,6 +48,7 @@ from app.domain.departments import runs_department, selected_departments
 # dictionaries with one name is how the wrong one gets read.
 from app.domain.question_bank import BY_DEPARTMENT as QUESTIONS_BY_DEPARTMENT
 from app.domain.scopes import Department
+from app.retrieval.scoped import apply_workspace_scope
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 
@@ -177,10 +178,7 @@ async def answered_questions(scope: CurrentScope) -> frozenset[tuple[str, str]]:
     data.
     """
     async with _unscoped_session() as db:
-        await db.execute(
-            text("SELECT set_config('nexus.workspace_id', :w, true)"),
-            {"w": str(scope.workspace_id)},
-        )
+        await apply_workspace_scope(db, str(scope.workspace_id))
         rows = (await db.execute(text(_ANSWERED_SQL))).all()
     return frozenset((r.department, r.question_key) for r in rows)
 

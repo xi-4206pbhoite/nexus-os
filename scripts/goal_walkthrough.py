@@ -332,9 +332,17 @@ if invite_token or True:
     if check("GET /onboarding/persona/chat -> 200", r.status_code == 200, r.text[:200]):
         turn = r.json()
         q = turn["question"]
-        check("it opens with a question that says what it changes",
-              bool(q and q["why"]), str(turn)[:200])
-        print(f"       asks: {q['prompt'] if q else '— finished'}")
+        # `None` when this person finished the interview on an earlier run —
+        # the state is derived from what is stored, which is what makes it
+        # resumable. Asserting a question exists would be asserting they had
+        # never answered.
+        if q is None:
+            print("  \033[36mSKIP\033[0m already interviewed on an earlier run")
+            check("...and it says it is finished", turn["complete"] is True, str(turn)[:200])
+        else:
+            check("it opens with a question that says what it changes",
+                  bool(q["why"]), str(turn)[:200])
+            print(f"       asks: {q['prompt']}")
 
         for key, value in (
             ("stated_purpose", "Keeping deliveries on time"),

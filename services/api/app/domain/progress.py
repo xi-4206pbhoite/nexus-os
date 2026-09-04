@@ -18,6 +18,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.retrieval.scoped import apply_workspace_scope
+
 # The spine. P7 inserts department blocks and P8 documents; the order here is
 # the order a founder walks, and `next_stage` reads it rather than hard-coding
 # transitions, so adding a stage is one edit.
@@ -56,9 +58,7 @@ async def progress_for(db: AsyncSession, *, workspace_id: UUID) -> Progress:
     `None`. Callers would otherwise each invent the same default, and one of
     them would invent it differently.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
-    )
+    await apply_workspace_scope(db, str(workspace_id))
     row = (
         await db.execute(
             text(
@@ -86,9 +86,7 @@ async def complete_stage(db: AsyncSession, *, workspace_id: UUID, stage: str) ->
     would take them, computed in SQL so two concurrent requests cannot both read
     the old value and both write.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
-    )
+    await apply_workspace_scope(db, str(workspace_id))
 
     current = (await progress_for(db, workspace_id=workspace_id)).current
     candidate = next_stage(stage)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,3 +52,36 @@ async def scoped_connection(scope: ScopedSession) -> AsyncIterator[AsyncSession]
                 },
             )
             yield session
+
+
+async def apply_workspace_scope(db: AsyncSession, workspace_id: UUID | str) -> None:
+    """Set the scoping GUC on an existing transaction. **The only place it happens.**
+
+    Every row-level security policy in this database reads
+    `nexus.workspace_id`, so this one line is what turns a connection into a
+    tenant. It was spelled out in ten modules; now they call this, and there is
+    one function to audit instead of ten near-identical strings that could drift
+    apart without anything noticing.
+
+    Separate from `scoped_connection` because the callers have different
+    transaction shapes and that is not a defect to be flattened: registration
+    scopes to a workspace it created moments earlier in the same transaction,
+    the audit writer must join the caller's transaction rather than open its
+    own, and session resolution runs before any workspace is known. A
+    `scoped_connection` that quietly opened a second transaction would break
+    atomicity in exactly the places that most need it.
+
+    Takes `UUID | str` because callers legitimately hold both — a route has the
+    session's `UUID`, a registration has the string it just generated — and
+    making each of them convert would put a `str()` at ten call sites for the
+    benefit of one signature.
+
+    `true` — transaction-local. It dies with the transaction, so it cannot
+    survive onto a pooled connection and silently scope the next request to the
+    previous caller's company. That is the failure this argument prevents, and
+    it would look like data appearing where it does not belong rather than like
+    an error.
+    """
+    await db.execute(
+        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
+    )

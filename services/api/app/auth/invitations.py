@@ -31,6 +31,7 @@ from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.domain.scopes import Department, Role
 from app.logging import get_logger
+from app.retrieval.scoped import apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -297,10 +298,7 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
     # ask. By this line the caller has proved the invitation names them.
     await assert_no_live_membership(db, user_id=user_id, other_than=invitation.workspace_id)
 
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(invitation.workspace_id)},
-    )
+    await apply_workspace_scope(db, str(invitation.workspace_id))
 
     result: CursorResult[Any] = await db.execute(  # type: ignore[assignment]
         text(

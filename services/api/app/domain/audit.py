@@ -37,6 +37,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.retrieval.scoped import apply_workspace_scope
+
 
 class AuditAction(StrEnum):
     """The vocabulary. A closed set, so a typo is an error rather than a row
@@ -84,10 +86,7 @@ async def record(
     scheduled sweep, a system-initiated review. It is never NULL merely because
     the caller did not bother.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(workspace_id)},
-    )
+    await apply_workspace_scope(db, str(workspace_id))
     await db.execute(
         text(
             "INSERT INTO audit_log"

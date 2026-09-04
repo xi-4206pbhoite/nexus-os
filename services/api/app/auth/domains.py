@@ -41,6 +41,7 @@ from app.db import jobs_session
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
+from app.retrieval.scoped import apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -366,10 +367,7 @@ async def create_workspace_for_claim(
     # the GUC already set, which is what the migration's comment intends by
     # "`workspace_id` mirrors `id`" and what this now does.
     workspace_id = uuid4()
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(workspace_id)},
-    )
+    await apply_workspace_scope(db, str(workspace_id))
 
     try:
         await db.execute(

@@ -26,6 +26,7 @@ from app.connectors.domain_check import normalise_domain
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
+from app.retrieval.scoped import apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -144,9 +145,7 @@ async def create_company(
     # `workspace_id` a different uuid from `id`, so every call failed and no
     # workspace could be created through the API at all.
     workspace_id = uuid4()
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
-    )
+    await apply_workspace_scope(db, str(workspace_id))
 
     await db.execute(
         text(

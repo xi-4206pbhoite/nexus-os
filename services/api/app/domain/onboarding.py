@@ -438,6 +438,18 @@ class ResolvedAnswer:
     is_assumption: bool
 
 
+class BlankAnswerError(ValueError):
+    """A question left blank without "not sure yet" being ticked.
+
+    Carries the keys rather than a rendered sentence, so the route decides the
+    wording and the domain stays free of HTTP.
+    """
+
+    def __init__(self, keys: tuple[str, ...]) -> None:
+        self.keys = keys
+        super().__init__(f"answered neither way: {list(keys)}")
+
+
 def resolve_answer(question: Question, *, value: str | None, unsure: bool) -> ResolvedAnswer:
     """Turn what the founder did into what is stored.
 
@@ -449,8 +461,18 @@ def resolve_answer(question: Question, *, value: str | None, unsure: bool) -> Re
 
     `is_assumption` travels with the value so a caller cannot store one and
     forget the other.
+
+    **A blank is not "not sure yet".** This used to treat the two identically,
+    which is how a founder pressed Continue on five empty boxes and got a
+    completed stage and five stated assumptions they had never read. The
+    assumption is only shown beside the checkbox, so ticking it is the only
+    place they can agree to it — and an assumption nobody agreed to is exactly
+    the invented fact this product refuses to ship. Same rule as a department
+    block, arrived at from the other side: there, saying nothing means sending
+    nothing; here, every question is on screen, so saying nothing means ticking
+    the box that says what will be assumed instead.
     """
-    if unsure or value is None or not value.strip():
+    if unsure:
         assumption = question.assumption_when_unsure
         if assumption is None:
             raise ValueError(
@@ -459,6 +481,9 @@ def resolve_answer(question: Question, *, value: str | None, unsure: bool) -> Re
                 "question required."
             )
         return ResolvedAnswer(value=assumption, is_assumption=True)
+
+    if value is None or not value.strip():
+        raise BlankAnswerError((question.key,))
 
     return ResolvedAnswer(value=value.strip(), is_assumption=False)
 

@@ -322,3 +322,42 @@ async def test_superseding_retires_the_earlier_document(
     }
     assert statuses[first_id] == "superseded"
     assert statuses[UUID(second.json()["document_id"])] == "indexed"
+
+
+async def test_an_unreadable_file_is_recorded_but_not_reported_as_created(
+    client: tuple[TestClient, Seed], engine: Engine
+) -> None:
+    """Finding F11. Keeping the file is right; calling it Created is not.
+
+    An unsupported type is refused on the merits, and the row and the bytes are
+    deliberately kept — a file we could not parse is still the customer's file,
+    and discarding it because our parser failed loses something they believe
+    they gave us. What was wrong was the status line: `201 Created` with the
+    refusal buried in the body, so a client checking the status alone read a
+    rejected `.exe` as accepted.
+
+    422 rather than 400, because the request was well formed and every guard
+    above it passed — no consent is a 400 and over the cap is a 413, and both
+    of those were already right. What failed here is the content.
+    """
+    c, seed = client
+    response = _upload(c, content=b"MZ\x90\x00 not a document", filename="evil.exe")
+
+    assert response.status_code == 422, response.text
+
+    # The body is unchanged: the id and the reason are what a client needs in
+    # order to tell somebody what happened.
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["chunks_indexed"] == 0
+    assert body["message"], "the refusal carries no reason"
+
+    # And it really is on record, quarantined rather than dropped.
+    documents = _rows(
+        engine,
+        seed.workspace_id,
+        "SELECT filename, status FROM document WHERE workspace_id = :ws",
+    )
+    assert len(documents) == 1
+    assert documents[0]["filename"] == "evil.exe"
+    assert documents[0]["status"] == "quarantined"

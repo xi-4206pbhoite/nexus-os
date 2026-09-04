@@ -413,3 +413,274 @@ async def test_a_department_the_company_does_not_run_has_no_block(app_db: None) 
             assert caught.value.status_code == 404
         finally:
             await _cleanup(db, user, ws)
+
+
+# ── The founder's answers have to bind (F1, F2) ───────────────
+
+
+def test_a_blank_company_answer_is_not_the_same_as_not_sure_yet() -> None:
+    """Finding F2. Two ways to leave a question, and they mean opposite things.
+
+    The E2E pass pressed Continue with all five boxes empty and nothing ticked.
+    It saved, the stage was marked complete, and five stated assumptions were
+    written that the founder had never read — because `resolve_answer` treated
+    a blank exactly as it treated the checkbox. The Company Brain is assembled
+    from these answers, so an empty set means an empty brain, reached silently
+    and reported as success.
+
+    The assumption is only shown *beside* the checkbox, which makes ticking it
+    the only place anyone can agree to it. A blank is therefore an unfinished
+    form, not consent, and it is refused.
+    """
+    from app.domain.onboarding import BY_KEY, BlankAnswerError, resolve_answer
+
+    question = BY_KEY["what_you_sell"]
+
+    for blank in (None, "", "   ", "\t\n"):
+        with pytest.raises(BlankAnswerError):
+            resolve_answer(question, value=blank, unsure=False)
+
+    # The checkbox still works, and still records an assumption rather than a
+    # null. That property is the whole point of the design and must survive
+    # the fix to the one beside it.
+    stored = resolve_answer(question, value=None, unsure=True)
+    assert stored.is_assumption is True
+    assert stored.value == question.assumption_when_unsure
+
+
+def test_a_required_question_cannot_be_left_out_of_the_request() -> None:
+    """The other half of F2, and the one a browser cannot reach.
+
+    The wizard posts all five keys every time, so the blank case above is what
+    a person hits. Anything else speaking to this endpoint could simply omit
+    `what_you_sell` — the question the bank marks `required` — and the stage
+    would complete without it ever being asked about. A rule enforced only for
+    the client that happens to be well behaved is not enforced.
+    """
+    from app.domain.onboarding import COMPANY_QUESTIONS
+
+    required = [q.key for q in COMPANY_QUESTIONS if q.required]
+    assert required, "no company question is marked required; F2's premise is gone"
+    assert "what_you_sell" in required
+
+
+def test_running_nothing_is_not_the_same_as_having_chosen_nothing() -> None:
+    """Finding F1, at the function that made it possible.
+
+    `selected_departments` always adds the Chief of Staff, so a workspace that
+    stored no rows arrives here as a set of one — and `runs_department` reads a
+    set of one as *"this company has not chosen yet, so nothing is ruled out"*.
+    That default is right for a founder who has not reached the step. It was
+    catastrophic for one who reached it and ticked nothing: the E2E pass
+    selected zero departments, was told the step was complete, and then found
+    all seven directors present and every one of their pages answering 200 —
+    the exact opposite of what the screen had promised.
+
+    The floor in `POST /onboarding/departments` is what keeps the two states
+    tellable apart. This asserts the reading that floor depends on.
+    """
+    from app.domain.departments import AUTOMATIC, runs_department
+    from app.domain.scopes import Department
+
+    nothing_stored = frozenset({AUTOMATIC})
+    assert runs_department(nothing_stored, Department.HR) is True, (
+        "a company that has not chosen yet should still reach everything"
+    )
+
+    chose_two = frozenset({AUTOMATIC, Department.SALES, Department.FINANCE})
+    assert runs_department(chose_two, Department.SALES) is True
+    assert runs_department(chose_two, Department.HR) is False, (
+        "a department the company did not choose is reachable — F1 is back"
+    )
+
+
+def test_every_department_has_a_label_and_none_is_the_raw_key() -> None:
+    """Finding F13. One department read three ways.
+
+    `hr` in the API, "Hr" wherever a client title-cased the key, and "People"
+    in the dashboard nav — three spellings for one thing. The label is now a
+    served fact rather than something each surface derives, and the test that
+    matters is that nothing fell back to `.title()`, which is what produced the
+    middle one.
+    """
+    from app.domain.departments import LABELS, label_for
+    from app.domain.scopes import Department
+
+    missing = [d.value for d in Department if d not in LABELS]
+    assert missing == [], f"these departments have no label: {missing}"
+
+    assert all(label_for(d).strip() for d in Department), "a department has a blank label"
+
+    # Most keys happen to title-case correctly, which is why the two that do
+    # not were the ones that produced three spellings. These are the assertions
+    # with teeth: `hr` must never render as "Hr", and `executive` is the Chief
+    # of Staff everywhere the product speaks to a person.
+    assert label_for(Department.HR) == "People"
+    assert label_for(Department.EXECUTIVE) == "Chief of Staff"
+
+
+@requires_db
+async def test_choosing_no_departments_is_refused(app_db: None) -> None:
+    """Finding F1, at the route.
+
+    The floor `runs_department` now depends on. Zero departments is the one
+    count that does not describe a business: the Chief of Staff consumes the
+    other directors, so a company that chose none leaves it reading nothing —
+    and, before this, was silently granted all seven instead.
+
+    A request naming only `executive` is the same request wearing a hat.
+    `select_departments` filters the automatic department out, so the check has
+    to run on what would actually be stored rather than on what was asked.
+    """
+    from fastapi import HTTPException
+
+    from app.db import _unscoped_session
+    from app.routes.spine import DepartmentsIn, save_departments
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+    scope = _owner_scope(user, ws)
+
+    try:
+        for payload in ([], ["executive"]):
+            with pytest.raises(HTTPException) as refused:
+                await save_departments(DepartmentsIn(departments=payload), scope)
+            assert refused.value.status_code == 400
+            assert "at least one" in str(refused.value.detail).lower()
+
+        # And a real selection still goes through, still advances the stage,
+        # and still binds — the fix must not have turned into a wall.
+        stage = await save_departments(DepartmentsIn(departments=["sales", "finance"]), scope)
+        assert "departments" in stage.completed
+
+        from app.domain.departments import runs_department, selected_departments
+        from app.domain.scopes import Department
+
+        async with _unscoped_session() as db:
+            chosen = await selected_departments(db, workspace_id=ws)
+        assert runs_department(chosen, Department.SALES) is True
+        assert runs_department(chosen, Department.HR) is False, (
+            "an unchosen department is still reachable — F1 is back"
+        )
+    finally:
+        async with _unscoped_session() as db:
+            await _cleanup(db, user, ws)
+
+
+@requires_db
+async def test_the_company_stage_refuses_a_blank_and_an_omission(app_db: None) -> None:
+    """Finding F2, at the route.
+
+    Both ways past a `required` question, closed together: five empty boxes,
+    and a request that simply leaves the key out. The first is what the E2E
+    pass did through the browser; the second is what anything else could do.
+
+    The refusal names the questions rather than saying "some answers are
+    missing", because the way out is a specific checkbox beside a specific
+    question.
+    """
+    from fastapi import HTTPException
+
+    from app.db import _unscoped_session
+    from app.domain.onboarding import COMPANY_QUESTIONS
+    from app.routes.spine import CompanyAnswer, CompanyAnswersIn, save_company_stage
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+    scope = _owner_scope(user, ws)
+
+    try:
+        all_blank = CompanyAnswersIn(
+            answers=[CompanyAnswer(key=q.key, value=None, unsure=False) for q in COMPANY_QUESTIONS]
+        )
+        with pytest.raises(HTTPException) as refused:
+            await save_company_stage(all_blank, scope)
+        assert refused.value.status_code == 400
+
+        without_the_required_one = CompanyAnswersIn(
+            answers=[
+                CompanyAnswer(key=q.key, value="something", unsure=False)
+                for q in COMPANY_QUESTIONS
+                if not q.required
+            ]
+        )
+        with pytest.raises(HTTPException) as omitted:
+            await save_company_stage(without_the_required_one, scope)
+        assert omitted.value.status_code == 400
+
+        # Nothing was written by either refusal. A stage that half-saves leaves
+        # the founder looking at a form that disagrees with the database.
+        from app.domain.progress import progress_for
+
+        async with _unscoped_session() as db:
+            progress = await progress_for(db, workspace_id=ws)
+        assert "company" not in progress.completed
+
+        # Answered properly — one typed, the rest skipped explicitly — it saves.
+        proper = CompanyAnswersIn(
+            answers=[
+                CompanyAnswer(
+                    key=q.key,
+                    value="Freight forwarding" if q.required else None,
+                    unsure=not q.required,
+                )
+                for q in COMPANY_QUESTIONS
+            ]
+        )
+        stage = await save_company_stage(proper, scope)
+        assert "company" in stage.completed
+    finally:
+        async with _unscoped_session() as db:
+            await _cleanup(db, user, ws)
+
+
+@requires_db
+async def test_the_company_stage_hands_back_what_was_stored(app_db: None) -> None:
+    """Finding F13's other half: a route back that is worth taking.
+
+    The stage rail's pills were inert, so a founder past a step could not
+    return to correct an answer. Making them clickable is only half a fix — a
+    form that reopens empty and overwrites on save looks like it worked and
+    quietly discards what was there. So `/onboarding/state` returns the stored
+    answer, and says which of them were assumptions rather than statements.
+    """
+    from app.db import _unscoped_session
+    from app.domain.onboarding import COMPANY_QUESTIONS
+    from app.routes.spine import CompanyAnswer, CompanyAnswersIn, read_state, save_company_stage
+
+    async with _unscoped_session() as db:
+        user, ws = await _workspace(db)
+    scope = _owner_scope(user, ws)
+
+    try:
+        await save_company_stage(
+            CompanyAnswersIn(
+                answers=[
+                    CompanyAnswer(
+                        key=q.key,
+                        value="Refrigerated freight" if q.required else None,
+                        unsure=not q.required,
+                    )
+                    for q in COMPANY_QUESTIONS
+                ]
+            ),
+            scope,
+        )
+
+        state = await read_state(scope)
+        by_key = {q.key: q for q in state.company_questions}
+
+        typed = by_key["what_you_sell"]
+        assert typed.answer == "Refrigerated freight"
+        assert typed.is_assumption is False
+
+        skipped = [q for q in state.company_questions if q.key != "what_you_sell"]
+        assert skipped, "every company question is required; this test asserts nothing"
+        for question in skipped:
+            assert question.answer is not None, f"{question.key} came back empty"
+            assert question.is_assumption is True, (
+                f"{question.key} was skipped and is not marked as an assumption"
+            )
+    finally:
+        async with _unscoped_session() as db:
+            await _cleanup(db, user, ws)

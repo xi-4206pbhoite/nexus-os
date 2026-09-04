@@ -13,9 +13,13 @@ no bad write can deselect the one director that must always exist; migration
 database as well as in this function.
 
 **Three to five is a recommendation, not a rule** (Q23). A company that runs two
-functions should say two. The recommendation lives in the UI copy; nothing here
-enforces a count, because a product that refuses to describe a business
-accurately has chosen its own tidiness over the customer's reality.
+functions should say two, and no ceiling is enforced anywhere, because a product
+that refuses to describe a business accurately has chosen its own tidiness over
+the customer's reality.
+
+**One is a floor, and it is enforced in the route** (`POST
+/onboarding/departments`), not here — this module writes whatever set it is
+given. `runs_department` explains why the floor has to exist at all.
 """
 
 from __future__ import annotations
@@ -38,6 +42,34 @@ SELECTABLE: tuple[Department, ...] = tuple(d for d in Department if d is not AUT
 # numbers rather than each carrying their own copy.
 RECOMMENDED_MIN = 3
 RECOMMENDED_MAX = 5
+
+
+LABELS: dict[Department, str] = {
+    Department.MARKETING: "Marketing",
+    Department.SALES: "Sales",
+    Department.FINANCE: "Finance",
+    Department.OPERATIONS: "Operations",
+    Department.HR: "People",
+    Department.STRATEGY: "Strategy",
+    Department.EXECUTIVE: "Chief of Staff",
+}
+"""How a department is named to a person, in one place.
+
+Finding F13: the same department was `hr` in the API, "Hr" in an onboarding
+checkbox and "People" in the dashboard nav — three spellings for one thing,
+because each surface capitalised or special-cased the enum value itself. The
+enum value is a key and reads like one; a label is a separate fact and it is
+served rather than derived, so a client cannot invent a fourth spelling by
+title-casing.
+
+`Department.HR` keeps its stored value. Renaming a database enum to fix a
+caption would be the tail wagging the dog, and the caption is what people read.
+"""
+
+
+def label_for(department: Department) -> str:
+    """The human name. Never `.title()` — that is what produced "Hr"."""
+    return LABELS[department]
 
 
 async def select_departments(
@@ -105,6 +137,15 @@ def runs_department(chosen: frozenset[Department], department: Department) -> bo
     truthy version, which is wrong the moment the only entry is the automatic
     one. A rule that three routes each spell out is a rule that will drift
     again; the one that already drifted gets to be a function.
+
+    **"Has not chosen yet" is only honest because zero cannot be chosen.**
+    Finding F1: `POST /onboarding/departments` used to accept an empty
+    selection, which stored no rows and so arrived here as a set of one —
+    indistinguishable from a founder who had not reached the step. The result
+    was that ticking nothing granted everything. The route now refuses zero, so
+    a set of one means no selection has ever been stored, and that is the state
+    this default is for. If that floor is ever removed, this function is wrong
+    again and `test_choosing_no_departments_is_refused` is what will say so.
     """
     if len(chosen) <= 1:
         return True

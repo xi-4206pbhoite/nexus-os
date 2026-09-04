@@ -241,3 +241,125 @@ def test_the_maintenance_role_cannot_reach_customer_data() -> None:
                 jobs.rollback()
     finally:
         eng.dispose()
+
+
+# ── One live attempt per person per domain (F12) ──────────────
+
+
+@requires_db
+def test_only_one_claim_per_domain_per_person_can_be_pending(conn: Connection) -> None:
+    """Finding F12, asserted at the database rather than at the route.
+
+    The E2E pass reported four simultaneous `pending` claims on one domain for
+    one account, one per method. Two separate mechanisms in this repository say
+    that cannot happen: `start_claim` expires any live attempt on the same
+    domain before inserting, and migration 0005 carries a partial unique index
+    on `(lower(domain), user_id) WHERE state = 'pending'`.
+
+    Neither was covered by a test, which is the part worth fixing whatever the
+    report saw. A schema that has drifted from its migrations is a documented
+    hazard here — the D23 incident found the Neon instance five migrations
+    ahead of the repository — and *"a run against a drifted database can pass a
+    defect the repository still has"* cuts both ways. This is what says so.
+    """
+    user = uuid4()
+    conn.execute(
+        sa.text("INSERT INTO app_user (id, email) VALUES (:i,:e)"),
+        {"i": str(user), "e": f"dedupe-{user.hex[:8]}@example.com"},
+    )
+    as_user(conn, user)
+
+    domain = f"dedupe-{user.hex[:8]}.om"
+
+    def insert(method: str) -> None:
+        conn.execute(
+            sa.text(
+                "INSERT INTO domain_claim"
+                " (id, domain, user_id, method, strength, challenge_token, state,"
+                "  expires_at)"
+                " VALUES (:i,:d,:u,:m,'strong',:t,'pending',"
+                "         now() + interval '14 days')"
+            ),
+            {
+                "i": str(uuid4()),
+                "d": domain,
+                "u": str(user),
+                "m": method,
+                "t": f"tok-{method}",
+            },
+        )
+
+    insert("dns_txt")
+
+    # A second live attempt on the same domain, by the same person, whatever
+    # method it names. The index does not mention `method` on purpose: offering
+    # a claim per method is reasonable, four valid challenge tokens at once is
+    # not.
+    with pytest.raises(sa.exc.IntegrityError):
+        insert("file")
+
+
+@requires_db
+def test_starting_a_second_claim_replaces_the_first_rather_than_failing(
+    conn: Connection,
+) -> None:
+    """The other side of it: retrying must still work.
+
+    The index above would be a trap on its own — a person who starts a DNS
+    claim and then decides to publish a file instead would hit a constraint
+    violation. `start_claim` expires the live attempt first, so the second
+    method is offered and the first token stops being valid. Both halves are
+    needed, and only together do they mean *"one live attempt, and you may
+    change your mind"*.
+    """
+    user = uuid4()
+    conn.execute(
+        sa.text("INSERT INTO app_user (id, email) VALUES (:i,:e)"),
+        {"i": str(user), "e": f"replace-{user.hex[:8]}@example.com"},
+    )
+    as_user(conn, user)
+
+    domain = f"replace-{user.hex[:8]}.om"
+
+    def start(method: str) -> None:
+        # The same two statements `start_claim` issues, in the same order.
+        conn.execute(
+            sa.text(
+                "UPDATE domain_claim SET state = 'expired'"
+                " WHERE lower(domain) = :d AND user_id = :u AND state = 'pending'"
+            ),
+            {"d": domain, "u": str(user)},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO domain_claim"
+                " (id, domain, user_id, method, strength, challenge_token, state,"
+                "  expires_at)"
+                " VALUES (:i,:d,:u,:m,'strong',:t,'pending',"
+                "         now() + interval '14 days')"
+            ),
+            {
+                "i": str(uuid4()),
+                "d": domain,
+                "u": str(user),
+                "m": method,
+                "t": f"tok-{method}",
+            },
+        )
+
+    for method in ("dns_txt", "file", "email", "manual"):
+        start(method)
+
+    live = (
+        conn.execute(
+            sa.text(
+                "SELECT method FROM domain_claim"
+                " WHERE lower(domain) = :d AND user_id = :u AND state = 'pending'"
+            ),
+            {"d": domain, "u": str(user)},
+        )
+        .scalars()
+        .all()
+    )
+
+    assert live == ["manual"], f"expected one live claim, found {live}"

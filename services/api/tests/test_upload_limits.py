@@ -257,7 +257,10 @@ def test_the_phase_acceptance_three_files_in_one_go() -> None:
         # A one-page PDF whose only content stream draws nothing: it parses, and
         # there is nothing to read, which is exactly what a scan looks like.
         scan = post("scan.pdf", _blank_pdf())
-        assert scan.status_code == 201, scan.text
+        # 422 since finding F11: stored and named, and no longer described as
+        # Created. The three assertions that follow are the point of this step
+        # and are unchanged — it is kept, it is not indexed, and it says why.
+        assert scan.status_code == 422, scan.text
         body = scan.json()
         assert body["status"] != "indexed"
         assert "scan" in body["message"].lower(), body

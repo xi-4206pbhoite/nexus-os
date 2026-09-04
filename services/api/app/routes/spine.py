@@ -26,14 +26,23 @@ from app.domain.department_answers import (
     state_for_answer,
 )
 from app.domain.departments import (
+    AUTOMATIC,
     RECOMMENDED_MAX,
     RECOMMENDED_MIN,
     SELECTABLE,
+    label_for,
     runs_department,
     select_departments,
     selected_departments,
 )
-from app.domain.onboarding import BY_KEY, COMPANY_QUESTIONS, resolve_answer
+from app.domain.onboarding import (
+    BY_KEY,
+    COMPANY_QUESTIONS,
+    BlankAnswerError,
+    Question,
+    ResolvedAnswer,
+    resolve_answer,
+)
 from app.domain.progress import STAGES, complete_stage, progress_for
 from app.domain.question_bank import BY_DEPARTMENT
 from app.domain.scopes import Department
@@ -59,10 +68,28 @@ class CompanyQuestionOut(BaseModel):
     why: str
     required: bool
     assumption_when_unsure: str | None
+    answer: str | None = None
+    """What was stored, so the step can be returned to (Q28).
+
+    The same reasoning as `BlockQuestionOut.answer`, and finding F13 is why it
+    is here too: the stage rail's pills were inert, so there was no route back
+    to a company answer at all — and once there is one, a form that reopens
+    empty and overwrites on save is worse than no route back, because it looks
+    like it worked.
+
+    An assumption comes back as its own text, with `is_assumption` alongside.
+    The founder should see what was recorded on their behalf, and be able to
+    replace it with something they actually know."""
+
+    is_assumption: bool = False
 
 
 class DepartmentOut(BaseModel):
     value: str
+    label: str
+    """How to name it on screen. Served rather than derived — a client that
+    title-cases `value` renders "Hr" (finding F13)."""
+
     selected: bool
 
 
@@ -86,6 +113,32 @@ async def read_state(scope: CurrentScope) -> SpineOut:
         progress = await progress_for(db, workspace_id=scope.workspace_id)
         chosen = await selected_departments(db, workspace_id=scope.workspace_id)
 
+    # The company answers, so a founder returning to the step reads what they
+    # said rather than an empty form that will overwrite it on save. Scoped,
+    # unlike the two reads above, because this is workspace content rather than
+    # workspace progress.
+    async with scoped_connection(scope) as db:
+        stored = {
+            r.question_key: r
+            for r in (
+                await db.execute(
+                    text(
+                        "SELECT question_key, value, is_assumption FROM onboarding_answer"
+                        " WHERE department IS NULL"
+                    )
+                )
+            ).all()
+        }
+
+    # `value` is jsonb and every company answer is stored as a JSON string.
+    # Anything else came from the wider catalogue and is not this step's to
+    # render, so it is reported as unanswered rather than stringified.
+    answers = {
+        key: (row.value, row.is_assumption)
+        for key, row in stored.items()
+        if isinstance(row.value, str)
+    }
+
     return SpineOut(
         stage=StageOut(
             current=progress.current,
@@ -100,12 +153,17 @@ async def read_state(scope: CurrentScope) -> SpineOut:
                 why=q.why,
                 required=q.required,
                 assumption_when_unsure=q.assumption_when_unsure,
+                answer=answers.get(q.key, (None, False))[0],
+                is_assumption=answers.get(q.key, (None, False))[1],
             )
             for q in COMPANY_QUESTIONS
         ],
         # `SELECTABLE` excludes the Chief of Staff, which is automatic (Q24) and
         # must never appear as a checkbox somebody can clear.
-        departments=[DepartmentOut(value=d.value, selected=d in chosen) for d in SELECTABLE],
+        departments=[
+            DepartmentOut(value=d.value, label=label_for(d), selected=d in chosen)
+            for d in SELECTABLE
+        ],
         recommended={"min": RECOMMENDED_MIN, "max": RECOMMENDED_MAX},
     )
 
@@ -128,6 +186,14 @@ async def save_company_stage(payload: CompanyAnswersIn, scope: CurrentScope) -> 
     store a null** — it stores the question's stated assumption instead, flagged
     as one. A null would be indistinguishable from a question nobody reached,
     and those two want different behaviour everywhere downstream.
+
+    **A question the bank marks required has to be answered one way or the
+    other** — with a value, or with "not sure yet" and the assumption it
+    states. Two ways to dodge that were open and both are closed below: leaving
+    the box empty, and leaving the key out of the request altogether. The second
+    is not reachable from the wizard, which always posts all five; it was
+    reachable from anything else that speaks to this endpoint, which is the
+    caller a rule exists for.
     """
     unknown = [a.key for a in payload.answers if a.key not in BY_KEY]
     if unknown:
@@ -135,20 +201,53 @@ async def save_company_stage(payload: CompanyAnswersIn, scope: CurrentScope) -> 
             status.HTTP_400_BAD_REQUEST, f"Unknown question keys: {sorted(unknown)}"
         )
 
+    sent = {a.key for a in payload.answers}
+    absent = [q for q in COMPANY_QUESTIONS if q.required and q.key not in sent]
+    if absent:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "These cannot be left out: " + "; ".join(q.prompt for q in absent),
+        )
+
+    # Resolved in full before anything is written, so a stage that one blank
+    # would reject cannot half-save — the same reason `/onboarding/answers`
+    # validates before it writes.
+    resolved: list[tuple[Question, ResolvedAnswer]] = []
+    blank: list[str] = []
+    for answer in payload.answers:
+        question = BY_KEY[answer.key]
+        try:
+            resolved.append(
+                (question, resolve_answer(question, value=answer.value, unsure=answer.unsure))
+            )
+        except BlankAnswerError:
+            blank.append(question.key)
+
+    if blank:
+        # Finding F2. The question bank marks `what_you_sell` required and
+        # nothing enforced it at either end, so five empty boxes advanced the
+        # stage and the Brain was assembled from nothing. Naming the questions
+        # rather than saying "some answers are missing" matters here: the way
+        # out is a specific checkbox beside a specific question.
+        missing = [BY_KEY[key].prompt for key in blank]
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Answer these, or tick “Not sure yet” to record the stated "
+            f"assumption instead: {'; '.join(missing)}",
+        )
+
     # Stored through the same `store_answer` the wizard uses, so scope tagging
     # at capture (doc 06 §2.5) still happens in exactly one place — and through
     # `resolve_answer`, so "not sure yet" becomes a flagged assumption rather
     # than a null.
     async with scoped_connection(scope) as session:
-        for answer in payload.answers:
-            question = BY_KEY[answer.key]
-            resolved = resolve_answer(question, value=answer.value, unsure=answer.unsure)
+        for question, stored in resolved:
             await store_answer(
                 session,
                 caller=scope,
                 question=question,
-                value=resolved.value,
-                is_assumption=resolved.is_assumption,
+                value=stored.value,
+                is_assumption=stored.is_assumption,
             )
 
     async with _unscoped_session() as db:
@@ -382,14 +481,38 @@ class DepartmentsIn(BaseModel):
 async def save_departments(payload: DepartmentsIn, scope: CurrentScope) -> StageOut:
     """Select the departments, and advance.
 
-    No minimum is enforced. Q23 recommends three to five; a company that runs
-    two functions should be able to say two, and refusing that would make the
-    product's tidiness more important than the customer's reality.
+    **No maximum, and a minimum of one.** Q23 recommends three to five; a
+    company that runs two functions should be able to say two, and refusing that
+    would make the product's tidiness more important than the customer's
+    reality. Zero is the one count that is not a description of a business.
+
+    Finding F1 is why the floor exists. `selected_departments` always adds the
+    Chief of Staff, so a workspace that stored no rows and a workspace that
+    stored none *on purpose* both arrived at `runs_department` as a set of one —
+    and that function reads a set of one as "this company has not chosen yet, so
+    nothing has been ruled out". A founder who ticked nothing was therefore
+    given all seven directors, which is the exact opposite of what the screen
+    they were standing on had just promised them.
+
+    Refusing zero here is what makes the two states tellable apart, so
+    `runs_department`'s default is now true by construction rather than by
+    hope: after this route, a stored selection always has at least one row.
     """
     try:
         chosen = {Department(d) for d in payload.departments}
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown department.") from exc
+
+    # `select_departments` drops the Chief of Staff, so a request naming only it
+    # is a request for nothing — checked after the filter rather than on the raw
+    # list, which would let `["executive"]` through as a count of one.
+    if not {d for d in chosen if d is not AUTOMATIC}:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Choose at least one department. Each one you choose gets a "
+            "director and a dashboard, and the Chief of Staff reads the "
+            "others — with none chosen there is nothing for it to read.",
+        )
 
     async with _unscoped_session() as db:
         await select_departments(db, workspace_id=scope.workspace_id, departments=chosen)

@@ -17,6 +17,8 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import password_reset
 from app.auth.csrf import CSRF_COOKIE_NAME, require_csrf
@@ -68,6 +70,24 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
 
+async def _email_for(db: AsyncSession, user_id: UUID) -> str:
+    """The stored address for a user.
+
+    Read back rather than echoed from the request: `authenticate` matches on a
+    normalised address, so what somebody typed at the login box and what the
+    account actually holds are not guaranteed to be the same string, and the
+    account's own copy is the one worth showing them.
+    """
+    row = (
+        await db.execute(text("SELECT email FROM app_user WHERE id = :u"), {"u": str(user_id)})
+    ).scalar()
+    # A resolved session whose user has been deleted is not a state this
+    # endpoint can meaningfully report, and it must not 500 while signing
+    # somebody out. Empty string renders as absent; every caller is already
+    # holding a valid session.
+    return str(row) if row else ""
+
+
 class WorkspaceSummary(BaseModel):
     workspace_id: UUID
     name: str
@@ -76,6 +96,16 @@ class WorkspaceSummary(BaseModel):
 
 class SessionResponse(BaseModel):
     user_id: UUID
+    email: str
+    """Who this is, in the form they typed it.
+
+    Finding F8: without it `/account` had only the id to render, so the page
+    that promises *"everything below is read from the API"* identified a person
+    by a UUID and their company by another one. It discloses nothing — this
+    endpoint already requires that person's own session, and the address is the
+    one they signed in with.
+    """
+
     workspaces: list[WorkspaceSummary]
     active_workspace_id: UUID | None
 
@@ -348,6 +378,7 @@ async def login(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password") from exc
 
         memberships = await memberships_for_user(db, user_id=user_id)
+        email = await _email_for(db, user_id)
         # Only auto-select when there is no ambiguity. Picking one of several on
         # the user's behalf risks acting in the wrong client's workspace.
         active = memberships[0].workspace_id if len(memberships) == 1 else None
@@ -384,6 +415,7 @@ async def login(
 
     return SessionResponse(
         user_id=user_id,
+        email=email,
         workspaces=[
             WorkspaceSummary(workspace_id=m.workspace_id, name=m.workspace_name, role=m.role.value)
             for m in memberships
@@ -475,6 +507,7 @@ async def session_state(resolved: CurrentSession) -> SessionResponse:
     """
     async with _unscoped_session() as db:
         memberships = await memberships_for_user(db, user_id=resolved.user_id)
+        email = await _email_for(db, resolved.user_id)
 
     # The session's pointer, reported only if it still corresponds to a live
     # membership. A revoked membership must not leave the client believing it has
@@ -485,6 +518,7 @@ async def session_state(resolved: CurrentSession) -> SessionResponse:
 
     return SessionResponse(
         user_id=resolved.user_id,
+        email=email,
         workspaces=[
             WorkspaceSummary(workspace_id=m.workspace_id, name=m.workspace_name, role=m.role.value)
             for m in memberships
@@ -497,9 +531,11 @@ async def session_state(resolved: CurrentSession) -> SessionResponse:
 async def me(scope: CurrentScope) -> SessionResponse:
     async with _unscoped_session() as db:
         memberships = await memberships_for_user(db, user_id=scope.user_id)
+        email = await _email_for(db, scope.user_id)
 
     return SessionResponse(
         user_id=scope.user_id,
+        email=email,
         workspaces=[
             WorkspaceSummary(workspace_id=m.workspace_id, name=m.workspace_name, role=m.role.value)
             for m in memberships

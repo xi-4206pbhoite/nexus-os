@@ -42,7 +42,7 @@ from app.domain.dashboards import (
     unlock_sentence,
 )
 from app.domain.department_answers import BINDING_ONLY_SQL
-from app.domain.departments import runs_department, selected_departments
+from app.domain.departments import label_for, runs_department, selected_departments
 
 # Aliased: `BY_DEPARTMENT` already means the dashboard *offerings* here, and two
 # dictionaries with one name is how the wrong one gets read.
@@ -93,6 +93,10 @@ class DirectorOut(BaseModel):
 
 class DirectorSummary(BaseModel):
     department: str
+    label: str
+    """The department's name for a person, so the nav does not special-case one
+    of them and title-case the rest (finding F13)."""
+
     title: str
     remit: str
     scoreable: bool
@@ -234,6 +238,7 @@ async def list_dashboards(
         directors=[
             DirectorSummary(
                 department=d.department.value,
+                label=label_for(d.department),
                 title=d.title,
                 remit=d.remit,
                 scoreable=d.scoreable,
@@ -252,6 +257,9 @@ class DepartmentSection(BaseModel):
     """One department's slice of the company dashboard."""
 
     department: str
+    label: str
+    """The department's name for a person. See `DirectorSummary.label`."""
+
     title: str
     remit: str
     path: str
@@ -366,6 +374,7 @@ async def company_dashboard(
     sections = [
         DepartmentSection(
             department=d.department.value,
+            label=label_for(d.department),
             title=d.title,
             remit=d.remit,
             path=_path(d.department),

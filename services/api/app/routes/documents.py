@@ -174,6 +174,7 @@ async def upload_document(
     scope: CurrentScope,
     settings: Annotated[Settings, Depends(get_settings)],
     usage: Usage,
+    response: Response,
     file: Annotated[UploadFile, File()],
     consent: Annotated[bool, Form()] = False,
     supersedes_id: Annotated[UUID | None, Form()] = None,
@@ -183,6 +184,14 @@ async def upload_document(
     `consent` must be true, and is a form field rather than an implicit property
     of the request: an upload that consents by virtue of being an upload is not
     a warranty anyone could rely on.
+
+    **201 only when something was created that can be read.** Finding F11: a
+    file we could not parse was recorded, quarantined, and answered
+    `201 Created` with the refusal in the body — so a client checking the
+    status alone read a rejected `.exe` as accepted. Keeping the row and the
+    bytes is right (see `_record` below); calling it Created was not. The
+    neighbouring guards already got this right: no consent is a 400, over the
+    cap is a 413.
     """
     if not consent:
         raise HTTPException(
@@ -240,6 +249,11 @@ async def upload_document(
             supersedes_id=supersedes_id,
         )
         log.info("document.parse_failed", outcome=parsed.outcome.value)
+        # 422 rather than 400: the request was well formed and the guards above
+        # passed. What failed is the content, which is exactly what this status
+        # is for. The body is unchanged — the id and the reason are what a
+        # client needs to show somebody, and the document really is on record.
+        response.status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
         return UploadOut(
             document_id=document_id,
             filename=filename,

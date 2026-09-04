@@ -29,7 +29,8 @@ from app.auth.companies import (
 from app.auth.csrf import require_csrf
 from app.auth.workspaces import find_verified_workspace_for_domain
 from app.db import _unscoped_session
-from app.deps import CurrentSession, require_executive_surface
+from app.deps import CurrentScope, CurrentSession, require_executive_surface
+from app.domain.invitations import may_administer
 from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.domain.registration import JoinRequestState
 from app.domain.scopes import Role
@@ -110,6 +111,58 @@ async def register_company(payload: RegisterCompanyRequest, session: CurrentSess
         await db.commit()
 
     return CompanyOut(workspace_id=created.workspace_id, domain=created.domain)
+
+
+class CurrentCompanyOut(BaseModel):
+    """This caller's company, as a settings screen needs it."""
+
+    workspace_id: UUID
+    name: str
+    domain: str
+    website_url: str | None
+    domain_verified: bool
+    role: str
+    may_administer: bool
+    """Whether this caller may verify the domain and invite people. Served
+    rather than inferred from the role string, so one rule decides it and the
+    UI cannot drift from what the write endpoints will actually allow."""
+
+
+@router.get("/companies/current", response_model=CurrentCompanyOut)
+async def current_company(scope: CurrentScope) -> CurrentCompanyOut:
+    """The company the caller is in.
+
+    Finding F3 is why this exists. Three screens told the user to go to
+    Settings, and the invitation refusal told them Settings has the DNS record
+    to add — but there was no Settings page, in part because nothing served the
+    two facts one would need: which domain this company claims, and whether it
+    is proved. Both were reachable only as a side effect of registering.
+    """
+    async with scoped_connection(scope) as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT name, domain, website_url, domain_verified_at"
+                    "  FROM workspace WHERE id = :w"
+                ),
+                {"w": str(scope.workspace_id)},
+            )
+        ).first()
+
+    if row is None:
+        # The isolation policy filtered it, which means it is not this caller's
+        # workspace. Same answer as one that does not exist.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+
+    return CurrentCompanyOut(
+        workspace_id=scope.workspace_id,
+        name=row.name,
+        domain=row.domain,
+        website_url=row.website_url,
+        domain_verified=row.domain_verified_at is not None,
+        role=scope.role.value,
+        may_administer=may_administer(scope.role),
+    )
 
 
 # ── Join requests (`doc/11` Q8) ───────────────────────────────

@@ -180,7 +180,11 @@ def test_a_scan_with_no_text_layer_says_so(client) -> None:  # type: ignore[no-u
     # A PDF header with no extractable text is the shape a scan takes.
     response = upload(c, content=b"%PDF-1.4\n%empty\n", filename="scan.pdf")
 
-    assert response.status_code == 201
+    # 422, not 201 — finding F11. The row and the bytes are still kept, and the
+    # message is still the point of the test; what changed is that the status
+    # line no longer says "Created" about a document with nothing readable in
+    # it. A client that checks the status alone was reading this as accepted.
+    assert response.status_code == 422
     body = response.json()
     assert body["status"] == "failed"
     assert body["message"], "a failure must always carry a message"
@@ -194,7 +198,10 @@ def test_an_unsupported_type_is_quarantined_rather_than_failed(client) -> None: 
     c, recorded = client
     response = upload(c, content=b"\x00\x01\x02binary", filename="archive.zip")
 
-    assert response.status_code == 201
+    # Finding F11, as above: quarantining it is right, calling it Created was
+    # not. The distinction this test exists for — quarantined rather than
+    # failed — is unaffected and is still asserted below.
+    assert response.status_code == 422
     assert response.json()["message"]
     assert recorded[0]["state"] == "quarantined"
 

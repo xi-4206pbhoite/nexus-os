@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { looksSignedIn } from '@/lib/auth-client'
 
 /** True once the window has scrolled past `threshold` px. */
 export function useScrolled(threshold = 12) {
@@ -115,4 +116,29 @@ export function useInViewOnce<T extends HTMLElement>(amount = 0.4) {
   }, [amount, seen])
 
   return { ref, seen }
+}
+
+/** No cookie change event exists, so there is nothing to subscribe to. */
+const noopSubscribe = () => () => {}
+
+/**
+ * `looksSignedIn`, safe to call during render.
+ *
+ * Finding F5: `AcceptInvitation` read `document.cookie` in its render body, so
+ * the server produced the signed-out branch and the client's first render
+ * wanted the signed-in one. React reported *"Expected server HTML to contain a
+ * matching <button>"*, gave up on the Suspense boundary and switched the whole
+ * subtree to client rendering — on the very first page a new teammate ever
+ * loads, and at the cost of that page's server rendering entirely.
+ *
+ * `useSyncExternalStore` rather than a `mounted` flag, because it is the
+ * version that cannot be got wrong later: React uses the *server* snapshot for
+ * hydration as well, so the first client render matches by construction, and
+ * the real value arrives in the pass immediately after.
+ *
+ * Still only a hint. The cookie is readable and therefore forgeable, and the
+ * API answers 401 regardless of what this says.
+ */
+export function useLooksSignedIn(): boolean {
+  return useSyncExternalStore(noopSubscribe, looksSignedIn, () => false)
 }

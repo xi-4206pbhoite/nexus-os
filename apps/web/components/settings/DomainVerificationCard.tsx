@@ -3,36 +3,55 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { AuthError } from '@/lib/auth-client'
+import {
+  checkDomainClaim,
+  startDomainClaim,
+  type ClaimMethod,
+  type DomainClaim,
+} from '@/lib/settings-client'
 
-type Claim = { claim_id: string; domain: string; instruction: string; state: string }
 type State =
   | { status: 'idle' }
   | { status: 'working' }
-  | { status: 'claimed'; claim: Claim }
+  | { status: 'claimed'; claim: DomainClaim; note: string | null }
   | { status: 'verified' }
   | { status: 'error'; message: string }
 
-async function post(path: string, body?: unknown): Promise<unknown> {
-  const csrf = document.cookie.match(/(?:^|;\s*)nexus_csrf=([^;]*)/)?.[1]
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {}),
-    },
-    body: JSON.stringify(body ?? {}),
-    credentials: 'same-origin',
-    cache: 'no-store',
-  })
-  const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null
-  if (!response.ok) {
-    throw new AuthError(
-      typeof payload?.detail === 'string' ? payload.detail : 'That did not work.',
-      response.status,
-    )
-  }
-  return payload
-}
+/**
+ * The four methods, in the order a person should consider them.
+ *
+ * DNS and file are `strong`; email is `weak` and says so on the card rather
+ * than only in the API's `strength` field, because the consequence of picking
+ * it — the workspace gets flagged for review if a colleague registers the same
+ * domain — is a thing to know *before* choosing, not after.
+ *
+ * `manual` is offered last and honestly: it is a support conversation, not a
+ * check this screen can run.
+ */
+const METHODS: { value: ClaimMethod; label: string; blurb: string }[] = [
+  {
+    value: 'dns_txt',
+    label: 'DNS record',
+    blurb: 'Add a TXT record. The strongest proof, and the usual choice.',
+  },
+  {
+    value: 'file',
+    label: 'File on your site',
+    blurb: 'Publish a file at a known path. As strong as DNS, and often faster.',
+  },
+  {
+    value: 'email',
+    label: 'Email on the domain',
+    blurb:
+      'Only works if your own account is on this domain — a free provider is refused. ' +
+      'Weaker: the workspace is flagged for review if somebody else from the company registers.',
+  },
+  {
+    value: 'manual',
+    label: 'Talk to support',
+    blurb: 'For a domain none of the above can prove. Nothing is checked automatically.',
+  },
+]
 
 /**
  * Proving the domain — after registration, not before it.
@@ -45,15 +64,24 @@ async function post(path: string, body?: unknown): Promise<unknown> {
  * reads as bureaucracy, and the honest answer — that it is what stops somebody
  * else registering your domain and inviting your colleagues — is also the most
  * persuasive one.
+ *
+ * Finding F3: this component was written, tested by nothing, and imported by
+ * nowhere, while three screens and one API refusal all told the user to come
+ * here. It now has a route.
  */
 export function DomainVerificationCard({
   domain,
   verified,
+  mayAdminister,
+  onVerified,
 }: {
   domain: string
   verified: boolean
+  mayAdminister: boolean
+  onVerified?: () => void
 }) {
   const [state, setState] = useState<State>(verified ? { status: 'verified' } : { status: 'idle' })
+  const [method, setMethod] = useState<ClaimMethod>('dns_txt')
 
   if (state.status === 'verified') {
     return (
@@ -75,6 +103,13 @@ export function DomainVerificationCard({
         domain is what stops somebody else registering it and inviting your team.
       </p>
 
+      {!mayAdminister ? (
+        <p className="mt-4 text-[0.95rem] leading-relaxed text-ink-700">
+          An owner or executive does this. Your account can see that it is outstanding and
+          nothing more.
+        </p>
+      ) : null}
+
       {state.status === 'error' ? (
         <div
           role="alert"
@@ -86,64 +121,115 @@ export function DomainVerificationCard({
 
       {state.status === 'claimed' ? (
         <div className="mt-4 flex flex-col gap-3">
-          <p className="text-[0.95rem] text-ink-800">{state.claim.instruction}</p>
-          <Button
-            type="button"
-            className="w-fit"
-            onClick={async () => {
-              const claim = state.claim
-              setState({ status: 'working' })
-              try {
-                const checked = (await post(`/api/domains/${claim.claim_id}/check`)) as Claim
-                // A check that has not found the record yet is not a failure —
-                // DNS propagates on its own schedule, and telling somebody their
-                // record is wrong when it is merely young sends them to edit a
-                // correct record.
-                setState(
-                  checked.state === 'verified'
-                    ? { status: 'verified' }
-                    : {
-                        status: 'error',
-                        message:
-                          'Not visible yet. DNS can take a few minutes to propagate — try again shortly.',
-                      },
-                )
-              } catch (error) {
-                setState({
-                  status: 'error',
-                  message: error instanceof AuthError ? error.message : 'Could not check.',
-                })
-              }
-            }}
-          >
-            Check now
-          </Button>
+          {/* The instruction comes from the API and carries the challenge
+              token. Rendered `whitespace-pre-line` because it is written as
+              lines — a DNS value on the same line as the sentence explaining it
+              is a value somebody will copy wrong. */}
+          <p className="whitespace-pre-line rounded-xl border border-ink-200 bg-white px-4 py-3 font-mono text-[0.8rem] leading-relaxed text-ink-800">
+            {state.claim.instruction}
+          </p>
+
+          {state.note ? <p className="text-[0.95rem] text-ink-800">{state.note}</p> : null}
+
+          {state.claim.method === 'manual' ? null : (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                className="w-fit"
+                onClick={async () => {
+                  const claim = state.claim
+                  setState({ status: 'working' })
+                  try {
+                    const checked = await checkDomainClaim(claim.claim_id)
+                    if (checked.state === 'verified') {
+                      setState({ status: 'verified' })
+                      onVerified?.()
+                      return
+                    }
+                    // A check that has not found the record yet is not a
+                    // failure — DNS propagates on its own schedule, and telling
+                    // somebody their record is wrong when it is merely young
+                    // sends them to edit a correct record. The API's own
+                    // evidence is shown when it has any, because "no TXT
+                    // records found" and "a TXT record that does not match" are
+                    // different problems with different fixes.
+                    setState({
+                      status: 'claimed',
+                      claim: checked,
+                      note:
+                        checked.evidence ??
+                        'Not visible yet. DNS can take a few minutes to propagate — try again shortly.',
+                    })
+                  } catch (error) {
+                    setState({
+                      status: 'error',
+                      message: error instanceof AuthError ? error.message : 'Could not check.',
+                    })
+                  }
+                }}
+              >
+                Check now
+              </Button>
+              <button
+                type="button"
+                className="text-sm font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+                onClick={() => setState({ status: 'idle' })}
+              >
+                Use a different method
+              </button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="mt-4">
-          <Button
-            type="button"
-            disabled={state.status === 'working'}
-            onClick={async () => {
-              setState({ status: 'working' })
-              try {
-                const claim = (await post('/api/domains', {
-                  domain,
-                  method: 'dns_txt',
-                })) as Claim
-                setState({ status: 'claimed', claim })
-              } catch (error) {
-                setState({
-                  status: 'error',
-                  message:
-                    error instanceof AuthError ? error.message : 'Could not start verification.',
-                })
-              }
-            }}
-          >
-            {state.status === 'working' ? 'Working…' : 'Start verification'}
-          </Button>
-        </div>
+        <fieldset className="mt-5" disabled={!mayAdminister || state.status === 'working'}>
+          <legend className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">
+            How you want to prove it
+          </legend>
+          <div className="mt-3 flex flex-col gap-2">
+            {METHODS.map((option) => (
+              <label
+                key={option.value}
+                className="flex items-start gap-2 rounded-xl bg-white/60 px-3 py-2 text-[0.95rem] text-ink-800"
+              >
+                <input
+                  type="radio"
+                  name="domain-method"
+                  value={option.value}
+                  checked={method === option.value}
+                  onChange={() => setMethod(option.value)}
+                  className="mt-1.5"
+                />
+                <span>
+                  <span className="font-medium">{option.label}</span>
+                  <span className="mt-0.5 block text-sm text-ink-600">{option.blurb}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <Button
+              type="button"
+              onClick={async () => {
+                setState({ status: 'working' })
+                try {
+                  const claim = await startDomainClaim(domain, method)
+                  setState({ status: 'claimed', claim, note: null })
+                } catch (error) {
+                  setState({
+                    status: 'error',
+                    message:
+                      error instanceof AuthError
+                        ? error.message
+                        : 'Could not start verification.',
+                  })
+                }
+              }}
+            >
+              {state.status === 'working' ? 'Working…' : 'Start verification'}
+            </Button>
+          </div>
+        </fieldset>
       )}
     </section>
   )

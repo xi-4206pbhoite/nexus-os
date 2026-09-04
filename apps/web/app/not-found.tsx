@@ -17,28 +17,35 @@ export const metadata: Metadata = {
  */
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen flex-col bg-bone-50 px-6 py-8 sm:px-10">
-      <a href="/" className="w-fit" aria-label="NEXUS OS home">
-        <Logo />
-      </a>
+    /* Centred like every other page. Finding F13: this was the one screen whose
+       content sat flush against the left viewport edge, because it had no
+       `mx-auto max-w-*` wrapper while `/account`, `/onboarding`, `/dashboard`
+       and `/settings` all do. A 404 is often the first page somebody sees, and
+       one laid out unlike the rest of the product reads as a different site. */
+    <main className="min-h-screen bg-bone-50">
+      <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-6 py-8 sm:px-10">
+        <a href="/" className="w-fit" aria-label="NEXUS OS home">
+          <Logo />
+        </a>
 
-      <div className="flex flex-1 items-center">
-        <div className="w-full max-w-lg">
-          <p className="font-mono text-2xs uppercase tracking-[0.14em] text-ink-400">
-            404
-          </p>
-          <h1 className="mt-3 font-display text-title font-medium text-ink-900">
-            There&rsquo;s nothing at this address
-          </h1>
-          <p className="mt-3 text-[0.95rem] leading-relaxed text-ink-600">
-            The page may have moved, or the link may be wrong.
-          </p>
+        <div className="flex flex-1 items-center">
+          <div className="w-full max-w-lg">
+            <p className="font-mono text-2xs uppercase tracking-[0.14em] text-ink-400">
+              404
+            </p>
+            <h1 className="mt-3 font-display text-title font-medium text-ink-900">
+              There&rsquo;s nothing at this address
+            </h1>
+            <p className="mt-3 text-[0.95rem] leading-relaxed text-ink-600">
+              The page may have moved, or the link may be wrong.
+            </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button href="/">Back to the start</Button>
-            <Button href="/register" variant="secondary">
-              Create an account
-            </Button>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button href="/">Back to the start</Button>
+              <Button href="/register" variant="secondary">
+                Create an account
+              </Button>
+            </div>
           </div>
         </div>
       </div>

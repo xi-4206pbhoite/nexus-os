@@ -18,6 +18,9 @@ export type WorkspaceSummary = {
 
 export type SessionState = {
   user_id: string
+  /** The address this account signs in with. Optional so a client built against
+   *  an older API renders the id rather than the string "undefined". */
+  email?: string
   workspaces: WorkspaceSummary[]
   active_workspace_id: string | null
 }
@@ -44,10 +47,18 @@ export function csrfToken(): string | null {
  * A hint, never a decision. The cookie is client-visible and therefore
  * client-forgeable; every real answer comes from the API. Using this to gate
  * access rather than to pick an initial view would be the mistake.
+ *
+ * **Never call this during render.** `document.cookie` is empty on the server
+ * and populated on the client, so the two renders pick different branches and
+ * React tears the subtree down — finding F5, which cost `/invitations/accept`
+ * its server rendering on every single load. `useLooksSignedIn` in
+ * `lib/hooks.ts` is the safe way to read it.
  */
 export function looksSignedIn(): boolean {
   return csrfToken() !== null
 }
+
+
 
 export class AuthError extends Error {
   readonly status: number

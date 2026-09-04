@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Button } from '@/components/ui/Button'
 import { AuthError } from '@/lib/auth-client'
+import { Waiting } from '@/components/ui/Waiting'
+import { useSlowLabel } from '@/lib/slow'
 
 type BlockQuestion = {
   key: string
@@ -72,6 +74,16 @@ export function DepartmentBlock({ department }: { department: string }) {
     Object.fromEntries(b.questions.filter((q) => q.answer !== null).map((q) => [q.key, q.answer!]))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Finding F9: saving a department block measured ~10 s against Neon.
+  // The idle label depends on whether this caller's answers bind, so the
+  // block has to be loaded before it is known — `block?.binds` rather than
+  // `block.binds`, because hooks cannot sit behind the early return below.
+  const saveLabel = useSlowLabel(
+    busy,
+    block?.binds === false ? 'Propose answers' : 'Save answers',
+    'Saving…',
+    'Still saving…',
+  )
 
   useEffect(() => {
     let live = true
@@ -99,7 +111,7 @@ export function DepartmentBlock({ department }: { department: string }) {
       </div>
     )
   }
-  if (!block) return <p className="text-ink-500">Loading…</p>
+  if (!block) return <Waiting className="text-ink-500">Loading these questions…</Waiting>
 
   const outstanding = block.questions.filter((q) => !q.answered).length
 
@@ -186,7 +198,7 @@ export function DepartmentBlock({ department }: { department: string }) {
 
         {block.may_answer ? (
           <Button type="submit" size="lg" disabled={busy} icon={busy ? undefined : <ArrowRight />}>
-            {busy ? 'Saving…' : block.binds ? 'Save answers' : 'Propose answers'}
+            {saveLabel}
           </Button>
         ) : null}
       </form>

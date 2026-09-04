@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
-import { AuthError, looksSignedIn } from '@/lib/auth-client'
+import { AuthError } from '@/lib/auth-client'
+import { useLooksSignedIn } from '@/lib/hooks'
 import { acceptInvitation, type AcceptResult } from '@/lib/onboarding-client'
 
 /**
@@ -35,7 +36,13 @@ export function AcceptInvitation() {
   // A hint for choosing what to render first, never a decision — the cookie it
   // reads is client-visible and therefore client-forgeable. The API answers 401
   // regardless of what this says.
-  const signedIn = looksSignedIn()
+  //
+  // Read through the hook, not directly. Calling `looksSignedIn()` here was
+  // finding F5: the cookie is empty on the server and populated on the client,
+  // so the two renders chose different branches, hydration failed on every load
+  // with a token, and React abandoned this Suspense boundary's server rendering
+  // altogether. The security reasoning above was right; the timing was not.
+  const signedIn = useLooksSignedIn()
 
   async function join() {
     setState({ status: 'joining' })

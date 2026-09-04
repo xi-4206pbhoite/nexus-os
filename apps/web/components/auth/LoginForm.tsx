@@ -6,20 +6,42 @@ import { useState } from 'react'
 import { Field } from '@/components/auth/Field'
 import { ArrowRight, Button } from '@/components/ui/Button'
 import { AuthError, login } from '@/lib/auth-client'
+import { useSlowLabel } from '@/lib/slow'
 
 type State = { status: 'idle' } | { status: 'submitting' } | { status: 'error'; message: string }
+
+/**
+ * A `next` worth honouring, or `null`.
+ *
+ * An open redirect is the whole risk here: `?next=https://elsewhere` on a
+ * sign-in form is how a phishing page borrows a real domain's login. So this
+ * takes only a path on this origin, and rejects `//host` and `/\host`, which
+ * browsers resolve as protocol-relative URLs to somewhere else entirely.
+ */
+function safeNext(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/')) return null
+  if (raw.startsWith('//') || raw.startsWith('/\\')) return null
+  return raw
+}
 
 export function LoginForm() {
   const router = useRouter()
   // `/reset-password` redirects here after a successful reset, because setting a
   // new password revokes every live session — including the one that did it.
   // Landing on a sign-in form with no explanation reads as the reset failing.
-  const justReset = useSearchParams().get('reset') === '1'
+  const params = useSearchParams()
+  const justReset = params.get('reset') === '1'
+  // Where to go after signing in. Finding F7: a session that expired mid-visit
+  // dropped the person on a dead page, and sending them to `/account` after
+  // they sign in again loses the page they were actually on.
+  const next = safeNext(params.get('next'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [state, setState] = useState<State>({ status: 'idle' })
 
   const busy = state.status === 'submitting'
+  // Finding F9: sign-in measured ~15 s against Neon behind one static word.
+  const signInLabel = useSlowLabel(busy, 'Sign in', 'Signing in…', 'Still signing you in…')
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -30,7 +52,7 @@ export function LoginForm() {
       await login(email.trim(), password)
       // Replace rather than push: the sign-in page should not sit in history
       // behind an authenticated page, where Back would show a stale form.
-      router.replace('/account')
+      router.replace(next ?? '/account')
     } catch (error) {
       const message =
         error instanceof AuthError
@@ -98,7 +120,7 @@ export function LoginForm() {
         icon={busy ? undefined : <ArrowRight />}
         className="mt-1 w-full"
       >
-        {busy ? 'Signing in…' : 'Sign in'}
+        {signInLabel}
       </Button>
     </form>
   )

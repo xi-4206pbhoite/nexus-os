@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Field } from '@/components/auth/Field'
@@ -11,6 +12,7 @@ import {
   requestToJoin,
   type JoinOffer,
 } from '@/lib/auth-client'
+import { useSlowLabel } from '@/lib/slow'
 
 type State =
   | { status: 'idle' }
@@ -41,6 +43,9 @@ export function RegisterCompanyForm() {
   const [state, setState] = useState<State>({ status: 'idle' })
 
   const busy = state.status === 'submitting'
+  // Finding F9: company creation measured ~8 s against Neon behind one
+  // static word, which reads as a hang on the very first thing a founder does.
+  const createLabel = useSlowLabel(busy, 'Create company', 'Creating…', 'Still creating…')
 
   async function submit(confirmSeparateCompany: boolean) {
     setState({ status: 'submitting' })
@@ -168,9 +173,18 @@ export function RegisterCompanyForm() {
       </div>
       <Field label="Headcount" value={headcount} onChange={setHeadcount} disabled={busy} />
 
+      {/* "In Settings" is now a link, because there is now a Settings
+          (finding F3). This sentence, its twin on the page's intro and the
+          API's own invitation refusal all named a screen that did not exist. */}
       <p className="text-sm text-ink-500">
-        You can start straight away. Proving you own the domain happens in Settings, and is
-        what unlocks inviting colleagues and connecting tools.
+        You can start straight away. Proving you own the domain happens in{' '}
+        <Link
+          href="/settings"
+          className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+        >
+          Settings
+        </Link>
+        , and is what unlocks inviting colleagues and connecting tools.
       </p>
 
       <Button
@@ -180,7 +194,7 @@ export function RegisterCompanyForm() {
         icon={busy ? undefined : <ArrowRight />}
         className="mt-1 w-full"
       >
-        {busy ? 'Creating…' : 'Create company'}
+        {createLabel}
       </Button>
     </form>
   )

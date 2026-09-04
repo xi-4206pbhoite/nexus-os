@@ -68,7 +68,13 @@ export type Invitation = {
 }
 
 export type IssuedInvitation = Invitation & {
-  /** Where to send the invited person. No email is sent yet — see `TeamStep`. */
+  /** Where to send the invited person.
+   *
+   *  **The invitation is emailed too.** This said delivery was not wired up and
+   *  pointed at a `TeamStep` that no longer exists — true when written, stale
+   *  since P3 built the mailer. Still handed back, because an owner who would
+   *  rather paste the link into a chat should be able to: the link alone grants
+   *  nothing, since accepting requires being signed in as the address it names. */
   accept_path: string
 }
 
@@ -100,6 +106,32 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
     throw new AuthError(messageFrom(payload, 'Something went wrong.'), response.status)
   }
   return payload
+}
+
+export type DepartmentOption = {
+  value: string
+  /** How to name it on screen. Optional so a client built against an older API
+   *  falls back to the key rather than rendering "undefined". */
+  label?: string
+  selected: boolean
+}
+
+export type SpineState = {
+  stage: { current: string; completed: string[]; stages: string[]; finished: boolean }
+  company_questions: {
+    key: string
+    prompt: string
+    why: string
+    required: boolean
+    assumption_when_unsure: string | null
+  }[]
+  departments: DepartmentOption[]
+  recommended: { min: number; max: number }
+}
+
+/** Where the founder is, what they have finished, and which departments they run. */
+export async function fetchState(): Promise<SpineState> {
+  return (await call('/api/onboarding/state')) as SpineState
 }
 
 export async function fetchCatalogue(): Promise<Catalogue> {
@@ -158,9 +190,32 @@ export function scopeLabel(scope: string, department: string | null): string {
       return 'Everyone in your workspace'
     case 'L3':
       return department
-        ? `${department[0].toUpperCase()}${department.slice(1)} only — managers and above`
+        ? `${departmentLabel(department)} only — managers and above`
         : 'One department only'
     default:
       return 'Restricted'
   }
+}
+
+/**
+ * How to name a department when the API has not supplied a label.
+ *
+ * Finding F13: the same department read `hr` in the API, "Hr" wherever a client
+ * title-cased the key, and "People" in the dashboard nav. The endpoints that
+ * matter now serve a `label` and this is the fallback for the ones that carry
+ * only a key — `scopeLabel` being the last of them. Kept in step with
+ * `LABELS` in `app/domain/departments.py`, which is the source.
+ */
+const DEPARTMENT_LABELS: Record<string, string> = {
+  marketing: 'Marketing',
+  sales: 'Sales',
+  finance: 'Finance',
+  operations: 'Operations',
+  hr: 'People',
+  strategy: 'Strategy',
+  executive: 'Chief of Staff',
+}
+
+export function departmentLabel(department: string): string {
+  return DEPARTMENT_LABELS[department] ?? department
 }

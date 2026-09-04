@@ -191,26 +191,6 @@ export function AccountPanel() {
         )}
       </section>
 
-      {/* ── What is not built ── */}
-      <section>
-        <h2 className="font-display text-lg font-medium text-ink-900">
-          What is not built yet
-        </h2>
-        <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-600">
-          The seven directors have pages, and every widget on them says what it will show
-          and what it needs — but <strong>none of them is built</strong>, so none carries a
-          number. The Company Brain and the morning brief that would fill them are later
-          milestones, and the scoped retrieval layer they depend on comes first, because
-          adding permissions after the features is how these products leak.
-        </p>
-        <p className="mt-3 text-[0.95rem] text-ink-600">
-          There was a free audit here that needed no account. Phase 2 retired it: it
-          crawled any address a visitor typed, which meant anyone could be handed an
-          analysis of a company they do not own. The same engine now runs inside
-          onboarding, on the domain you have proved you control.
-        </p>
-      </section>
-
       <div>
         <Button
           type="button"

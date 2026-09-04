@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { AuthError } from '@/lib/auth-client'
+import { Waiting } from '@/components/ui/Waiting'
 
 /**
  * The upload stage — the first `<input type="file">` in the product.
@@ -76,7 +77,7 @@ export function DocumentUpload({ onDone }: { onDone?: () => void }) {
   }, [])
 
   if (error) return <p className="text-ink-600">{error}</p>
-  if (!stage) return <p className="font-mono text-sm text-ink-500">Loading…</p>
+  if (!stage) return <Waiting>Loading your documents…</Waiting>
 
   const done = uploads.filter((u) => u.state === 'done').length
   const remaining = stage.max_files_at_onboarding - stage.files_uploaded - done
@@ -128,12 +129,23 @@ export function DocumentUpload({ onDone }: { onDone?: () => void }) {
           u.id !== upload.id
             ? u
             : !response.ok
-              ? { ...u, state: 'failed', reason: payload.detail ?? 'Upload failed.' }
+              ? {
+                  ...u,
+                  state: 'failed',
+                  // `message` as well as `detail`, since finding F11. A file
+                  // that was stored but could not be parsed now answers 422
+                  // rather than 201, and it carries its reason — "Only PDF,
+                  // Word, PowerPoint, Excel, CSV and text files can be read" —
+                  // in `message`. Reading only `detail` would have replaced
+                  // that with a generic sentence at the moment the status
+                  // became honest.
+                  reason: payload.detail ?? payload.message ?? 'Upload failed.',
+                }
               : payload.status === 'indexed'
                 ? { ...u, state: 'done', chunksHeld: payload.chunks_held_for_review }
-                : // A 201 that did not index is still a failure *to the founder*
-                  // — the file is stored and unreadable, and saying "uploaded"
-                  // would be the product losing something it claims to hold.
+                : // Stored and unreadable is still a failure *to the founder*,
+                  // whatever the status says. Saying "uploaded" would be the
+                  // product losing something it claims to hold.
                   { ...u, state: 'failed', reason: payload.message || 'Could not be read.' },
         ),
       )

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { AuthError } from '@/lib/auth-client'
 import { fetchDashboards, type Dashboards } from '@/lib/dashboard-client'
+import { Waiting } from '@/components/ui/Waiting'
 
 /**
  * Sends a person to their own director.
@@ -41,6 +42,14 @@ export function DashboardLanding() {
       })
       .catch((caught: unknown) => {
         if (!live) return
+        // Finding F7. A signed-out visitor used to get the API's own
+        // `"Not authenticated"` rendered verbatim in a box with nothing
+        // clickable in it. The refusal was right; leaving somebody on a dead
+        // page was not, and session expiry is the ordinary way into this state.
+        if (caught instanceof AuthError && (caught.status === 401 || caught.status === 403)) {
+          router.replace('/login?next=/dashboard')
+          return
+        }
         setState({
           status: 'error',
           message:
@@ -55,7 +64,7 @@ export function DashboardLanding() {
   }, [router])
 
   if (state.status === 'loading') {
-    return <p className="font-mono text-sm text-ink-500">Finding your dashboard…</p>
+    return <Waiting>Finding your dashboard…</Waiting>
   }
 
   if (state.status === 'error') {

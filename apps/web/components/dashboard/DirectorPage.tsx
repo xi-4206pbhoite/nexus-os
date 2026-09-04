@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { OfferingTile } from '@/components/dashboard/OfferingTile'
 import { Button } from '@/components/ui/Button'
@@ -12,6 +13,8 @@ import {
   type Dashboards,
   type Director,
 } from '@/lib/dashboard-client'
+import { departmentLabel } from '@/lib/onboarding-client'
+import { Waiting } from '@/components/ui/Waiting'
 
 /**
  * One director's page, inside the global shell doc 05 §1 specifies.
@@ -34,6 +37,7 @@ type State =
   | { status: 'ready'; director: Director; all: Dashboards }
 
 export function DirectorPage({ department }: { department: string }) {
+  const router = useRouter()
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
@@ -46,6 +50,14 @@ export function DirectorPage({ department }: { department: string }) {
       })
       .catch((caught: unknown) => {
         if (!live) return
+        // Finding F7, the same as `DashboardLanding`: 401 is somebody whose
+        // session ended, and the only useful thing to do with them is send them
+        // to sign in — with the page they wanted, so they come back to it.
+        // 404 is a different answer entirely and is rendered, not redirected.
+        if (caught instanceof AuthError && (caught.status === 401 || caught.status === 403)) {
+          router.replace(`/login?next=/dashboard/${encodeURIComponent(department)}`)
+          return
+        }
         setState({
           status: 'error',
           message:
@@ -59,7 +71,7 @@ export function DirectorPage({ department }: { department: string }) {
     return () => {
       live = false
     }
-  }, [department])
+  }, [department, router])
 
   return (
     <main className="min-h-screen bg-bone-50">
@@ -80,6 +92,12 @@ export function DirectorPage({ department }: { department: string }) {
               Workspace setup
             </Link>
             <Link
+              href="/settings"
+              className="text-sm font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+            >
+              Settings
+            </Link>
+            <Link
               href="/account"
               className="text-sm font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
             >
@@ -90,7 +108,7 @@ export function DirectorPage({ department }: { department: string }) {
 
         <div className="py-10">
           {state.status === 'loading' ? (
-            <p className="font-mono text-sm text-ink-500">Loading…</p>
+            <Waiting>Loading this dashboard…</Waiting>
           ) : state.status === 'error' ? (
             <Unavailable message={state.message} code={state.code} />
           ) : (
@@ -121,7 +139,10 @@ function Ready({ director, all }: { director: Director; all: Dashboards }) {
                 : 'border border-ink-100 text-ink-500 hover:border-ink-300 hover:text-ink-800'
             }`}
           >
-            {entry.department === 'hr' ? 'People' : entry.department}
+            {/* Served, not derived. This special-cased `hr` into "People" and
+                left every other department as its raw key — the third of the
+                three spellings finding F13 counted. */}
+            {entry.label ?? departmentLabel(entry.department)}
           </Link>
         ))}
       </nav>

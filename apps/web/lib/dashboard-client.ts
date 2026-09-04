@@ -40,6 +40,9 @@ export type Offering = {
 
 export type DirectorSummary = {
   department: string
+  /** The department's name for a person. Optional so a client built against an
+   *  older API falls back rather than rendering "undefined" in the nav. */
+  label?: string
   title: string
   remit: string
   scoreable: boolean

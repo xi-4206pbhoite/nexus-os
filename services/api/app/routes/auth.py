@@ -51,7 +51,7 @@ from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
 from app.domain import audit
 from app.logging import get_logger
-from app.mail import Email, Mailer, build_mailer
+from app.mail import Email, Mailer, build_mailer, send_safely
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = get_logger(__name__)
@@ -147,7 +147,10 @@ def _send_later(background: BackgroundTasks, mailer: Mailer, message: Email) -> 
     are built on the premise that a caller cannot tell those apart. Identical
     bodies do not help if the clock answers the question.
     """
-    background.add_task(mailer.send, message)
+    # `send_safely`, not `mailer.send`. This runs after the response has gone,
+    # so an exception here is swallowed by the task runner — the user waits for
+    # a message that never arrives and nothing says why.
+    background.add_task(send_safely, mailer, message)
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)

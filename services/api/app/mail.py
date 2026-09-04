@@ -147,3 +147,38 @@ def build_mailer(settings: Settings) -> Mailer:
         f"NEXUS_MAILER_BACKEND={settings.mailer_backend!r} is not a transport. "
         "Use 'file' (local and ci) or 'smtp'."
     )
+
+
+def send_safely(mailer: Mailer, message: Email) -> str | None:
+    """Send, and make a failure **loud in the log and silent to the caller**.
+
+    Both halves are deliberate.
+
+    **Loud in the log**, because this runs in a background task: FastAPI has
+    already returned "check your email" by the time the send happens, and an
+    exception raised here is swallowed by the task runner. The user waits for a
+    message that never arrives, and there is nothing anywhere saying why — which
+    is how a broken SMTP credential goes unnoticed for a week.
+
+    **Silent to the caller**, because the caller is a background task and there
+    is nobody left to tell. Re-raising would only produce an unhandled-task
+    warning that names the framework rather than the problem.
+
+    **The recipient is not logged**, only its domain. Which addresses receive
+    mail from us is the membership fact the whole anti-enumeration design
+    protects, and a log line naming them undoes that for anybody with log
+    access. The domain is enough to tell "our SMTP is down" from "that one
+    corporate mail server rejects us".
+    """
+    domain = message.to.rpartition("@")[2] or "unknown"
+    try:
+        return mailer.send(message)
+    except Exception as exc:
+        log.error(
+            "mail.send_failed",
+            subject=message.subject,
+            recipient_domain=domain,
+            error=type(exc).__name__,
+            detail=str(exc),
+        )
+        return None

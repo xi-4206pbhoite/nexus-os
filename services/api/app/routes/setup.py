@@ -59,7 +59,7 @@ from app.domain.onboarding import (
 from app.domain.scopes import Department, Role, Scope, scope_code, scope_from_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
-from app.mail import build_mailer
+from app.mail import build_mailer, send_safely
 from app.retrieval.scoped import scoped_connection
 
 router = APIRouter(tags=["setup"])
@@ -643,7 +643,8 @@ async def create_invitation(
             )
         ).first()
     background.add_task(
-        build_mailer(settings).send,
+        send_safely,
+        build_mailer(settings),
         build_invitation_email(
             to=email,
             token=issued.token,

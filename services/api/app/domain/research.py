@@ -113,3 +113,46 @@ def state_for(sources: list[SourceState]) -> RunState:
 
 def is_terminal(state: RunState) -> bool:
     return state in (RunState.COMPLETE, RunState.FAILED)
+
+
+# How long a `running` run may go without progress before another worker may
+# take it. Longer than the hard 10-minute crawl cap (D20) so a run that is
+# merely slow is never stolen from a worker that is still working on it —
+# reclaiming a live run would produce two workers writing the same sources.
+STALE_AFTER_MINUTES: Final = 15
+
+CLAIM_SQL: Final = """
+    UPDATE research_run
+       SET state = 'running', started_at = now()
+     WHERE id = (
+        SELECT id FROM research_run
+         WHERE state = 'queued'
+            OR (state = 'running' AND started_at < now() - make_interval(mins => :stale))
+         ORDER BY requested_at
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+     )
+    RETURNING id, workspace_id
+"""
+"""Claim exactly one run, or nothing.
+
+**`FOR UPDATE SKIP LOCKED` is the whole mechanism.** Without `SKIP LOCKED` a
+second worker blocks on the first worker's row and then claims the same run when
+the lock releases; with it, the second worker steps over the locked row and
+takes the next one. That is the difference between scaling the worker out and
+running everything twice.
+
+**The `OR` clause is resumability** (Q50). A worker killed mid-run leaves a row
+in `running` that nothing will ever finish, and a founder watching the progress
+screen would wait forever on a spinner that means nothing. After
+`STALE_AFTER_MINUTES` another worker reclaims it. That window is longer than
+D20's hard 10-minute cap on purpose: a run that is merely slow must never be
+taken from a worker still working on it, because two workers writing the same
+sources is worse than one run finishing late.
+
+Ordered by `requested_at` — the column `research_run` actually has. It is when
+the founder asked, which is also the fair order to serve them in.
+
+Selecting and updating in one statement rather than SELECT-then-UPDATE, because
+between those two statements is exactly where a second worker reads the same row.
+"""

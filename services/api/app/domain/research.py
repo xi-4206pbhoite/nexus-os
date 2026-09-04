@@ -156,3 +156,53 @@ the founder asked, which is also the fair order to serve them in.
 Selecting and updating in one statement rather than SELECT-then-UPDATE, because
 between those two statements is exactly where a second worker reads the same row.
 """
+
+
+# Q55. Three manual re-runs per workspace per month, plus one weekly automatic
+# crawl. The two are counted separately and deliberately: the weekly crawl is
+# ours, and spending a founder's manual allowance on work they did not ask for
+# would mean the product quietly consuming the budget it gave them.
+MANUAL_RUNS_PER_MONTH: Final = 3
+AUTOMATIC_RUNS_PER_WEEK: Final = 1
+
+
+class Trigger(StrEnum):
+    MANUAL = "manual"
+    """A founder pressed the button. Counted against the monthly allowance."""
+
+    AUTOMATIC = "automatic"
+    """The weekly sweep. Counted against its own allowance, never theirs."""
+
+
+def may_start(trigger: Trigger, *, manual_this_month: int, automatic_this_week: int) -> str | None:
+    """`None` when a run may start, otherwise **why not, in words**.
+
+    A refusal that does not say when the allowance resets is a dead end: the
+    founder cannot tell whether to wait an hour or a month, so they either give
+    up or ask support. Both are our failure rather than theirs.
+
+    The counts are passed in rather than read here, so the rule stays a pure
+    function — it can be argued about, and the same numbers drive both the
+    refusal and the "2 of 3 left" the screen shows, which is what stops those
+    two from disagreeing.
+    """
+    if trigger is Trigger.MANUAL:
+        if manual_this_month >= MANUAL_RUNS_PER_MONTH:
+            return (
+                f"You have used all {MANUAL_RUNS_PER_MONTH} research runs for this "
+                "month. The allowance resets at the start of next month, and the "
+                "weekly automatic crawl keeps running in the meantime."
+            )
+        return None
+
+    if automatic_this_week >= AUTOMATIC_RUNS_PER_WEEK:
+        # Not shown to anybody — the sweep is ours. Returned as a sentence
+        # anyway so the log line says what happened rather than "quota".
+        return "The automatic crawl has already run this week."
+    return None
+
+
+def manual_runs_left(manual_this_month: int) -> int:
+    """What the screen shows. Never negative: a workspace whose allowance was
+    lowered mid-month should read `0 left`, not `-2`."""
+    return max(0, MANUAL_RUNS_PER_MONTH - manual_this_month)

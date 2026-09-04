@@ -46,7 +46,17 @@ on the retrieval core, and two items remain:
   other — which is a different question from the index behaviour above, and
   should be a separate, non-blocking job.
 
-**Then P11** (research runs, 12 days) and **P12** (classification, 8 days).
+**P11 has four pieces in**: the source state machine (Q56 — one source failing
+never fails the run), the worker's `FOR UPDATE SKIP LOCKED` claim with reclaim
+of orphaned runs (Q50), the progress API (Q57 — never one spinner), and the
+quota (Q55). What remains is the **multi-page crawler**: seed from
+`workspace.domain` plus `workspace_url`, discover via `sitemap.xml` then internal
+links, 20 pages with a 5-minute soft cap and a hard stop at 10 (D20), every fetch
+through the SSRF guard, pinned and re-validated per hop. Plus JavaScript-shell
+detection (Q51) — `app/domain/research.py` already has the `js_rendered` outcome
+waiting for it.
+
+**Then the rest of P11** and **P12** (classification, 8 days).
 P13's brain already exists but assembles directly from `onboarding_answer`; when
 the retrieval core is finished it should read through the scoped path instead.
 
@@ -59,6 +69,15 @@ the retrieval core is finished it should read through the scoped path instead.
   only be exercised by pushing — the E2E job builds and runs it.
 - **The `.claude/launch.json` change is deliberately unstaged.** It is local
   editor config.
+- **A test that uses `TestClient` must be `sync`, not `async`.** `TestClient`
+  drives its own event loop and an asyncpg connection is bound to the loop that
+  opened it, so a pooled connection left over from an outer loop surfaces as
+  *"attached to a different loop"* from inside Starlette's middleware — an error
+  naming neither the pool nor the fixture. Do async setup in `asyncio.run()` and
+  `await get_engine().dispose()` before the client starts.
+  `tests/test_research_progress.py` shows the shape. Every other TestClient test
+  in the repo is sync for this reason; it cost two attempts to rediscover.
+
 - **`scoped_connection` and the three `apply_*_scope` functions are the only
   places any `nexus.*` GUC is set.** `test_scoping_primitive_containment`
   asserts an empty allowlist; if you need a fourth, that means a new kind of

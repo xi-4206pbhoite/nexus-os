@@ -372,6 +372,42 @@ if invite_token or True:
               {d["department"] for d in after["directors"]} == {"operations"},
               str([d["department"] for d in after["directors"]]))
 
+print("\n\033[1m8. One company dashboard, segregated by who is looking\033[0m")
+if ws_b:
+    owner_view = b.get("/dashboards/company")
+    member_view = m_client.get("/dashboards/company")
+
+    if check("the owner opens /dashboards/company", owner_view.status_code == 200,
+             owner_view.text[:200]) and check(
+             "so does the member — the same URL", member_view.status_code == 200,
+             member_view.text[:200]):
+        o, m = owner_view.json(), member_view.json()
+        o_depts = [d["department"] for d in o["departments"]]
+        m_depts = [d["department"] for d in m["departments"]]
+        print(f"       owner sees:  {o_depts}")
+        print(f"       member sees: {m_depts}")
+
+        # Only when they joined *this* run's company. On a re-run they are in an
+        # earlier one — one account, one company — and the property that matters
+        # is that each sees their own company's departments and no others,
+        # which every check below asserts regardless.
+        if not already:
+            check("both are looking at the same company", o["company"] == m["company"],
+                  f"{o['company']} vs {m['company']}")
+        else:
+            print("  \033[36mSKIP\033[0m the member is in an earlier run's company")
+        check("the owner sees every department the company runs",
+              {"operations", "hr"} <= set(o_depts), str(o_depts))
+        check("the member sees only theirs", m_depts == ["operations"], str(m_depts))
+        check("a department they may not reach is ABSENT, not greyed out",
+              not any(d["department"] == "hr" for d in m["departments"]), str(m_depts))
+        check("the page leads with the department they work in",
+              m["yours"] == ["operations"], str(m["yours"]))
+        check("their own department is marked as theirs",
+              m["departments"][0]["is_yours"] is True, str(m["departments"][0])[:160])
+        check("the brain is reported as available", o["brain_available"] is True, str(o)[:160])
+        check("they are given somewhere to land", bool(m["landing"]), str(m)[:160])
+
 print(f"\n\033[1m{ok} passed, {fail} failed\033[0m")
 for n in notes:
     print(f"  note: {n}")

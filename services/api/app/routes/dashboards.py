@@ -48,7 +48,7 @@ from app.domain.departments import runs_department, selected_departments
 # dictionaries with one name is how the wrong one gets read.
 from app.domain.question_bank import BY_DEPARTMENT as QUESTIONS_BY_DEPARTMENT
 from app.domain.scopes import Department
-from app.retrieval.scoped import apply_workspace_scope
+from app.retrieval.scoped import apply_workspace_scope, scoped_connection
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 
@@ -244,6 +244,132 @@ async def list_dashboards(
         ],
         landing=_path(landing) if landing else None,
         delivered_count=len(DELIVERED),
+    )
+
+
+class DepartmentSection(BaseModel):
+    """One department's slice of the company dashboard."""
+
+    department: str
+    title: str
+    remit: str
+    path: str
+    unanswered_questions: int
+    offerings_planned: int
+    is_yours: bool
+    """Whether this is a department the caller is *in*, as opposed to one they
+    may reach because of their role. An owner reaches all seven; only some are
+    theirs, and the page leads with those."""
+
+
+class CompanyDashboardOut(BaseModel):
+    """**The** company dashboard — one page, the same URL for everybody.
+
+    `doc/05`'s shape is one company view whose *content* changes with who is
+    looking, not seven separate pages behind seven separate permissions. So
+    every member of a workspace opens the same thing and sees their own slice
+    of it, which is what makes "ask your colleague about the finance tile" a
+    conversation rather than a support ticket.
+
+    **Segregation is by omission, not by greying out.** A department the caller
+    may not reach is absent from `departments` entirely — not listed as locked,
+    not counted, not named. Rendering it disabled would disclose that the
+    company runs a department this person was not told about, and how a company
+    is organised is itself a fact about it.
+    """
+
+    company: str
+    brain_available: bool
+    """Whether the company brain has anything in it yet. A flag rather than the
+    brain itself: this page says what exists, and `/onboarding/brain` serves the
+    content to whoever asks for it."""
+
+    departments: list[DepartmentSection]
+    yours: list[str]
+    """The departments this caller is in. The page leads with these."""
+
+    landing: str | None
+
+
+@router.get("/company", response_model=CompanyDashboardOut)
+async def company_dashboard(
+    scope: CurrentScope, chosen: RunningDepartments, answered: AnsweredQuestions
+) -> CompanyDashboardOut:
+    """One dashboard for the company, segregated by department.
+
+    Declared **before** `/{department}` because FastAPI matches in definition
+    order and `company` is a valid department-shaped path segment as far as the
+    router is concerned — the reverse order answers this with "no such
+    department", which is a confusing 404 for a route that exists.
+    """
+    visible = [
+        d for d in DIRECTORS if _reachable(scope, d) and runs_department(chosen, d.department)
+    ]
+    connected = connected_sources()
+
+    def outstanding(department: Department) -> int:
+        return sum(
+            1
+            for q in QUESTIONS_BY_DEPARTMENT.get(department, ())
+            if (department.value, q.key) not in answered
+        )
+
+    async with scoped_connection(scope) as db:
+        name = (
+            await db.execute(
+                text("SELECT name FROM workspace WHERE id = :w"),
+                {"w": str(scope.workspace_id)},
+            )
+        ).scalar_one_or_none()
+        has_brain = bool(
+            (
+                await db.execute(
+                    text(
+                        "SELECT 1 FROM company_brain"
+                        " WHERE workspace_id = :w AND superseded_at IS NULL"
+                        "   AND generated_by <> 'unavailable'"
+                    ),
+                    {"w": str(scope.workspace_id)},
+                )
+            ).first()
+        )
+
+    sections = [
+        DepartmentSection(
+            department=d.department.value,
+            title=d.title,
+            remit=d.remit,
+            path=_path(d.department),
+            unanswered_questions=outstanding(d.department),
+            # Computed through `state_for`, not read off the offering — an
+            # offering has no state of its own; it has a state *given what is
+            # connected*, and hard-coding "planned" here would stop telling the
+            # truth the first time something is delivered.
+            offerings_planned=sum(
+                1 for o in d.offerings if state_for(o, connected=connected).value == "planned"
+            ),
+            is_yours=d.department in scope.departments,
+        )
+        for d in visible
+    ]
+    # Theirs first. Not a sort by name or by size — the department you work in
+    # is the one you came here for.
+    sections.sort(key=lambda s: (not s.is_yours, s.department))
+
+    return CompanyDashboardOut(
+        company=name or "Your company",
+        brain_available=has_brain,
+        departments=sections,
+        yours=[d.value for d in sorted(scope.departments, key=lambda x: x.value)],
+        landing=_path(
+            landing_department(
+                executive_surface=scope.can_see_executive_surface,
+                departments=scope.departments,
+            )
+            or Department.EXECUTIVE
+        )
+        if visible
+        else None,
     )
 
 

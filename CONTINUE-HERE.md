@@ -49,16 +49,18 @@ on the retrieval core, and two items remain:
 **P11 has four pieces in**: the source state machine (Q56 — one source failing
 never fails the run), the worker's `FOR UPDATE SKIP LOCKED` claim with reclaim
 of orphaned runs (Q50), the progress API (Q57 — never one spinner), and the
-quota (Q55). The crawl **planning** is in too — `app/research/site.py` has priority ordering,
-de-duplication, the 20-page budget, the soft/hard caps and JavaScript-shell
-detection, all pure and tested without a network.
+quota (Q55). The crawl is in too: `app/research/site.py` (planning, budgets, shell detection,
+all pure) and `app/research/runner.py` (`crawl_site`, which returns an outcome
+and never raises past its boundary).
 
-What remains is the **orchestration that joins them**: seed from
-`workspace.domain` plus `workspace_url` rows, fetch `sitemap.xml` then fall back
-to links, drive `fetch_page` over `plan()`'s output under `Budget`, and write
-each source's outcome independently. Every fetch already goes through the SSRF
-guard re-validated per hop — that is `fetch_page`, and it should not be
-reimplemented.
+What remains of P11 is **wiring it to the worker**: `POST /research` to enqueue
+against the quota, the worker loop claiming with `CLAIM_SQL` and dispatching the
+six sources concurrently under a cap, writing each `research_source` row
+independently. Everything it needs exists — `may_start`, `CLAIM_SQL`,
+`crawl_site`, `state_for`. The other five sources (audit, competitors, keywords,
+documents, connector) have no implementation yet; **keyword data must stay
+`Locked`** (Q53/D2) and record `unavailable: no_credentials` rather than an
+estimate.
 
 **Then the rest of P11** and **P12** (classification, 8 days).
 P13's brain already exists but assembles directly from `onboarding_answer`; when

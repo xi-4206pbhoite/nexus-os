@@ -192,3 +192,18 @@ def extract_signals(html: str, *, url: str) -> PageSignals:
         inline_style_count=len(soup_with_scripts.find_all("style")),
         text_sample=body_text[:2000],
     )
+
+
+def extract_text(html: str) -> str:
+    """The page's visible text, with markup and script content removed.
+
+    Split out of `extract_signals`, which computed the same thing privately: the
+    crawl needs the text without the twenty other signals, and
+    `looks_javascript_rendered` needs to compare it against the script volume.
+    Two implementations of "the visible text" would disagree about whether a
+    page is a shell, and only one of them would be the one indexed.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return str(soup.get_text(" ", strip=True))

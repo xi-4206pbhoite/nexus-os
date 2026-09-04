@@ -49,12 +49,16 @@ on the retrieval core, and two items remain:
 **P11 has four pieces in**: the source state machine (Q56 — one source failing
 never fails the run), the worker's `FOR UPDATE SKIP LOCKED` claim with reclaim
 of orphaned runs (Q50), the progress API (Q57 — never one spinner), and the
-quota (Q55). What remains is the **multi-page crawler**: seed from
-`workspace.domain` plus `workspace_url`, discover via `sitemap.xml` then internal
-links, 20 pages with a 5-minute soft cap and a hard stop at 10 (D20), every fetch
-through the SSRF guard, pinned and re-validated per hop. Plus JavaScript-shell
-detection (Q51) — `app/domain/research.py` already has the `js_rendered` outcome
-waiting for it.
+quota (Q55). The crawl **planning** is in too — `app/research/site.py` has priority ordering,
+de-duplication, the 20-page budget, the soft/hard caps and JavaScript-shell
+detection, all pure and tested without a network.
+
+What remains is the **orchestration that joins them**: seed from
+`workspace.domain` plus `workspace_url` rows, fetch `sitemap.xml` then fall back
+to links, drive `fetch_page` over `plan()`'s output under `Budget`, and write
+each source's outcome independently. Every fetch already goes through the SSRF
+guard re-validated per hop — that is `fetch_page`, and it should not be
+reimplemented.
 
 **Then the rest of P11** and **P12** (classification, 8 days).
 P13's brain already exists but assembles directly from `onboarding_answer`; when

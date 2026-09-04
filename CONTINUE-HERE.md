@@ -62,9 +62,28 @@ documents, connector) have no implementation yet; **keyword data must stay
 `Locked`** (Q53/D2) and record `unavailable: no_credentials` rather than an
 estimate.
 
+**P12 and P14 are complete**; P13's backend is (brain, precedence, assembly,
+gate rules, `GET /review`) and its **UI** and versioned diffs are not.
+
 **Then the rest of P11** and **P12** (classification, 8 days).
 P13's brain already exists but assembles directly from `onboarding_answer`; when
 the retrieval core is finished it should read through the scoped path instead.
+
+## Three habits that each cost a CI round trip
+
+Written down because each caught me **three times**, which makes them mine
+rather than bad luck.
+
+- **`ruff check .` from `services/api`, with the dot.** Running it on `app` and
+  `tests` skips `migrations/` and `evals/`, and the CI job does not.
+- **A value-list `CHECK` needs a `Mapping` in the same commit.**
+  `tests/test_constraint_enum_parity.py` refuses a constraint with no Python
+  counterpart — it exists because `ck_chunk_review_state` once permitted four
+  values while the code wrote a different four, and the only place they met was
+  an INSERT no test had ever run.
+- **A locator like `getByText(/verified/i)` matches twice.** A page that says
+  something clearly usually says it in a heading *and* a sentence, so an
+  assertion phrased as "the page mentions X" is nearly always too loose.
 
 ## Things that will bite you
 

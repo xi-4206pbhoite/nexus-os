@@ -21,9 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import _unscoped_session, get_engine, get_sessionmaker
+from app.domain.capabilities import Locked, locked_unless_in_scope
 from app.domain.scopes import Department, Role, Scope
 from app.domain.session import ScopedSession
-from app.retrieval.chunks import Locked, count, locked_unless_in_scope, search
+from app.retrieval.chunks import count, search
 from tests.dburl import async_database_url
 
 ASYNC_DB_URL = async_database_url()

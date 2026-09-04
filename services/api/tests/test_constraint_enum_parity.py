@@ -37,6 +37,7 @@ from app.domain.facts import SourceKind as FactSourceKind
 from app.domain.registration import JoinRequestState, ResearchRunState
 from app.domain.research import SourceKind, SourceState
 from app.domain.scopes import Role, Scope, scope_code
+from app.grounding.pipeline import Outcome
 from tests.dburl import database_url
 
 DB_URL = database_url()
@@ -57,6 +58,11 @@ class Mapping:
 
 
 MAPPINGS: tuple[Mapping, ...] = (
+    Mapping(
+        "ck_generation_outcome",
+        "app.grounding.pipeline.Outcome",
+        frozenset(outcome.value for outcome in Outcome),
+    ),
     Mapping(
         "ck_fact_source_kind",
         "app.domain.facts.SourceKind",

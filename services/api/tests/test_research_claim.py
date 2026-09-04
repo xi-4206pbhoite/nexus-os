@@ -89,6 +89,11 @@ async def test_two_workers_never_claim_the_same_run(app_db: None) -> None:
 
     Without `SKIP LOCKED` the second worker would *block* here rather than
     return nothing, and then claim the same run when the lock released.
+
+    Both claims are narrowed to this test's own run (`only`). Without that they
+    take whatever is oldest, which on a shared database is somebody else's — and
+    the assertion then quietly depends on the queue being empty, which is not a
+    state a shared database has. That was finding #26.
     """
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as setup:
@@ -99,13 +104,17 @@ async def test_two_workers_never_claim_the_same_run(app_db: None) -> None:
             async with sessionmaker() as first, sessionmaker() as second:
                 await apply_workspace_scope(first, ws)
                 claimed_first = (
-                    await first.execute(sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})
+                    await first.execute(
+                        sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES, "only": str(run)}
+                    )
                 ).first()
 
                 # The first transaction is still open and holding the row lock.
                 await apply_workspace_scope(second, ws)
                 claimed_second = (
-                    await second.execute(sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})
+                    await second.execute(
+                        sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES, "only": str(run)}
+                    )
                 ).first()
 
                 assert claimed_first is not None, "the first worker must get the run"
@@ -138,10 +147,13 @@ async def test_a_run_orphaned_by_a_worker_restart_is_reclaimed(app_db: None) -> 
     async with sessionmaker() as db:
         user, ws = await _workspace(db)
         try:
-            fresh = await _queue_run(db, ws, state="running", age_mins=1)
+            run = await _queue_run(db, ws, state="running", age_mins=1)
+            fresh = run
             await apply_workspace_scope(db, ws)
             assert (
-                await db.execute(sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})
+                await db.execute(
+                    sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES, "only": str(run)}
+                )
             ).first() is None, (
                 "a run that started a minute ago belongs to a worker that is still "
                 "working on it — reclaiming it would put two workers on the same sources"
@@ -158,7 +170,9 @@ async def test_a_run_orphaned_by_a_worker_restart_is_reclaimed(app_db: None) -> 
 
             await apply_workspace_scope(db, ws)
             reclaimed = (
-                await db.execute(sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})
+                await db.execute(
+                    sa.text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES, "only": str(run)}
+                )
             ).first()
             assert reclaimed is not None and reclaimed.id == fresh, (
                 "a run stalled past the window must be reclaimable, or it waits forever"

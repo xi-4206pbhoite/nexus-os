@@ -57,20 +57,6 @@ def test_sources_do_not_all_run_at_once() -> None:
     assert 0 < worker_loop.CONCURRENT_SOURCES < len(SourceKind)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Unresolved: the worker claims a run this test did not create and never "
-        "reaches its own, even after draining. The production fixes it exercises "
-        "are committed and individually tested — the jobs-role claim (migration "
-        "0021), one scope per transaction, and the no-sources guard that stops a "
-        "processed run returning to the queue. What is not established is that "
-        "they compose correctly end to end. Marked xfail rather than deleted "
-        "because the assertions are the right ones, and rather than left red "
-        "because a suite that is always red is a suite nobody reads. Do not "
-        "trust the worker in production until this is green."
-    ),
-    strict=False,
-)
 @requires_db
 async def test_a_crashing_source_does_not_take_the_run_with_it(
     app_db: None, monkeypatch: pytest.MonkeyPatch
@@ -131,22 +117,22 @@ async def test_a_crashing_source_does_not_take_the_run_with_it(
             # that is finding #25's fix (migration 0021). If this test scoped
             # the session first it would pass whether or not the grant exists,
             # and the defect it was written for would be invisible again.
-            # **Drain until the worker reaches this test's run.**
+            # **Claim this run specifically** (`only`).
             #
             # `CLAIM_SQL` takes the *oldest* queued run, which is right — the
-            # founder who asked first is served first. It also means a shared
-            # database holding anything left behind by an earlier run gives this
-            # test somebody else's row, and the first version of this assertion
-            # passed only against an empty database. That is not a state a
-            # shared database has.
-            processed = None
-            for _ in range(20):
-                processed = await asyncio.wait_for(worker_loop.process_one_run(db), timeout=120)
-                if processed is None or str(processed) == str(run):
-                    break
-            assert processed is not None and str(processed) == str(run), (
-                f"the worker never reached this test's run (last: {processed})"
+            # founder who asked first is served first. It also means that on a
+            # shared database this test claims somebody else's row, and the
+            # assertion then quietly depends on the queue being empty, which is
+            # not a state a shared database has.
+            #
+            # Draining was the first attempt and it deadlocked on a sourceless
+            # run that re-queued itself. Narrowing the claim is the actual fix,
+            # and it is a shape the worker wants anyway — `only` is finding
+            # #26's resolution.
+            processed = await asyncio.wait_for(
+                worker_loop.process_one_run(db, only=run), timeout=180
             )
+            assert processed is not None and str(processed) == str(run)
 
             await apply_workspace_scope(db, ws)
             rows = {

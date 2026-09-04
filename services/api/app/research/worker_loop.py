@@ -125,7 +125,7 @@ async def _run_source(
     await _record(db, workspace_id=workspace_id, run_id=run_id, kind=kind, outcome=outcome)
 
 
-async def process_one_run(db: AsyncSession) -> UUID | None:
+async def process_one_run(db: AsyncSession, *, only: UUID | None = None) -> UUID | None:
     """Claim a run and finish it, or return `None` if there is nothing queued.
 
     **The session must be able to see runs across workspaces**, and the app role
@@ -142,11 +142,21 @@ async def process_one_run(db: AsyncSession) -> UUID | None:
 
     The `db` passed in is used for the **workspace-scoped** work that follows,
     once the claim has told us which workspace that is.
+
+    `only` narrows the claim to one run. The worker never passes it — taking the
+    oldest *is* the queue — but without it a test cannot assert anything on a
+    shared database, because it claims whatever is oldest and that is somebody
+    else's row. Finding #26.
     """
     # Claimed on the jobs connection: it is the only one that can see a run
     # before we know whose it is.
     async with jobs_session() as jobs:
-        claimed = (await jobs.execute(text(CLAIM_SQL), {"stale": STALE_AFTER_MINUTES})).first()
+        claimed = (
+            await jobs.execute(
+                text(CLAIM_SQL),
+                {"stale": STALE_AFTER_MINUTES, "only": str(only) if only else None},
+            )
+        ).first()
         if claimed is None:
             return None
         await jobs.commit()

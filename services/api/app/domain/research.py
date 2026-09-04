@@ -126,8 +126,10 @@ CLAIM_SQL: Final = """
        SET state = 'running', started_at = now()
      WHERE id = (
         SELECT id FROM research_run
-         WHERE state = 'queued'
-            OR (state = 'running' AND started_at < now() - make_interval(mins => :stale))
+         WHERE (CAST(:only AS uuid) IS NULL OR id = CAST(:only AS uuid))
+           AND (state = 'queued'
+                OR (state = 'running'
+                    AND started_at < now() - make_interval(mins => :stale)))
          ORDER BY requested_at
          FOR UPDATE SKIP LOCKED
          LIMIT 1
@@ -152,6 +154,17 @@ sources is worse than one run finishing late.
 
 Ordered by `requested_at` — the column `research_run` actually has. It is when
 the founder asked, which is also the fair order to serve them in.
+
+`:only` is cast on **both** sides of the `OR`. asyncpg infers a parameter's type
+from its use, and a bare `:only IS NULL` gives it nothing to infer from — the
+statement fails to prepare with "could not determine data type", before any row
+is read.
+
+It narrows the claim to one run when given. The worker always passes
+`None` and takes the oldest — that is the queue. It exists because a **test**
+cannot otherwise assert anything: it claims whatever is oldest, which on a
+shared database is somebody else's row, and an assertion about "the run" then
+depends on the queue being empty. That is finding #26, and this is its fix.
 
 Selecting and updating in one statement rather than SELECT-then-UPDATE, because
 between those two statements is exactly where a second worker reads the same row.

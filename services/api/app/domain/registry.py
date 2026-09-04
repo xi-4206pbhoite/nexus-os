@@ -67,7 +67,22 @@ def _from_directors() -> tuple[Capability, ...]:
 REGISTRY: Final[tuple[Capability, ...]] = _from_directors()
 
 
-def scoreable_departments(selected: frozenset[Department]) -> frozenset[Department]:
+# A department may be structurally scoreable and still have nothing to score
+# with. `doc/05` §3.1: **Marketing is not scoreable without GA4**, and the brand
+# and SEO audit scores must not be merged into a Marketing score to manufacture
+# one — they measure the website, not the marketing.
+#
+# Declared as data so the exception is visible next to the rule rather than
+# buried in a branch. An empty tuple means "nothing required beyond the
+# department existing", which is the common case.
+REQUIRED_FOR_SCORING: Final[dict[Department, tuple[Source, ...]]] = {
+    Department.MARKETING: (Source.GA4,),
+}
+
+
+def scoreable_departments(
+    selected: frozenset[Department], *, connected: frozenset[Source] | None = None
+) -> frozenset[Department]:
     """The departments with a director page that count toward the composite.
 
     Both filters matter. A department the company does not run cannot be scored
@@ -85,14 +100,28 @@ def scoreable_departments(selected: frozenset[Department]) -> frozenset[Departme
     Deriving the number is what surfaced that. A literal `6` would have agreed
     with the ADR and disagreed with the product forever.
     """
-    return frozenset(
+    structural = {
         capability.department
         for capability in REGISTRY
         if capability.scoreable and capability.department in selected
+    }
+
+    if connected is None:
+        # No connector information supplied: report what could be scored, which
+        # is what the registry alone can honestly say. Callers that know what is
+        # connected pass it and get the narrower, truer answer.
+        return frozenset(structural)
+
+    return frozenset(
+        department
+        for department in structural
+        if all(source in connected for source in REQUIRED_FOR_SCORING.get(department, ()))
     )
 
 
-def score_denominator(selected: frozenset[Department]) -> int:
+def score_denominator(
+    selected: frozenset[Department], *, connected: frozenset[Source] | None = None
+) -> int:
     """The number under the composite score. **Derived, never written down.**
 
     A company running three departments is scored out of three. Showing them
@@ -103,7 +132,7 @@ def score_denominator(selected: frozenset[Department]) -> int:
     finding #27 for why that is five and not six, and why the honest thing is to
     show the number the product can actually justify.
     """
-    return len(scoreable_departments(selected))
+    return len(scoreable_departments(selected, connected=connected))
 
 
 def completeness(selected: frozenset[Department]) -> tuple[int, int]:

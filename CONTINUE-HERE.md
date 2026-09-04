@@ -32,9 +32,15 @@ on the retrieval core, and two items remain:
   hnsw.iterative_scan` is removed. Two attempts are recorded in the file; the
   missing ingredient is corpus size, not the query plan. Needs tens of thousands
   of rows so the HNSW graph is deep enough for the permission filter to exhaust
-  a traversal — which is the mechanism ADR 0012's 5% comes from. Build it
-  against the local container (`scripts\db-ci.ps1`), not Neon: the insert time
-  is the whole cost.
+  a traversal — which is the mechanism ADR 0012's 5% comes from.
+
+  **Three attempts are recorded in the file, and the third names the real
+  obstacle**: 20k rows generated server-side got past the server's
+  `statement_timeout` and straight into asyncpg's client timeout. Building
+  20k × 1024-dimension vectors across a link to `us-east-1` is minutes per run.
+  Do it against the local container (`scripts/db-ci.ps1`, ~25s versus Neon's
+  ~5min), where the inserts are cheap and no timeout is in the way. It is an
+  hour's work on the right machine and was unreachable from the wrong one.
 - **`[embeddings]` in CI.** ~2 GB of weights per run. Worth it only if the
   question is whether `multilingual-e5-large` places similar text near each
   other — which is a different question from the index behaviour above, and

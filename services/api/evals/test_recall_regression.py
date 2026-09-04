@@ -35,8 +35,18 @@ more interesting failure:
    long traversal for the filter to exhaust, which is the mechanism the 5%
    comes from.
 
-So the corpus, not the plan, is the missing ingredient — tens of thousands of
-rows and minutes of insert time per run. Until that exists this asserts recall
+3. Twenty thousand rows, generated server-side with `generate_series` so the
+   insert is two statements rather than twenty thousand round trips. Lifting
+   the server `statement_timeout` got past one wall and hit the next: asyncpg's
+   own client timeout. Building 20k × 1024-dimension vectors across a link to
+   `us-east-1` is minutes of work per run, and the pool is configured — rightly
+   — for requests rather than fixtures.
+
+So the corpus is the missing ingredient, and **the environment is why it is
+still missing**. This belongs against the local container (`scripts/db-ci.ps1`,
+~25 seconds versus Neon's ~5 minutes), where twenty thousand inserts are cheap
+and no timeout is in the way. Written down rather than attempted a fourth time
+from the wrong machine. Until that exists this asserts recall
 **is** high, and would catch a predicate that silently drops the caller's own
 rows. It is **not** the `iterative_scan` regression guard, and calling it one
 would be the exact failure it was written to prevent: a test that certifies the

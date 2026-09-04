@@ -4,7 +4,7 @@ import { footer, site } from '@/lib/content'
 export function Footer() {
   return (
     <footer className="border-t border-bone-200 bg-bone-50">
-      <div className="shell py-16">
+      <div className="shell-full py-16">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_2fr]">
           <div>
             <Logo />

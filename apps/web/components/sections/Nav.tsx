@@ -44,7 +44,7 @@ export function Nav() {
               : 'border-b border-transparent bg-transparent'
           }`}
         >
-          <div className="shell flex h-[4.5rem] items-center justify-between gap-6">
+          <div className="shell-full flex h-[4.5rem] items-center justify-between gap-6">
             <a href="#top" className="shrink-0" aria-label={`${'NEXUS OS'} home`}>
               <Logo />
             </a>
@@ -121,7 +121,7 @@ export function Nav() {
             transition={{ duration: 0.25 }}
             className="fixed inset-0 z-40 bg-white/95 backdrop-blur-xl lg:hidden"
           >
-            <div className="shell flex h-full flex-col pt-28">
+            <div className="shell-full flex h-full flex-col pt-28">
               <nav className="flex flex-col" aria-label="Mobile">
                 {nav.map((item, i) => (
                   <motion.a

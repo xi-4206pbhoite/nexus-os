@@ -55,6 +55,16 @@
     @apply mx-auto w-full max-w-shell px-[var(--shell-x)];
   }
 
+  /* The header and footer span the viewport rather than the reading column.
+
+     They are the frame, not the content: a nav that stops short of the edge on
+     a wide screen reads as the page having failed to load the rest of itself,
+     and the footer's border-top then draws a line that does not reach either
+     side. The page padding is kept so nothing touches the glass. */
+  .shell-full {
+    @apply w-full px-[var(--shell-x)];
+  }
+
   .eyebrow {
     @apply font-mono text-2xs uppercase tracking-[0.22em] text-steel-500;
   }

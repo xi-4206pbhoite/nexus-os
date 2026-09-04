@@ -51,6 +51,35 @@ def note(text: str) -> None:
     print(f"  \033[33mNOTE\033[0m {text}")
 
 
+def require_file_mailer() -> None:
+    """Stop with a useful sentence if mail is not landing on disk.
+
+    This script reads verification and invitation tokens out of `.mail/`,
+    because proving *delivery* is the point of those steps — reading the token
+    from the database would skip the thing being tested.
+
+    On the `smtp` backend nothing lands there, and the failure would otherwise
+    read as "no verification email arrived": true, unhelpful, and pointing at
+    the product rather than at the configuration.
+    """
+    env = pathlib.Path(__file__).resolve().parents[1] / ".env"
+    backend = ""
+    if env.exists():
+        for line in env.read_text().splitlines():
+            if line.startswith("NEXUS_MAILER_BACKEND="):
+                backend = line.split("=", 1)[1].strip()
+
+    if backend and backend != "file":
+        sys.exit(
+            f"\n  This walkthrough reads tokens from .mail/, and NEXUS_MAILER_BACKEND"
+            f" is '{backend}'.\n"
+            "  Real mail is being sent instead, so nothing lands on disk to read.\n\n"
+            "  Set NEXUS_MAILER_BACKEND=file in .env and restart the API to run this,\n"
+            "  or keep smtp and check the inbox by hand — both are valid, and this\n"
+            "  script only knows how to do the first.\n"
+        )
+
+
 def mail_since(since: float, needle: str = "token=") -> str:
     for _ in range(40):
         for path in sorted(MAIL.glob("*.eml"), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -149,6 +178,8 @@ def build_company(c: httpx.Client, name: str, domain: str, departments: list[str
         check(f"{dept} block answered", r.status_code == 200, r.text[:160])
     return str(ws)
 
+
+require_file_mailer()
 
 print("\n\033[1m1. Two companies, two founders\033[0m")
 founder_a = f"parulbhoite315+acme{stamp}@gmail.com"

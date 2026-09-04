@@ -33,6 +33,7 @@ from app.documents.status import DocumentStatus
 from app.domain.access import Sensitivity
 from app.domain.company_brain import GeneratedBy
 from app.domain.department_answers import AnswerState
+from app.domain.facts import SourceKind as FactSourceKind
 from app.domain.registration import JoinRequestState, ResearchRunState
 from app.domain.research import SourceKind, SourceState
 from app.domain.scopes import Role, Scope, scope_code
@@ -56,6 +57,11 @@ class Mapping:
 
 
 MAPPINGS: tuple[Mapping, ...] = (
+    Mapping(
+        "ck_fact_source_kind",
+        "app.domain.facts.SourceKind",
+        frozenset(kind.value for kind in FactSourceKind),
+    ),
     Mapping(
         "ck_research_source_kind",
         "app.domain.research.SourceKind",

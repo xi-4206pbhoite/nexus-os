@@ -1,0 +1,214 @@
+"""The only reader of chunk content. One function, and it takes a `ScopedSession`.
+
+`ARCHITECTURE-LLD.md` §3.1, and I2/I3: **the permission predicate is part of the
+query**, not a filter applied to its results. The difference is everything —
+filtering afterwards means the database returned rows the caller may not see,
+and every count, every `LIMIT`, every "no results" message computed before the
+filter has already leaked their existence.
+
+**No identity argument.** These functions cannot be asked to read "as" somebody:
+the only way to say who is asking is to pass the `ScopedSession` the request was
+authenticated into. A `user_id` parameter is exactly the shape that lets a bug
+two layers up become a cross-tenant read, so it does not exist.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Final
+from uuid import UUID
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.domain.scopes import Department, Scope
+from app.domain.session import ScopedSession
+
+# `review_state` is checked here as well as in the predicate below because a
+# chunk still waiting for review is not yet a workspace fact — the review gate
+# exists to stop unconfirmed content being retrieved as though it were.
+READABLE_STATES: Final = ("auto_approved", "approved")
+
+# The predicate, spelled once. `ARCHITECTURE-LLD.md` §3.1.
+#
+# `is_dept_aggregate` is part of it rather than checked afterwards, which is why
+# it is a column: a restricted Contributor may read their department's rows but
+# not the roll-ups computed across them, and "read then hide" would already have
+# put the aggregate in memory next to the response.
+# `noqa: S608` sits on the queries below because `PREDICATE` is interpolated
+# into them. It is a module constant, never caller input, and every value it
+# compares against is a bound parameter — the interpolation exists so the
+# predicate is written **once** and cannot drift between the read and the count,
+# which is the exact defect that turns a count into an existence oracle.
+PREDICATE: Final = """
+      scope IN ('L1','L2')
+   OR (scope = 'L3' AND department && :depts
+                    AND NOT (:restricted AND is_dept_aggregate))
+   OR (scope = 'L4' AND id = ANY(:named_l4))
+   OR (scope = 'L5' AND owner_user_id = :uid)
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class Passage:
+    """A chunk the caller may read, with enough to cite it.
+
+    Citations inherit permissions by construction: a passage exists only because
+    it came back through the predicate, so there is no path by which a citation
+    the caller cannot open reaches them.
+    """
+
+    id: UUID
+    content: str
+    document_id: UUID
+    source_page: int | None
+    source_label: str | None
+
+
+def _params(scope: ScopedSession, extra: dict[str, object]) -> dict[str, object]:
+    return {
+        "depts": [d.value for d in scope.departments],
+        "restricted": scope.contributor_restricted,
+        "named_l4": [str(i) for i in scope.named_l4_item_ids],
+        "uid": str(scope.user_id),
+        **extra,
+    }
+
+
+async def search(
+    db: AsyncSession,
+    scope: ScopedSession,
+    *,
+    embedding: list[float],
+    limit: int = 10,
+) -> list[Passage]:
+    """Nearest chunks this caller may read. The vector path.
+
+    **`SET LOCAL hnsw.iterative_scan` is not optional** (ADR 0012). Measured, not
+    assumed: a plain HNSW index with the permission predicate as an ordinary
+    `WHERE` returns **5% recall** at the selectivity of a Contributor reading
+    their own rows. Raising `ef_search` looks like the fix and is not — it
+    rescues a department-sized filter and leaves narrow ones broken.
+
+    `SET LOCAL` rather than `SET`: it dies with the transaction, so it cannot
+    leak onto a pooled connection and change how the next request's query plans.
+    """
+    await db.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
+
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, content, document_id, source_page, source_label"  # noqa: S608
+                "  FROM chunk"
+                " WHERE workspace_id = :ws"
+                "   AND review_state = ANY(:states)"
+                # `PREDICATE` is a module constant, not caller input — every
+                # value in it is a bound parameter. Interpolated so the
+                # predicate is written once and cannot drift between the read
+                # and the count, which is the defect this file exists to
+                # prevent.
+                f"  AND ({PREDICATE})"
+                " ORDER BY embedding <=> CAST(:q AS vector)"
+                " LIMIT :k"
+            ),
+            _params(
+                scope,
+                {
+                    "ws": str(scope.workspace_id),
+                    "states": list(READABLE_STATES),
+                    "q": str(embedding),
+                    "k": limit,
+                },
+            ),
+        )
+    ).all()
+
+    return [
+        Passage(
+            id=row.id,
+            content=row.content,
+            document_id=row.document_id,
+            source_page=row.source_page,
+            source_label=row.source_label,
+        )
+        for row in rows
+    ]
+
+
+async def count(db: AsyncSession, scope: ScopedSession) -> int:
+    """How many chunks this caller may read. The relational path.
+
+    A count is a disclosure. "There are 47 documents you cannot see" tells you
+    the company has 47 documents, so this counts **through the same predicate**
+    rather than counting everything and subtracting — which is the shape that
+    turns a count into an oracle.
+    """
+    return int(
+        (
+            await db.execute(
+                text(
+                    "SELECT count(*) FROM chunk"  # noqa: S608
+                    " WHERE workspace_id = :ws"
+                    "   AND review_state = ANY(:states)"
+                    f"  AND ({PREDICATE})"
+                ),
+                _params(scope, {"ws": str(scope.workspace_id), "states": list(READABLE_STATES)}),
+            )
+        ).scalar_one()
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Locked:
+    """A capability the caller cannot use, and **why** — not a filtered-out row.
+
+    `ARCHITECTURE-LLD.md` §3.2: a calculator whose inputs are not all inside the
+    caller's scope returns this rather than computing over what it can see. The
+    distinction matters because a number computed from a subset is *wrong* while
+    looking right, and there is nothing on the screen to say so.
+
+    It names what would unlock it, because "you cannot see this" that does not
+    say what would change it is a dead end the user cannot act on.
+    """
+
+    capability: str
+    required_source: str | None = None
+    required_role: str | None = None
+
+    @property
+    def reason(self) -> str:
+        if self.required_role:
+            return f"{self.capability} needs the {self.required_role} role."
+        if self.required_source:
+            return f"{self.capability} needs {self.required_source}."
+        return f"{self.capability} is not available to you."
+
+
+def locked_unless_in_scope(
+    scope: ScopedSession,
+    *,
+    capability: str,
+    needs: Scope,
+    department: Department | None = None,
+) -> Locked | None:
+    """`None` when the caller may compute this, `Locked` when they may not.
+
+    **Scope level alone is not the test**, and assuming it was is a mistake this
+    function made in its first draft. A Contributor's `max_scope` is L3 — the
+    same as an Owner's — because the levels say what *kind* of thing a role may
+    see, not *which* things. What separates them is which departments they hold
+    and whether the executive surface is theirs, so both are checked here.
+
+    Caught by an eval spec that expected a Contributor to be locked out of a
+    Finance calculation and found them waved through.
+    """
+    if not scope.may_reach_scope(needs):
+        return Locked(capability=capability, required_role=f"{needs.name.lower()} access")
+
+    if needs is Scope.L4_RESTRICTED and not scope.can_see_executive_surface:
+        return Locked(capability=capability, required_role="Owner or Executive")
+
+    if department is not None and department not in scope.departments:
+        return Locked(capability=capability, required_role=f"the {department.value} department")
+
+    return None

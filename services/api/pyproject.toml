@@ -146,7 +146,7 @@ ignore_missing_imports = true
 # ─────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "evals"]
 filterwarnings = [
   "error",
   # `starlette` 1.6.0's TestClient imports `anyio.abc.BlockingPortal`, which

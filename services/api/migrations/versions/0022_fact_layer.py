@@ -32,8 +32,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid, primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("workspace_id", sa.Uuid, nullable=False),
         sa.Column("version", sa.Integer, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("created_by_user_id", sa.Uuid),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspace.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("workspace_id", "version", name="uq_brain_version"),
@@ -57,8 +58,9 @@ def upgrade() -> None:
         sa.Column("confirmed_by_user_id", sa.Uuid),
         sa.Column("confirmed_at", sa.DateTime(timezone=True)),
         sa.Column("superseded_by_id", sa.Uuid),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspace.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["brain_version_id"], ["brain_version.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["superseded_by_id"], ["fact.id"], ondelete="SET NULL"),

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from app.documents.classify import ClassificationInput, classify_chunk
 from app.documents.rules import CONFIDENT, propose
 from app.domain.access import Sensitivity
@@ -120,12 +122,20 @@ CORPUS: tuple[Labelled, ...] = (
 )
 
 
-def test_precision_and_recall_are_reported_per_department() -> None:
-    """The measurement. Printed, so a regression is visible as a number moving
-    rather than only as a failing assertion."""
+def test_precision_and_recall_are_reported_per_department(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The measurement, written to the test output.
+
+    `noqa: T201` on the prints: this is the one place a `print` is the product
+    rather than a leftover. `doc/12` P12 asks for precision and recall *reported
+    in the test output*, because a threshold nobody can see the effect of is a
+    threshold nobody can argue with — and a regression should be visible as a
+    number moving, not only as a failing assertion.
+    """
     labelled = [s for s in CORPUS if s.department is not None and not s.sensitive]
 
-    print("\n  department   precision  recall   (n)")
+    print("\n  department   precision  recall   (n)")  # noqa: T201
     total_correct = 0
     for department in Department:
         expected = [s for s in labelled if s.department is department]
@@ -143,10 +153,12 @@ def test_precision_and_recall_are_reported_per_department() -> None:
         precision = true_positive / len(predicted) if predicted else 0.0
         recall = true_positive / len(expected)
         total_correct += true_positive
-        print(f"  {department.value:12} {precision:8.2f}  {recall:6.2f}   ({len(expected)})")
+        print(  # noqa: T201
+            f"  {department.value:12} {precision:8.2f}  {recall:6.2f}   ({len(expected)})"
+        )
 
     overall = total_correct / len(labelled)
-    print(f"  overall recall at confidence >= {CONFIDENT}: {overall:.2f}")
+    print(f"  overall recall at confidence >= {CONFIDENT}: {overall:.2f}")  # noqa: T201
 
     # Deliberately modest. A high bar on forty-two hand-written samples would be
     # measuring how well the samples match the vocabulary I wrote, which is not

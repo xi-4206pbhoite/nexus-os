@@ -41,7 +41,7 @@ from app.db import jobs_session
 from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.logging import get_logger
-from app.retrieval.scoped import apply_workspace_scope
+from app.retrieval.scoped import apply_user_scope, apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -92,7 +92,7 @@ async def _scope_to_user(db: AsyncSession, user_id: UUID) -> None:
     claim. That is the safe direction to fail and still a bug, so it is set at
     the two doors into this module rather than remembered per query.
     """
-    await db.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user_id)})
+    await apply_user_scope(db, user_id)
 
 
 async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, method: Method) -> Claim:

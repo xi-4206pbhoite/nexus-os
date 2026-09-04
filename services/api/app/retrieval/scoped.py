@@ -85,3 +85,32 @@ async def apply_workspace_scope(db: AsyncSession, workspace_id: UUID | str) -> N
     await db.execute(
         text("SELECT set_config('nexus.workspace_id', :w, true)"), {"w": str(workspace_id)}
     )
+
+
+async def apply_user_scope(db: AsyncSession, user_id: UUID | str) -> None:
+    """Set `nexus.user_id`. The second of the three scoping GUCs.
+
+    Distinct from the workspace one because it answers a different question and
+    guards different policies: `membership` and `user_session` are scoped to a
+    *person*, and they have to be readable before any workspace is known — that
+    is how a session is resolved into a workspace in the first place.
+
+    It lived in four modules, which is how three near-identical strings become
+    four that disagree. Same reasoning as `apply_workspace_scope`, same
+    transaction-local `true` for the same reason: a GUC that survives onto a
+    pooled connection scopes the next request to the previous caller.
+    """
+    await db.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user_id)})
+
+
+async def apply_invitation_token_scope(db: AsyncSession, token_hash: str) -> None:
+    """Set `nexus.invitation_token_hash`. The third, and the narrowest.
+
+    An invitation is accepted by somebody who is in **no** workspace yet and may
+    not read the invitation table at all — so the policy grants them exactly the
+    row whose token they are holding, and nothing else. The GUC is the hash, not
+    the token: the database never sees the secret, only proof of it.
+    """
+    await db.execute(
+        text("SELECT set_config('nexus.invitation_token_hash', :h, true)"), {"h": token_hash}
+    )

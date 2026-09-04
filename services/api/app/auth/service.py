@@ -28,6 +28,7 @@ from app.auth.tokens import hash_token, new_token
 from app.config import get_settings
 from app.domain.scopes import Department, Role
 from app.domain.session import ScopedSession
+from app.retrieval.scoped import apply_user_scope
 
 
 class AuthError(Exception):
@@ -264,7 +265,7 @@ async def memberships_for_user(db: AsyncSession, *, user_id: UUID) -> list[Membe
     `nexus.user_id` must be set on this connection. It discloses only the
     caller's own memberships — never another person's.
     """
-    await db.execute(text("SELECT set_config('nexus.user_id', :uid, true)"), {"uid": str(user_id)})
+    await apply_user_scope(db, user_id)
     rows = (
         await db.execute(
             text(

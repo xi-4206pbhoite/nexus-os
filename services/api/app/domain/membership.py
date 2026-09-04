@@ -28,6 +28,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.retrieval.scoped import apply_user_scope
+
 
 class UserAlreadyInAWorkspaceError(Exception):
     """Raised when a second company would be joined or created.
@@ -64,7 +66,7 @@ async def live_membership_count(
 
     `revoked_at IS NULL` is the whole meaning of "live". See the class docstring.
     """
-    await db.execute(text("SELECT set_config('nexus.user_id', :uid, true)"), {"uid": str(user_id)})
+    await apply_user_scope(db, user_id)
     count = (
         await db.execute(
             text(

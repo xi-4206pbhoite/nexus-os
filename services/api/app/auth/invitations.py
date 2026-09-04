@@ -31,7 +31,7 @@ from app.domain import audit
 from app.domain.membership import assert_no_live_membership
 from app.domain.scopes import Department, Role
 from app.logging import get_logger
-from app.retrieval.scoped import apply_workspace_scope
+from app.retrieval.scoped import apply_invitation_token_scope, apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -246,10 +246,7 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
 
     Note the signature once more: `token` and `user_id`. Nothing about the role.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.invitation_token_hash', :h, true)"),
-        {"h": hash_token(token)},
-    )
+    await apply_invitation_token_scope(db, hash_token(token))
 
     row = (
         (

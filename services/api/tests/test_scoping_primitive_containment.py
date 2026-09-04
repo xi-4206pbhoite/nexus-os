@@ -39,17 +39,14 @@ SANCTIONED: Final = {"retrieval/scoped.py"}
 # Everywhere that currently does and should not. **This list may only shrink.**
 # Each entry is a module to route through `scoped_connection`, and the comment
 # is why it has not been yet.
-ALLOWED_FOR_NOW: Final = {
-    # Each of these builds the statement differently enough that the mechanical
-    # pass could not reach it — a second site inside a branch, or a literal
-    # spelled with different whitespace. They are hand work, and hand work on
-    # the line that decides tenancy is not something to rush.
-    "auth/domains.py",  # a second site, inside a claim-check branch
-    "auth/invitations.py",  # a second site, in the accept path
-    "auth/service.py",  # registration and login, both pre-workspace
-    "domain/membership.py",  # membership lookup during session resolution
-    "routes/companies.py",  # spans creating the workspace and then scoping to it
-}
+ALLOWED_FOR_NOW: Final[set[str]] = set()
+"""**Empty, and it should stay that way.**
+
+Ten modules once spelled these statements out. They now call
+`apply_workspace_scope`, `apply_user_scope` or `apply_invitation_token_scope` in
+`app/retrieval/scoped.py`, so there is one place to audit for each of the three
+GUCs instead of ten near-identical strings that could drift apart with nothing
+noticing."""
 
 PATTERN: Final = re.compile(r"""set_config\(\s*['"]nexus\.""")
 
@@ -80,12 +77,13 @@ def test_no_new_module_sets_the_scoping_guc() -> None:
 
 
 def test_the_allowlist_only_shrinks() -> None:
-    """A stale allowlist is worse than none: it reads as a decision when it is
-    a leftover. If you have consolidated a module, delete its entry and lower
-    this number — that is the whole ceremony."""
+    """The allowlist reached zero. A stale entry is worse than none — it reads
+    as a decision when it is a leftover — so this fails on both a module that
+    still sets a GUC and an entry that no longer needs to be listed."""
     remaining = _sites() & ALLOWED_FOR_NOW
-    assert len(remaining) <= 5, (
-        f"{len(remaining)} modules still set the GUC directly; the allowlist may only shrink."
+    assert not remaining, (
+        f"{len(remaining)} modules still set a scoping GUC directly. The allowlist is "
+        "empty and is meant to stay empty."
     )
     assert not (ALLOWED_FOR_NOW - _sites()), (
         "These are on the allowlist but no longer set the GUC — delete them from it:\n  "

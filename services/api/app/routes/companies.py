@@ -35,7 +35,7 @@ from app.domain.registration import JoinRequestState
 from app.domain.scopes import Role
 from app.domain.session import ScopedSession
 from app.logging import get_logger
-from app.retrieval.scoped import scoped_connection
+from app.retrieval.scoped import apply_user_scope, scoped_connection
 
 router = APIRouter(tags=["companies"])
 log = get_logger(__name__)
@@ -149,9 +149,7 @@ async def request_to_join(payload: JoinRequestIn, session: CurrentSession) -> Jo
         # The policy from migration 0014 permits an insert where `user_id` is
         # the caller — which is why this sets the user GUC and not the workspace
         # one. The requester is by definition not a member of the target.
-        await db.execute(
-            text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(session.user_id)}
-        )
+        await apply_user_scope(db, session.user_id)
         row = (
             await db.execute(
                 text(

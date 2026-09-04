@@ -17,14 +17,22 @@ moment a worker updated one and crashed before the other.
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.auth.csrf import require_csrf
 from app.deps import CurrentScope
-from app.domain.research import SourceState, state_for
+from app.domain.research import (
+    SourceKind,
+    SourceState,
+    Trigger,
+    manual_runs_left,
+    may_start,
+    state_for,
+)
 from app.logging import get_logger
 from app.retrieval.scoped import scoped_connection
 
@@ -54,6 +62,76 @@ class RunOut(BaseModel):
     still_running: int
     """So a caller can decide whether to poll again without re-deriving the
     rule. One number, one meaning."""
+
+
+class StartOut(BaseModel):
+    run_id: UUID
+    runs_left_this_month: int
+
+
+@router.post(
+    "",
+    response_model=StartOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_csrf)],
+)
+async def start_run(scope: CurrentScope) -> StartOut:
+    """Queue a research run, if the workspace has one left (Q55).
+
+    Queued, not run. The work belongs to the worker — an API process that
+    crawled twenty pages inline would hold a request open for five minutes and
+    tie the founder's browser to it, and the whole point of the progress screen
+    is that they can close the tab.
+
+    The refusal is a **429 carrying the sentence**, not a bare status. A founder
+    who cannot tell whether to wait an hour or a month gives up or asks support,
+    and both are our failure rather than theirs.
+    """
+    async with scoped_connection(scope) as db:
+        used = int(
+            (
+                await db.execute(
+                    text(
+                        "SELECT count(*) FROM research_run"
+                        " WHERE requested_at >= date_trunc('month', now())"
+                        "   AND requested_by_user_id IS NOT NULL"
+                    )
+                )
+            ).scalar_one()
+        )
+
+        # `requested_by_user_id IS NOT NULL` is what distinguishes a manual run
+        # from the weekly sweep. The sweep has no requester, and charging it to
+        # the founder's three would mean the product quietly consuming the
+        # allowance it gave them.
+        refusal = may_start(Trigger.MANUAL, manual_this_month=used, automatic_this_week=0)
+        if refusal is not None:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, refusal)
+
+        run_id = uuid4()
+        await db.execute(
+            text(
+                "INSERT INTO research_run (id, workspace_id, state, requested_by_user_id)"
+                " VALUES (:i, :w, 'queued', :u)"
+            ),
+            {"i": str(run_id), "w": str(scope.workspace_id), "u": str(scope.user_id)},
+        )
+        # Every source is created up front, queued. The progress screen can then
+        # show six rows from the first moment rather than growing as workers
+        # start — a list that appears one item at a time reads as things going
+        # wrong.
+        for kind in SourceKind:
+            await db.execute(
+                text(
+                    "INSERT INTO research_source (workspace_id, run_id, kind, state)"
+                    " VALUES (:w, :r, :k, 'queued')"
+                ),
+                {"w": str(scope.workspace_id), "r": str(run_id), "k": kind.value},
+            )
+        await db.commit()
+
+    log.info("research.queued", run_id=str(run_id))
+    return StartOut(run_id=run_id, runs_left_this_month=manual_runs_left(used + 1))
 
 
 @router.get("/{run_id}", response_model=RunOut)

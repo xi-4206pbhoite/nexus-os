@@ -22,6 +22,7 @@ from app.routes.dashboards import router as dashboards_router
 from app.routes.documents import router as documents_router
 from app.routes.files import router as files_router
 from app.routes.onboarding import router as onboarding_router
+from app.routes.research import router as research_router
 from app.routes.setup import router as setup_router
 from app.routes.spine import router as spine_router
 
@@ -195,6 +196,7 @@ def create_app() -> FastAPI:
     app.include_router(onboarding_router)
     app.include_router(documents_router)
     app.include_router(files_router)
+    app.include_router(research_router)
     app.include_router(setup_router)
     app.include_router(spine_router)
     app.include_router(dashboards_router)

@@ -20,6 +20,7 @@ place cannot answer it.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
@@ -69,3 +70,66 @@ def wins(candidate: SourceKind, incumbent: SourceKind) -> bool:
     precedence goes to the review gate (P13), not to whoever arrived last.
     """
     return rank(candidate) < rank(incumbent)
+
+
+class WriteOutcome(StrEnum):
+    """What happened when a new fact met the one already held."""
+
+    STORED = "stored"
+    """Nothing was there, or the new fact outranks what was."""
+
+    REJECTED = "rejected"
+    """Lower precedence than the incumbent. **The value does not change.**"""
+
+    NEEDS_RECONFIRMATION = "needs_reconfirmation"
+    """A lower-precedence source contradicts something a **person confirmed**.
+
+    Deliberately not `rejected`. A crawl that disagrees with a confirmed figure
+    is evidence the world may have moved, and silently discarding it means the
+    founder is never told their confirmed number may be stale. It does not
+    change the value — it raises an item asking them to look again.
+    """
+
+    UNCHANGED = "unchanged"
+    """Same value, so there is nothing to record. A crawl that agrees is not a
+    new fact; storing one would make the history look like churn."""
+
+
+@dataclass(frozen=True, slots=True)
+class Incumbent:
+    """The fact already held for a key."""
+
+    value: str
+    source_kind: SourceKind
+    confirmed: bool
+
+
+def decide(
+    *, candidate_value: str, candidate_kind: SourceKind, incumbent: Incumbent | None
+) -> WriteOutcome:
+    """What to do with a new fact. **Enforced on write, not at read time.**
+
+    A read-time rule is one every future reader has to remember; a write-time
+    rule is one the data cannot violate. `doc/12` P13: *a lower-precedence
+    source never overwrites a higher-precedence fact.*
+
+    The order of the checks matters. Agreement is settled first, because a crawl
+    that confirms what a person typed is neither a conflict nor a change — and
+    treating it as either would fill the history with noise and, worse, ask the
+    founder to re-confirm something nothing disputes.
+    """
+    if incumbent is None:
+        return WriteOutcome.STORED
+
+    if candidate_value.strip() == incumbent.value.strip():
+        return WriteOutcome.UNCHANGED
+
+    # Contradicting a human decision is never silent. Q: *re-confirmation, not
+    # overwrite* — the value stays, and somebody is asked.
+    if incumbent.confirmed and not wins(candidate_kind, incumbent.source_kind):
+        return WriteOutcome.NEEDS_RECONFIRMATION
+
+    if wins(candidate_kind, incumbent.source_kind):
+        return WriteOutcome.STORED
+
+    return WriteOutcome.REJECTED

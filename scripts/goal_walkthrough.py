@@ -222,9 +222,8 @@ async def _verify_domain(workspace_id: str) -> None:
     exercised for real. Written through the **jobs** role because `workspace` is
     row-level secured and the app role cannot see another company's row.
     """
-    from sqlalchemy import text
-
     from app.db import _unscoped_session
+    from sqlalchemy import text
 
     async with _unscoped_session() as db:
         # The app role owns the table; RLS still needs the workspace GUC, which
@@ -284,8 +283,7 @@ if ws_b:
 print("\n\033[1m4. The member registers and accepts\033[0m")
 m_client = client()
 member_landing = None
-if invite_token:
-    if register_and_verify(m_client, MEMBER) and login(m_client, MEMBER):
+if invite_token and register_and_verify(m_client, MEMBER) and login(m_client, MEMBER):
         r = m_client.post("/invitations/accept", json={"token": invite_token}, headers=csrf(m_client))
 
         # 409 is the product being right, not a failure. `doc/11` §3.2: an
@@ -358,7 +356,7 @@ if ws_b:
               "the two brains are identical")
 
 print("\n\033[1m7. The persona interview\033[0m")
-if invite_token or True:
+if True:
     r = m_client.get("/onboarding/persona/chat")
     if check("GET /onboarding/persona/chat -> 200", r.status_code == 200, r.text[:200]):
         turn = r.json()

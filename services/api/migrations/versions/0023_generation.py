@@ -51,8 +51,9 @@ def upgrade() -> None:
         sa.Column("output_tokens", sa.Integer, nullable=False, server_default="0"),
         sa.Column("cost_micros", sa.BigInteger, nullable=False, server_default="0"),
         sa.Column("requested_by_user_id", sa.Uuid),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspace.id"], ondelete="CASCADE"),
         sa.CheckConstraint("outcome IN ('answered','unavailable')", name="ck_generation_outcome"),
         # An unavailable generation must say which kind. "Unavailable" with no

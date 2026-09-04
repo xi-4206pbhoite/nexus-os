@@ -84,11 +84,11 @@ def exposure(amount: float, total: float) -> float | Absent:
 
 
 def composite(scores: dict[str, float], weights: dict[str, float]) -> float | Absent:
-    """A single score from several, clamped to 0–100.
+    """A single score from several, clamped to 0-100.
 
     Clamped because a composite that reads 104 tells a founder the number is
     made up, and they would be right. The clamp is a symptom check: if inputs
-    routinely exceed the range, the weights are wrong and the clamp is hiding it
+    routinely exceed 0-100, the weights are wrong and the clamp is hiding it
     — which is why the boundary has its own test rather than being assumed.
     """
     result = weighted(scores, weights)

@@ -54,10 +54,23 @@ def _public_callables() -> Iterator[tuple[str, Any]]:
     for info in pkgutil.walk_packages(package.__path__, prefix=f"{package.__name__}."):
         modules.append(importlib.import_module(info.name))
 
+    # `apply_workspace_scope` is the one exception, and it is exempt because it
+    # is **the primitive this rule protects**, not something the rule protects
+    # against. It reads nothing and returns nothing: it sets
+    # `nexus.workspace_id`, which is the line every RLS policy consults. Taking
+    # a workspace id is therefore its entire purpose, and requiring it to take a
+    # `ScopedSession` would be circular — the session is what the GUC makes
+    # meaningful in the first place.
+    #
+    # The exemption is by exact name so it cannot silently widen. If a *second*
+    # function ever needs it, that is the signal to move this primitive out of
+    # the package rather than to lengthen this set.
+    exempt = {"apply_workspace_scope"}
+
     seen: set[int] = set()
     for module in modules:
         for name, obj in vars(module).items():
-            if name.startswith("_"):
+            if name.startswith("_") or name in exempt:
                 continue
             if not (inspect.isfunction(obj) or inspect.isasyncgenfunction(obj)):
                 continue

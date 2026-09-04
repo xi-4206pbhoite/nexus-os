@@ -6,7 +6,7 @@ Regenerate the evidence with:
 services/api/.venv/bin/python scripts/goal_walkthrough.py
 ```
 
-**50 checks, 0 failures**, against a real API and Neon. Re-runnable.
+**59 checks, 0 failures**, against a real API and Neon. Re-runnable.
 
 ## Working, verified through HTTP
 
@@ -20,6 +20,7 @@ services/api/.venv/bin/python scripts/goal_walkthrough.py
 | Member lands on a dashboard | Scoped to **operations only**; `hr` is 404, not merely hidden |
 | The company brain | Built from the founder's own answers, versioned, every claim naming its source |
 | The persona interview | Four questions, resumable; declaring seniority is refused and the dashboards do not widen |
+| **One company dashboard** | `GET /dashboards/company` — same URL for everyone, content segregated by who opens it |
 
 **Plus-addressing is not a workaround.** One company per founder (`doc/11` Q8)
 is a rule the product means, so two companies need two founders. Both inboxes
@@ -36,6 +37,18 @@ downstream of the gate is exercised for real.
 
 To make it real: register a founder at an address on the company's own domain,
 and the EMAIL method verifies with no DNS at all.
+
+## The company dashboard, and why absence beats greying out
+
+One page, one URL, and the *content* changes with who opens it — not seven pages
+behind seven permissions. Proved with two real members of the same workspace:
+the owner sees executive, hr and operations; the invited Operations manager sees
+operations and nothing else.
+
+**A department the caller cannot reach is absent, not disabled.** Rendering it
+greyed out would disclose that the company runs a department this person was
+never told about, and how a company is organised is itself a fact about it. The
+page leads with the department you work in, because that is the one you came for.
 
 ## The brain, and why it needs no model
 

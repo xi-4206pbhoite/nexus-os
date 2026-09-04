@@ -67,13 +67,39 @@ dashboards do not widen afterwards.
 Scripted, so it works with no API key (ADR 0011). A model makes the wording
 conversational; it does not decide what is asked or what is stored.
 
+## The retrieval core (P10), and what of it is done
+
+**`app/retrieval/chunks.py` is the only reader of chunk content**, with the
+permission predicate in the `WHERE` rather than applied to results. Filtering
+afterwards means the database already returned rows the caller may not see, and
+every count computed before that filter has leaked their existence.
+
+**Eight red-team specs in `evals/`**, and the acceptance criterion is verified by
+planting the defect the phase names: removing `AND department && :depts` turns
+them red, restoring it turns them green. A spec that passes against a broken
+predicate certifies the thing it was meant to catch.
+
+Two real defects the specs found:
+
+- `locked_unless_in_scope` tested scope level alone, and **a Contributor's
+  `max_scope` is L3 — the same as an Owner's.** The levels say what *kind* of
+  thing a role may see, not *which* things, so a Contributor was waved through a
+  Finance calculation they hold no department for.
+- **Nobody reaches L4 by role.** It is reached by being named on the item, which
+  is why `named_l4_item_ids` is on the session at all.
+
+**Left of P10, named rather than quietly skipped:** routing `auth/domains.py`,
+`auth/invitations.py` and `auth/service.py` through `scoped_connection`, the
+test forbidding `set_config('nexus.` outside `app/retrieval/`, installing
+`[embeddings]` in CI so the vector path runs with real vectors, and the recall
+regression at Contributor selectivity. The consolidation touches three modules
+with their own transaction shapes and deserves its own change.
+
 ## Not built
 
-**Phases 10–21.** Phases 0–9 are complete and green in CI, and the brain and
-persona above are Phase 13 and personalisation work pulled forward because the
-goal asked for them. What is not pulled forward is Phase 10, the retrieval core
-— so the brain is assembled directly from answers rather than retrieved through
-a scoped path. When P10 lands, that assembly should move behind it.
+**Phases 11–21.** Phase 13's brain is above, pulled forward because the goal
+asked for it — assembled directly from answers rather than through the scoped
+path, which is where it should move once the P10 consolidation lands.
 
 ## Open findings
 

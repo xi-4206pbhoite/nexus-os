@@ -96,3 +96,51 @@ def test_the_screen_is_bounded() -> None:
     review leaves facts unconfirmed while looking complete."""
     assert MIN_THEMES <= MAX_THEMES
     assert len(top([_fact(str(i), impact=i) for i in range(100)])) == TOP_FACTS
+
+
+# ── The route (P13) ───────────────────────────────────────────
+
+
+def test_an_unreviewed_fact_is_returned_and_labelled() -> None:
+    """`doc/12` P13: unreviewed facts are **usable but labelled** `inferred`.
+
+    Both halves matter. Withholding them until somebody finishes a review screen
+    makes the product useless until then; returning them without the label makes
+    a guess wear a fact's clothes, which is the one thing this product must
+    never do.
+
+    The label is computed on the server, not left to the client. A client that
+    forgets to render it produces exactly the failure the label exists to
+    prevent, and the server is the only place that can guarantee it travels.
+    """
+    from app.routes.review import FactOut, _out
+
+    unreviewed = ReviewFact(
+        key="revenue",
+        value="OMR 2.4m",
+        source_kind="crawl",
+        source_ref="https://example.om/about",
+        theme="crawl",
+        is_assumption=False,
+    )
+
+    out = _out(unreviewed, confirmed=False)
+    assert isinstance(out, FactOut)
+    assert out.label == "inferred"
+    assert out.confirmed is False
+    assert out.value == "OMR 2.4m", "the value is shown, not withheld"
+
+    assert _out(unreviewed, confirmed=True).label == "confirmed"
+
+
+def test_the_route_holds_no_ranking_of_its_own() -> None:
+    """The route reads, applies the domain's rules, and returns. A route that
+    ranked differently from `review_gate` would be a second opinion nobody knows
+    exists — the same arrangement, and the same reason, as the dashboards."""
+    import inspect
+
+    from app.routes import review
+
+    source = inspect.getsource(review)
+    assert "sorted(" not in source, "ranking belongs in app/domain/review_gate.py"
+    assert "into_themes(" in source and "top(" in source

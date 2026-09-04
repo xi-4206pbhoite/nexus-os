@@ -20,8 +20,11 @@ correction did not matter. The deletion is itself a fact about the company.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Final
+
+from app.domain.facts import SourceKind, wins
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +42,43 @@ class ReviewFact:
     @property
     def impact(self) -> int:
         return len(self.consumed_by)
+
+
+@dataclass(frozen=True, slots=True)
+class Deletion:
+    """A founder's statement that a fact is wrong about their business.
+
+    Stored rather than applied and forgotten, because Q62 is a rule about *the
+    next run*, not about this one. Removing the row satisfies the click and
+    loses the correction the moment research repeats.
+    """
+
+    key: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not self.reason.strip():
+            # Refused rather than defaulted. "Deleted, no reason given" is
+            # indistinguishable from a misclick to whoever reads it later, and
+            # the reason is the only record of *why* the source was wrong.
+            raise ValueError("Deleting a fact needs a reason: say what is wrong about it.")
+
+
+def may_infer(key: str, kind: SourceKind, *, deletions: Iterable[Deletion]) -> bool:
+    """Whether `kind` may (re-)derive `key`.
+
+    Q62. The deletion binds **derivation**, not the founder: a person may state
+    the fact again, and so may a connected system, because that is a
+    measurement from a tool they chose to plug in and it outranks the crawl
+    everywhere else in `facts.py`. Suppressing it here would turn deleting one
+    wrong number into silently disconnecting an integration.
+
+    What it does stop is the crawl and the inference — the two that produced the
+    wrong answer in the first place and would produce it again unprompted.
+    """
+    if not any(d.key == key for d in deletions):
+        return True
+    return wins(kind, SourceKind.CRAWL)
 
 
 @dataclass(slots=True)

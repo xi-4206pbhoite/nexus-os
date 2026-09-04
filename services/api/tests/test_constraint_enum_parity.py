@@ -34,6 +34,7 @@ from app.domain.access import Sensitivity
 from app.domain.company_brain import GeneratedBy
 from app.domain.department_answers import AnswerState
 from app.domain.registration import JoinRequestState, ResearchRunState
+from app.domain.research import SourceKind, SourceState
 from app.domain.scopes import Role, Scope, scope_code
 from tests.dburl import database_url
 
@@ -55,6 +56,16 @@ class Mapping:
 
 
 MAPPINGS: tuple[Mapping, ...] = (
+    Mapping(
+        "ck_research_source_kind",
+        "app.domain.research.SourceKind",
+        frozenset(kind.value for kind in SourceKind),
+    ),
+    Mapping(
+        "ck_research_source_state",
+        "app.domain.research.SourceState",
+        frozenset(state.value for state in SourceState),
+    ),
     Mapping(
         "ck_company_brain_generated_by",
         "app.domain.company_brain.GeneratedBy",

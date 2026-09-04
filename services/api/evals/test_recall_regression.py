@@ -38,7 +38,7 @@ more interesting failure:
 3. Twenty thousand rows, generated server-side with `generate_series` so the
    insert is two statements rather than twenty thousand round trips. Lifting
    the server `statement_timeout` got past one wall and hit the next: asyncpg's
-   own client timeout. Building 20k × 1024-dimension vectors across a link to
+   own client timeout. Building 20k by 1024-dimension vectors across a link to
    `us-east-1` is minutes of work per run, and the pool is configured — rightly
    — for requests rather than fixtures.
 

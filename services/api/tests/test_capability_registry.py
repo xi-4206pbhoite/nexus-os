@@ -15,14 +15,18 @@ from app.domain.registry import (
     consumers_of,
     score_denominator,
     scoreable_departments,
+    scoreable_units,
 )
 from app.domain.scopes import Department
 
 
 def test_the_denominator_follows_the_company_not_a_constant() -> None:
     """The property the whole module exists for."""
+    # Three departments, **four** units: Sales brings Customers with it. The
+    # denominator counts what is scored, not what was selected, and those stopped
+    # being the same number when #27 was resolved.
     three = frozenset({Department.FINANCE, Department.SALES, Department.MARKETING})
-    assert score_denominator(three) == 3
+    assert score_denominator(three) == 4
 
     one = frozenset({Department.FINANCE})
     assert score_denominator(one) == 1
@@ -42,22 +46,44 @@ def test_synthesis_layers_are_never_scored() -> None:
     assert Department.STRATEGY not in scoreable
 
 
-def test_the_derived_denominator_is_five_and_adr_0010_says_six() -> None:
-    """Finding #27, asserted so it cannot be quietly forgotten.
+def test_the_denominator_is_six_because_customers_is_a_unit_without_a_page() -> None:
+    """Finding #27, resolved. ADR 0010's six, derived rather than asserted.
 
-    ADR 0010's sixth scoreable department is **Customers**, which is "scoreable
-    but lives inside the Sales director rather than having a page" — so it is
-    not a `Department`, has no `DIRECTORS` entry, and nothing derived from
-    either can see it.
+    Five departments have a director page and are scored. Customers is the
+    sixth: scored, and shown inside the Sales director because that is where
+    the people who act on it already are.
 
-    This test exists to fail loudly if somebody resolves the discrepancy, which
-    is the point: the resolution is a decision for Parul, and until it is made
-    the product should show the number it can justify rather than the number a
-    document asserts.
+    The test that used to live here asserted **five** and said to delete it if
+    somebody resolved the discrepancy. This is that deletion, and the assertion
+    it leaves behind is the one worth keeping — six, arrived at by counting
+    units rather than by writing `6` down.
     """
-    assert score_denominator(frozenset(Department)) == 5, (
-        "if this is now 6, finding #27 has been resolved — update it and delete this test"
-    )
+    assert score_denominator(frozenset(Department)) == 6
+
+
+def test_a_company_running_sales_is_scored_on_two_units() -> None:
+    """One department, two units. That is ADR 0010's arrangement made real, and
+    it is why the denominator was never going to equal the number of pages."""
+    units = scoreable_units(frozenset({Department.SALES}))
+    assert {u.value for u in units} == {"sales", "customers"}
+
+
+def test_customers_is_not_a_department_anybody_belongs_to() -> None:
+    """The reason it is a `ScoreableUnit` and not a `Department`.
+
+    A department is something a person is *in*: it appears in onboarding
+    selection, goes on a membership, and scopes L3 rows through RLS. Nobody is
+    "in Customers", and adding it to that enum to fix a counting problem would
+    have made it selectable, assignable and permission-bearing.
+    """
+    assert "customers" not in {d.value for d in Department}
+
+
+def test_a_company_without_sales_is_not_scored_on_customers() -> None:
+    """Customers depends on Sales running. Scoring it otherwise would judge a
+    company on customer retention it has no function to manage."""
+    units = scoreable_units(frozenset({Department.FINANCE}))
+    assert {u.value for u in units} == {"finance"}
 
 
 def test_completeness_returns_a_pair_not_a_percentage() -> None:

@@ -26,12 +26,15 @@ RUNS_EVERYTHING = frozenset(Department)
 
 
 def test_marketing_is_excluded_from_the_score_without_ga4() -> None:
-    """The named test from `doc/12` P16."""
-    without = scoreable_departments(RUNS_EVERYTHING, connected=frozenset())
-    assert Department.MARKETING not in without
+    """The named test from `doc/12` P16, now asked of units rather than
+    departments — the score is out of units since #27 was resolved."""
+    from app.domain.registry import ScoreableUnit, scoreable_units
 
-    with_ga4 = scoreable_departments(RUNS_EVERYTHING, connected=frozenset({Source.GA4}))
-    assert Department.MARKETING in with_ga4
+    without = scoreable_units(RUNS_EVERYTHING, connected=frozenset())
+    assert ScoreableUnit.MARKETING not in without
+
+    with_ga4 = scoreable_units(RUNS_EVERYTHING, connected=frozenset({Source.GA4}))
+    assert ScoreableUnit.MARKETING in with_ga4
 
 
 def test_the_denominator_shrinks_rather_than_the_score_dropping() -> None:
@@ -50,8 +53,10 @@ def test_the_denominator_shrinks_rather_than_the_score_dropping() -> None:
 def test_another_connector_does_not_unlock_marketing() -> None:
     """Only GA4 does. A connected CRM says nothing about whether anybody visited
     the website."""
-    other = scoreable_departments(RUNS_EVERYTHING, connected=frozenset({Source.DOCUMENTS}))
-    assert Department.MARKETING not in other
+    from app.domain.registry import ScoreableUnit, scoreable_units
+
+    other = scoreable_units(RUNS_EVERYTHING, connected=frozenset({Source.DOCUMENTS}))
+    assert ScoreableUnit.MARKETING not in other
 
 
 def test_no_other_department_carries_a_connector_requirement() -> None:

@@ -19,6 +19,7 @@ implementation, so the registry says so and nothing else needs updating.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Final
 
 from app.domain.dashboards import DIRECTORS, Source
@@ -80,6 +81,72 @@ REQUIRED_FOR_SCORING: Final[dict[Department, tuple[Source, ...]]] = {
 }
 
 
+class ScoreableUnit(StrEnum):
+    """What the composite score is out of. **Not the same set as `Department`.**
+
+    ADR 0010: *"Customers is scoreable but lives inside the Sales director
+    rather than having a page."* That sentence is the whole reason this type
+    exists separately.
+
+    Customers is deliberately **not** a `Department`. A department is something
+    a person belongs to: it appears in onboarding selection, it goes on a
+    membership, and it scopes L3 rows through RLS. Customers is none of those —
+    nobody is "in Customers", and adding it to that enum would make it
+    selectable, assignable and permission-bearing to fix a counting problem.
+
+    So: six units, five of which happen to be departments with pages, and one
+    which is scored inside Sales. Finding #27, resolved this way rather than by
+    widening `Department` — the blast radius of that enum is ten modules and
+    every RLS policy that reads a department array.
+    """
+
+    MARKETING = "marketing"
+    SALES = "sales"
+    FINANCE = "finance"
+    OPERATIONS = "operations"
+    HR = "hr"
+
+    CUSTOMERS = "customers"
+    """Retention, satisfaction, concentration. Scored, and shown on the Sales
+    director's page because that is where the people who act on it already are."""
+
+
+# Which department has to be running for a unit to be scored. Customers is the
+# only entry that differs from its own name, and it is why this is a mapping
+# rather than an identity function.
+UNIT_REQUIRES_DEPARTMENT: Final[dict[ScoreableUnit, Department]] = {
+    ScoreableUnit.MARKETING: Department.MARKETING,
+    ScoreableUnit.SALES: Department.SALES,
+    ScoreableUnit.FINANCE: Department.FINANCE,
+    ScoreableUnit.OPERATIONS: Department.OPERATIONS,
+    ScoreableUnit.HR: Department.HR,
+    ScoreableUnit.CUSTOMERS: Department.SALES,
+}
+
+
+def scoreable_units(
+    selected: frozenset[Department], *, connected: frozenset[Source] | None = None
+) -> frozenset[ScoreableUnit]:
+    """The units this company is scored out of.
+
+    A company running Sales is scored on **Sales and Customers** — two units,
+    one department. That is ADR 0010's arrangement made real, and it is why the
+    denominator was never going to equal the number of director pages.
+
+    Marketing still needs GA4 (`REQUIRED_FOR_SCORING`), and the connector rule
+    is applied per **unit** against the department it depends on.
+    """
+    return frozenset(
+        unit
+        for unit, department in UNIT_REQUIRES_DEPARTMENT.items()
+        if department in selected
+        and (
+            connected is None
+            or all(source in connected for source in REQUIRED_FOR_SCORING.get(department, ()))
+        )
+    )
+
+
 def scoreable_departments(
     selected: frozenset[Department], *, connected: frozenset[Source] | None = None
 ) -> frozenset[Department]:
@@ -91,14 +158,11 @@ def scoreable_departments(
     synthesis layers reading the others, so including them counts the same work
     twice.
 
-    **This returns five for a company running everything, and ADR 0010 says
-    six.** The discrepancy is real and is finding #27, not an error here. ADR
-    0010's sixth is **Customers**, which is "scoreable but lives inside the
-    Sales director rather than having a page" — so it is not a `Department`, has
-    no entry in `DIRECTORS`, and nothing derived from either can see it.
-
-    Deriving the number is what surfaced that. A literal `6` would have agreed
-    with the ADR and disagreed with the product forever.
+    **This is not what the score is out of** — `scoreable_units` is. It returns
+    the five departments that have a director page and are scored; Customers is
+    a sixth *unit* with no page (ADR 0010), which is what finding #27 turned out
+    to be. Kept because "which department pages carry a score" is still a real
+    question, asked by the shell when it decides where to show one.
     """
     structural = {
         capability.department
@@ -132,7 +196,7 @@ def score_denominator(
     finding #27 for why that is five and not six, and why the honest thing is to
     show the number the product can actually justify.
     """
-    return len(scoreable_departments(selected, connected=connected))
+    return len(scoreable_units(selected, connected=connected))
 
 
 def completeness(selected: frozenset[Department]) -> tuple[int, int]:

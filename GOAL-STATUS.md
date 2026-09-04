@@ -101,12 +101,27 @@ Two real defects the specs found:
 - **Nobody reaches L4 by role.** It is reached by being named on the item, which
   is why `named_l4_item_ids` is on the session at all.
 
-**Left of P10, named rather than quietly skipped:** routing `auth/domains.py`,
-`auth/invitations.py` and `auth/service.py` through `scoped_connection`, the
-test forbidding `set_config('nexus.` outside `app/retrieval/`, installing
-`[embeddings]` in CI so the vector path runs with real vectors, and the recall
-regression at Contributor selectivity. The consolidation touches three modules
-with their own transaction shapes and deserves its own change.
+**The scoping consolidation is done.** Ten modules once set a scoping GUC
+directly; none do. There turned out to be **three** GUCs, not one —
+`nexus.workspace_id` scopes a tenant, `nexus.user_id` scopes a person before any
+workspace is known, and `nexus.invitation_token_hash` grants exactly the row
+whose token the caller holds. Each has its own primitive, and
+`test_scoping_primitive_containment` asserts an empty allowlist.
+
+**Left of P10, named rather than quietly skipped:**
+
+- **The `iterative_scan` regression guard does not yet discriminate.**
+  `evals/test_recall_regression.py` asserts recall is high, and would catch a
+  predicate that silently drops the caller's rows — but deleting `SET LOCAL
+  hnsw.iterative_scan` and re-running still passes, because at 400 rows Postgres
+  can scan the table and never consults the index. Reproducing ADR 0012's 5%
+  needs tens of thousands of rows. The file says this at the top, because a test
+  that looks like a guard and is not would be the exact failure it exists to
+  prevent.
+- **`[embeddings]` is not installed in CI.** It would pull ~2 GB of weights into
+  every run to test whether `multilingual-e5-large` places similar text near
+  each other — a real question, and a different one from the index behaviour
+  above.
 
 ## Not built
 

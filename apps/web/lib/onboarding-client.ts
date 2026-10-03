@@ -45,19 +45,6 @@ export type Question = {
   value: unknown
 }
 
-export type Member = {
-  user_id: string
-  email: string
-  display_name: string | null
-  role: string
-}
-
-export type Catalogue = {
-  questions: Question[]
-  can_administer: boolean
-  members: Member[]
-}
-
 export type Invitation = {
   invitation_id: string
   email: string
@@ -68,7 +55,13 @@ export type Invitation = {
 }
 
 export type IssuedInvitation = Invitation & {
-  /** Where to send the invited person. No email is sent yet — see `TeamStep`. */
+  /** Where to send the invited person.
+   *
+   *  **The invitation is emailed too.** This said delivery was not wired up and
+   *  pointed at a `TeamStep` that no longer exists — true when written, stale
+   *  since P3 built the mailer. Still handed back, because an owner who would
+   *  rather paste the link into a chat should be able to: the link alone grants
+   *  nothing, since accepting requires being signed in as the address it names. */
   accept_path: string
 }
 
@@ -102,17 +95,30 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   return payload
 }
 
-export async function fetchCatalogue(): Promise<Catalogue> {
-  return (await call('/api/onboarding/questions')) as Catalogue
+export type DepartmentOption = {
+  value: string
+  /** How to name it on screen. Optional so a client built against an older API
+   *  falls back to the key rather than rendering "undefined". */
+  label?: string
+  selected: boolean
 }
 
-export async function saveAnswers(
-  answers: { key: string; value: unknown }[],
-): Promise<{ saved: string[] }> {
-  return (await call('/api/onboarding/answers', {
-    method: 'POST',
-    body: JSON.stringify({ answers }),
-  })) as { saved: string[] }
+export type SpineState = {
+  stage: { current: string; completed: string[]; stages: string[]; finished: boolean }
+  company_questions: {
+    key: string
+    prompt: string
+    why: string
+    required: boolean
+    assumption_when_unsure: string | null
+  }[]
+  departments: DepartmentOption[]
+  recommended: { min: number; max: number }
+}
+
+/** Where the founder is, what they have finished, and which departments they run. */
+export async function fetchState(): Promise<SpineState> {
+  return (await call('/api/onboarding/state')) as SpineState
 }
 
 export async function fetchInvitations(): Promise<Invitation[]> {
@@ -143,24 +149,24 @@ export async function acceptInvitation(token: string): Promise<AcceptResult> {
 }
 
 /**
- * What the scope on a question means, in words.
+ * How to name a department when the API has not supplied a label.
  *
- * The product's claim is that a form is not a laundering mechanism — an average
- * deal size typed at signup is a Sales fact, not a company fact. Saying so at
- * the point of capture is the only place that claim is visible to the person it
- * protects.
+ * Finding F13: the same department read `hr` in the API, "Hr" wherever a client
+ * title-cased the key, and "People" in the dashboard nav. The endpoints that
+ * matter now serve a `label`, and this is the fallback for the one caller left
+ * that carries only a key — `DirectorPage`. Kept in step with `LABELS` in
+ * `app/domain/departments.py`, which is the source.
  */
-export function scopeLabel(scope: string, department: string | null): string {
-  switch (scope) {
-    case 'L1':
-      return 'Public — this is outward-facing material'
-    case 'L2':
-      return 'Everyone in your workspace'
-    case 'L3':
-      return department
-        ? `${department[0].toUpperCase()}${department.slice(1)} only — managers and above`
-        : 'One department only'
-    default:
-      return 'Restricted'
-  }
+const DEPARTMENT_LABELS: Record<string, string> = {
+  marketing: 'Marketing',
+  sales: 'Sales',
+  finance: 'Finance',
+  operations: 'Operations',
+  hr: 'People',
+  strategy: 'Strategy',
+  executive: 'Chief of Staff',
+}
+
+export function departmentLabel(department: string): string {
+  return DEPARTMENT_LABELS[department] ?? department
 }

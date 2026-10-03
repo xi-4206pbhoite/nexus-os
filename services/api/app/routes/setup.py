@@ -28,21 +28,26 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import invitations as invites
 from app.auth.csrf import require_csrf
+from app.auth.invitations_email import build_invitation_email
+from app.auth.workspaces import UnverifiedWorkspaceError
+from app.config import Settings, get_settings
 from app.db import _unscoped_session
 from app.deps import CurrentScope, CurrentSession
+from app.domain import audit
 from app.domain.access import AccessDecision, Aggregate, decide_l3_access
 from app.domain.invitations import InvitationError, check_invitation, may_administer
+from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.domain.onboarding import (
     BY_KEY,
     CATALOGUE,
@@ -54,6 +59,7 @@ from app.domain.onboarding import (
 from app.domain.scopes import Department, Role, Scope, scope_code, scope_from_code
 from app.domain.session import ScopedSession
 from app.logging import get_logger
+from app.mail import build_mailer, send_safely
 from app.retrieval.scoped import scoped_connection
 
 router = APIRouter(tags=["setup"])
@@ -353,7 +359,13 @@ async def _members(session: AsyncSession) -> list[MemberOut]:
 
 
 async def store_answer(
-    session: AsyncSession, *, caller: ScopedSession, question: Question, value: Any
+    session: AsyncSession,
+    *,
+    caller: ScopedSession,
+    question: Question,
+    value: Any,
+    is_assumption: bool = False,
+    answer_state: str = "bound",
 ) -> None:
     """Write one answer, classified from the catalogue.
 
@@ -374,13 +386,22 @@ async def store_answer(
     await session.execute(
         text(
             "INSERT INTO onboarding_answer"
-            " (workspace_id, answered_by_user_id, question_key, value, scope, department)"
-            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d)"
+            " (workspace_id, answered_by_user_id, question_key, value, scope,"
+            "  department, is_assumption, answer_state)"
+            " VALUES (:ws, :u, :k, CAST(:v AS jsonb), :s, :d, :assumed, :state)"
             " ON CONFLICT (workspace_id, question_key) DO UPDATE"
             "    SET value = EXCLUDED.value,"
             "        scope = EXCLUDED.scope,"
             "        department = EXCLUDED.department,"
             "        answered_by_user_id = EXCLUDED.answered_by_user_id,"
+            # Carried on the upsert, so answering properly later clears the
+            # flag. An assumption that outlives the answer correcting it would
+            # keep the Brain hedging about a fact it now knows.
+            "        is_assumption = EXCLUDED.is_assumption,"
+            # A Manager confirming a Contributor's proposal overwrites the row
+            # and its state together. Leaving the state behind would keep a
+            # confirmed fact invisible to every reader using BINDING_ONLY_SQL.
+            "        answer_state = EXCLUDED.answer_state,"
             "        updated_at = now()"
         ),
         {
@@ -388,6 +409,8 @@ async def store_answer(
             "u": str(caller.user_id),
             "k": question.key,
             "v": json.dumps(value),
+            "assumed": is_assumption,
+            "state": answer_state,
             "s": scope_code(answer_scope),
             "d": department.value if department else None,
         },
@@ -493,6 +516,20 @@ async def save_answers(payload: AnswersIn, scope: CurrentScope) -> SavedOut:
         for question, value in questions_to_write:
             await store_answer(session, caller=scope, question=question, value=value)
 
+        # One row for the step, not one per answer. A wizard step is what a
+        # person did; six rows for six fields would bury the trail in a way that
+        # makes the interesting entries harder to find, which is the failure
+        # mode of a log nobody reads.
+        if questions_to_write:
+            await audit.record(
+                session,
+                workspace_id=scope.workspace_id,
+                action=audit.AuditAction.ANSWER_WRITTEN,
+                actor_user_id=scope.user_id,
+                target_type="onboarding_answer",
+                target_id=",".join(q.key for q, _ in questions_to_write),
+            )
+
     log.info("onboarding.answers.saved", count=len(questions_to_write))
     return SavedOut(saved=[q.key for q, _ in questions_to_write])
 
@@ -519,8 +556,13 @@ class IssuedOut(InvitationOut):
     accept_path: str
     """Where to send the invited person.
 
-    Returned to the inviter because no email is sent yet — delivery is not wired
-    up anywhere in the product. Handing the link back is not a weakening: the
+    **The invitation is emailed too.** This comment used to say delivery was
+    "not wired up anywhere in the product" — true when written, stale since P3
+    built the mailer. A product whose answer to "add someone to your company" is
+    "copy this string and send it yourself" has made the customer the transport.
+
+    Still returned, because an owner who wants to paste it into a chat should be
+    able to. Handing the link back is not a weakening: the
     inviter is the person who chose the role, and the link alone grants nothing,
     since acceptance requires being signed in as the address it names.
     """
@@ -541,13 +583,36 @@ def _out(invitation: invites.Invitation) -> InvitationOut:
     )
 
 
+INVITATION_SENDER_SQL = text(
+    "SELECT w.name AS company,"
+    "       (SELECT display_name FROM app_user WHERE id = :u) AS inviter"
+    "  FROM workspace w WHERE w.id = :w"
+)
+"""Who the invitation is from, and which company it is for, in one round trip.
+
+**A scalar subquery rather than a join, deliberately.** Joining `app_user` means
+a missing or invisible user row drops the whole result, taking the company name
+with it — and the company name is what stops the email reading as phishing. The
+subquery yields `NULL` for an unknown inviter and leaves the company intact,
+which is the difference between a degraded email and no email at all.
+
+Named rather than inline so `tests/test_invitation_email.py` can drive this
+exact statement instead of a second copy of it that could drift.
+"""
+
+
 @router.post(
     "/invitations",
     response_model=IssuedOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_csrf)],
 )
-async def create_invitation(payload: InviteIn, scope: CurrentScope) -> IssuedOut:
+async def create_invitation(
+    payload: InviteIn,
+    scope: CurrentScope,
+    background: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IssuedOut:
     """Invite someone, at a role this caller is allowed to grant.
 
     Every precondition is in `check_invitation` rather than here, so there is
@@ -568,15 +633,56 @@ async def create_invitation(payload: InviteIn, scope: CurrentScope) -> IssuedOut
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That is not an email address.")
 
     async with scoped_connection(scope) as session:
-        issued = await invites.issue(
-            session,
-            workspace_id=scope.workspace_id,
-            invited_by_user_id=scope.user_id,
-            email=email,
-            role=payload.role,
-            departments=departments,
-        )
+        try:
+            issued = await invites.issue(
+                session,
+                workspace_id=scope.workspace_id,
+                invited_by_user_id=scope.user_id,
+                email=email,
+                role=payload.role,
+                departments=departments,
+            )
+        except UnverifiedWorkspaceError as exc:
+            # D19's gate, translated. `issue` raises this correctly and nothing
+            # caught it, so a deliberate refusal reached the user as a **500**.
+            # Found by walking the flow, not by the suite — the test called
+            # `require_verified_domain` directly rather than through this route.
+            # Same shape as findings #9 and #10: right behaviour, wrong status
+            # code, and only the status code is visible to a person.
+            raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
+    # Sent, not merely handed back. Queued so the response does not wait on the
+    # transport — and after the commit, so an invitation that failed to store is
+    # never one somebody received a link for.
+    async with scoped_connection(scope) as session:
+        # One round trip, not two. The inviter's name rides along as a scalar
+        # subquery rather than a join so that a missing `app_user` row yields a
+        # NULL name instead of dropping the whole row and taking the company
+        # name with it — the silent-zero-rows shape this codebase has been bitten
+        # by three times. `app_user` carries no RLS, so this reads cleanly.
+        row = (
+            await session.execute(
+                INVITATION_SENDER_SQL,
+                {"w": str(scope.workspace_id), "u": str(scope.user_id)},
+            )
+        ).first()
+    background.add_task(
+        send_safely,
+        build_mailer(settings),
+        build_invitation_email(
+            to=email,
+            token=issued.token,
+            base_url=settings.public_base_url,
+            company=row.company if row else "your company",
+            # Optional by design: `display_name` is nullable, and the email
+            # falls back to "You have been invited" rather than naming a blank.
+            inviter=row.inviter if row else None,
+        ),
+    )
+    log.info("invitation.queued", role=payload.role)
+
+    # The link still comes back to the inviter. An owner who wants to paste it
+    # into a chat should be able to; the email is the default, not the only way.
     return IssuedOut(
         **_out(issued.invitation).model_dump(),
         accept_path=f"/invitations/accept?token={issued.token}",
@@ -650,7 +756,13 @@ async def accept_invitation(payload: AcceptIn, session: CurrentSession) -> Accep
     stranger.
     """
     async with _unscoped_session() as db:
-        result = await invites.accept(db, token=payload.token, user_id=session.user_id)
+        try:
+            result = await invites.accept(db, token=payload.token, user_id=session.user_id)
+        except UserAlreadyInAWorkspaceError as exc:
+            # `doc/11` §3.2. Raised only after the invitation has been shown to
+            # name this account, so it discloses nothing to somebody holding a
+            # forwarded link.
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
         if result.outcome is invites.AcceptOutcome.ACCEPTED and result.workspace_id:
             # Land them in the workspace they just joined. The session row is the

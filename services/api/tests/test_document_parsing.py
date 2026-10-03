@@ -48,7 +48,9 @@ def make_xlsx(sheets: dict[str, list[list[str]]]) -> bytes:
     from openpyxl import Workbook
 
     workbook = Workbook()
-    workbook.remove(workbook.active)
+    default_sheet = workbook.active
+    assert default_sheet is not None
+    workbook.remove(default_sheet)
     for name, rows in sheets.items():
         sheet = workbook.create_sheet(title=name)
         for row in rows:

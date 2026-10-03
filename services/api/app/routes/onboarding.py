@@ -20,8 +20,10 @@ from app.auth.csrf import require_csrf
 from app.auth.domains import (
     DomainClaimError,
     DomainDisputedError,
-    check_claim,
     create_workspace_for_claim,
+    load_claim_for_check,
+    perform_check,
+    record_check_result,
     start_claim,
 )
 from app.auth.email_verification import consume
@@ -34,7 +36,13 @@ from app.connectors.domain_check import (
     is_free_email_domain,
     normalise_domain,
 )
+
+# Aliased: `consume` already means "spend a verification token" in this module,
+# and two functions with one name in one file is how the wrong one gets called.
+from app.connectors.rate_limit import CHECK_PER_DOMAIN, CHECK_PER_USER
+from app.connectors.rate_limit import consume as meter
 from app.db import _unscoped_session
+from app.domain.membership import UserAlreadyInAWorkspaceError
 from app.logging import get_logger
 
 router = APIRouter(tags=["onboarding"])
@@ -153,6 +161,14 @@ async def check_domain_claim(
 ) -> ClaimOut:
     user_id = await _require_user(nexus_session)
 
+    # Finding #11. Three steps, and the middle one holds no session.
+    #
+    # This was one `async with` around a load, a DNS or HTTP call against a host
+    # the claimant named, and a write. A slow or deliberately tarpitting target
+    # therefore held a pooled connection for its whole timeout — ten concurrent
+    # checks exhausted a pool of five and every other request in the process
+    # queued behind them. The caller chooses the target, so the trigger is not
+    # bad luck.
     async with _unscoped_session() as db:
         email = (
             await db.execute(
@@ -160,12 +176,45 @@ async def check_domain_claim(
                 {"u": str(user_id)},
             )
         ).scalar()
+        loaded = await load_claim_for_check(db, claim_id=claim_id, user_id=user_id)
 
+    if loaded.state == "verified":
+        claim = loaded
+    else:
+        # Finding #4. Metered before the fetch, not after: the point is to stop
+        # the outbound request being made, and a limit checked afterwards has
+        # already sent it.
+        #
+        # A 429 is safe here where it was not on `/auth/login` — the caller has
+        # already proved they own this claim, so refusing them discloses nothing
+        # about anyone else. The *scope* is still withheld: which bucket ran out
+        # is our business, and saying "this domain has been checked too often"
+        # would tell one claimant about another's activity.
+        async with _unscoped_session() as db:
+            over_user = await meter(db, CHECK_PER_USER, str(user_id))
+            over_domain = await meter(db, CHECK_PER_DOMAIN, loaded.domain)
+            await db.commit()
+
+        if over_user or over_domain:
+            log.info("domain.check.rate_limited")
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "That domain has been checked too many times recently. "
+                "DNS changes can take a few minutes to appear — try again shortly.",
+                headers={"Retry-After": "300"},
+            )
+
+        # No session in scope here. Deliberately outside the block above rather
+        # than merely after a commit: a commit ends the transaction and keeps
+        # the connection, which is the resource that runs out.
         try:
-            claim = await check_claim(db, claim_id=claim_id, user_id=user_id, user_email=email)
+            result = await perform_check(loaded, user_email=email)
         except DomainClaimError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-        await db.commit()
+
+        async with _unscoped_session() as db:
+            claim = await record_check_result(db, claim_id=claim_id, user_id=user_id, result=result)
+            await db.commit()
 
     return ClaimOut(
         claim_id=claim.id,
@@ -214,21 +263,16 @@ async def create_workspace(
             workspace_id = await create_workspace_for_claim(
                 db, claim_id=claim_id, user_id=user_id, workspace_name=payload.name
             )
+        except UserAlreadyInAWorkspaceError as exc:
+            # 409, and the message is the explanation rather than a status
+            # name. `doc/11` §3.2 is a product rule a user has no way to infer,
+            # so a bare "conflict" leaves them retrying the same button.
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except DomainDisputedError as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         except DomainClaimError as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
-        # Claim any Preview data for this domain so it stops being subject to
-        # the unverified-domain TTL and comes under the workspace's retention.
-        await db.execute(
-            text(
-                "UPDATE preview_session SET claimed_by_workspace_id = :ws"
-                " WHERE lower(domain) = (SELECT lower(domain) FROM domain_claim WHERE id = :c)"
-                "   AND claimed_by_workspace_id IS NULL"
-            ),
-            {"ws": str(workspace_id), "c": str(claim_id)},
-        )
         await db.commit()
 
     return WorkspaceOut(workspace_id=workspace_id, name=payload.name)

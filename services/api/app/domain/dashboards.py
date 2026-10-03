@@ -13,19 +13,25 @@ its name, what it will show, and what it needs before it can show anything. The
 numbers arrive in M8 and M9 through `calculators/`, which is pure and contains no
 model (I1).
 
-**`DELIVERED` is the honesty mechanism.** It lists the offering ids that have a
-real implementation behind them. It is currently empty, so every tile renders as
-`PLANNED` — *"not built yet"* — rather than as `LOCKED`, which would say
-"connect Google Analytics and this works" about a widget that does not exist.
-Those two states are both truthful and only one of them is true today; collapsing
-them would make the page a promise instead of a placeholder. M9 adds ids to this
-set, and the tiles change state without any other edit.
+**Deliveredness lives in `domain/registry.py`, not here.** This module once
+carried a `DELIVERED` frozenset, `registry.py` carried a `delivered` flag, and
+`domain/marketing.py` carried a third set — three mechanisms for one question,
+which is how a shipped widget renders as "not built yet" or, worse, the reverse.
+`state_for` now takes `reachable` as an argument, so the fact has exactly one
+home and this file keeps exactly one job: what an offering *is*.
+
+The distinction that flag protects is still the point. An unbuilt tile renders
+`PLANNED` — *"not built yet"* — rather than `LOCKED`, which would say "connect
+Google Analytics and this works" about a widget that does not exist. Both are
+truthful and only one of them is true today; collapsing them would make the page
+a promise instead of a placeholder.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 from app.domain.scopes import Department
 
@@ -109,8 +115,33 @@ class WidgetState(StrEnum):
     LIVE = "live"
     PARTIAL = "partial"
     LOCKED = "locked"
+
     WARMING = "warming"
+    """Connected, but not enough history to say anything yet.
+
+    Distinct from `PARTIAL` because the fix is different and only one of them
+    asks something of the customer: `PARTIAL` means connect another source,
+    `WARMING` means wait. Telling somebody to connect something they already
+    connected is how a product loses their trust in its own instructions."""
+
     SELF_REPORTED = "self_reported"
+    """Computed from what the founder told us, with no connected system behind
+    it. Labelled because a number they typed and a number we measured must never
+    look identical — the second can contradict them, and the first cannot."""
+
+    STALE = "stale"
+    """The data arrived, and it is too old to act on.
+
+    Not `LIVE` with a quiet timestamp: a figure that was true last quarter reads
+    as current unless the tile says otherwise, and someone will make a decision
+    on it. Not `UNAVAILABLE` either — the number is real and still worth seeing,
+    with its age attached."""
+
+    UNAVAILABLE = "unavailable"
+    """The pipeline could not produce an answer (P14). Carries the reason from
+    `UnavailableReason`, because "unavailable" alone tells a founder nothing
+    about whether to wait, connect something, or ask us."""
+
     PLANNED = "planned"
 
 
@@ -135,14 +166,15 @@ class Offering:
     'deterministic model in code; AI narrates only'."""
 
 
-DELIVERED: frozenset[str] = frozenset()
-"""Offering ids with a real implementation behind them.
+WARMUP_DAYS: Final = 14
+"""Below this much history a trend is noise. Two weeks is enough to see a
+weekly cycle once, which is the shortest period over which "up" or "down" means
+anything for a business."""
 
-Empty, deliberately. M9 is where this fills in, one offering at a time, and
-until an id appears here its tile says it is not built. Anything else would put
-a widget outline on the screen that a screenshot could not be distinguished from
-a working one.
-"""
+STALE_AFTER_DAYS: Final = 7
+"""Older than this and the tile says so. A week is chosen because it is the
+period a founder plans in — a figure from last week is context, and a figure
+from last month presented as current is a decision made on the wrong data."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,7 +546,19 @@ OPERATIONS = Director(
     scoreable=True,
     executive_only=False,
     offerings=(
-        Offering("6.1", "Operations score and drivers", "Score, delta", (Source.OPS_LAYER,)),
+        # **"Score, delta" until ADR 0040 (D31).** The catalogue promised a
+        # department score and the tile deliberately draws none: all seven of its
+        # inputs are the customer's own records, so averaging them would measure
+        # how diligently somebody types. `shows` is what the tile renders above
+        # its own body, so leaving the old wording put "Score, delta" directly
+        # above a sentence saying there is no score — visible on screen, and the
+        # reason this line changed rather than the ADR alone recording it.
+        Offering(
+            "6.1",
+            "Operations score and drivers",
+            "The figures Operations is described by, each on its own",
+            (Source.OPS_LAYER,),
+        ),
         Offering(
             "6.2",
             "Active projects board",
@@ -706,29 +750,117 @@ BY_DEPARTMENT: dict[Department, Director] = {d.department: d for d in DIRECTORS}
 # ── State ─────────────────────────────────────────────────────
 
 
-def state_for(offering: Offering, *, connected: frozenset[Source]) -> WidgetState:
-    """What this offering renders as, given what the workspace actually has.
+def state_from_sources(
+    needs: tuple[Source, ...],
+    *,
+    connected: frozenset[Source],
+    reachable: bool,
+    history_days: int | None = None,
+    age_days: int | None = None,
+    self_reported: bool = False,
+    unavailable_reason: str = "",
+    warmup_days: int = WARMUP_DAYS,
+    stale_after_days: int = STALE_AFTER_DAYS,
+) -> WidgetState:
+    """The ordering, from the sources alone.
 
-    Order matters. `PLANNED` is checked first because an unbuilt widget cannot be
-    unlocked by connecting anything, and telling someone otherwise is a promise
-    the product would then break. Only once an offering is delivered does the
-    question "what is missing?" have a useful answer.
+    `state_for` is this with an `Offering` unwrapped in front of it. The split
+    exists for `unlock_for_sources`' reason: thirteen capabilities have no
+    offering, and a state function that required one could not say what those
+    tiles render as.
     """
-    if offering.id not in DELIVERED:
+    if not reachable:
         return WidgetState.PLANNED
 
-    missing = [source for source in offering.needs if source not in connected]
-    if not missing:
-        return WidgetState.LIVE
-    if len(missing) == len(offering.needs):
+    if unavailable_reason:
+        return WidgetState.UNAVAILABLE
+
+    missing = [source for source in needs if source not in connected]
+    if len(missing) == len(needs) and needs:
         return WidgetState.LOCKED
-    # Some inputs present, so there is something real to show at reduced scope.
-    return WidgetState.PARTIAL
+    if missing:
+        return WidgetState.PARTIAL
+
+    if history_days is not None and history_days < warmup_days:
+        return WidgetState.WARMING
+
+    if age_days is not None and age_days > stale_after_days:
+        return WidgetState.STALE
+
+    if self_reported:
+        return WidgetState.SELF_REPORTED
+
+    return WidgetState.LIVE
+
+
+def state_for(
+    offering: Offering,
+    *,
+    connected: frozenset[Source],
+    reachable: bool,
+    history_days: int | None = None,
+    age_days: int | None = None,
+    self_reported: bool = False,
+    unavailable_reason: str = "",
+    warmup_days: int = WARMUP_DAYS,
+    stale_after_days: int = STALE_AFTER_DAYS,
+) -> WidgetState:
+    """What this offering renders as, given what the workspace actually has.
+
+    **Order is the whole design**, and each step answers a question the next one
+    depends on:
+
+    1. `PLANNED` — an unbuilt widget cannot be unlocked by connecting anything,
+       and saying otherwise is a promise the product would then break.
+       **`reachable` is passed in rather than read from a set here**, because
+       `domain/registry.py` is the one place that knows it and it is built
+       *from* these offerings — importing it back would be a real cycle. The
+       argument has no default for the same reason `writes` has no default in a
+       skill manifest: a caller that forgets it should not silently get the
+       optimistic answer.
+    2. `UNAVAILABLE` — the inputs being present says nothing about whether the
+       answer was computable, and rendering `LIVE` over a failed generation
+       shows a tile with no number in it.
+    3. `LOCKED` / `PARTIAL` — what is missing.
+    4. `WARMING` / `STALE` / `SELF_REPORTED` — everything arrived; is it usable?
+
+    The defaults keep every existing caller working: pass nothing and the last
+    four are unreachable, which is exactly the behaviour before this phase.
+    """
+    return state_from_sources(
+        offering.needs,
+        connected=connected,
+        reachable=reachable,
+        history_days=history_days,
+        age_days=age_days,
+        self_reported=self_reported,
+        unavailable_reason=unavailable_reason,
+        warmup_days=warmup_days,
+        stale_after_days=stale_after_days,
+    )
 
 
 def missing_sources(offering: Offering, *, connected: frozenset[Source]) -> tuple[Source, ...]:
     """What is not yet in place. Doc 04 §6 rule 1 — the tile states its unlock."""
     return tuple(source for source in offering.needs if source not in connected)
+
+
+def unlock_for_sources(needs: tuple[Source, ...], *, connected: frozenset[Source]) -> str:
+    """The unlock, from the sources alone.
+
+    Exists because **not every capability has an offering.** Thirteen are
+    `doc/08`-only — the narrower cut specified them and `doc/05` never did — so
+    a sentence that could only be built from an `Offering` left exactly the
+    tiles a question feeds with no unlock at all, which is the one place
+    `doc/04` §6 rule 1 cannot be broken.
+    """
+    missing = tuple(source for source in needs if source not in connected)
+    if not missing:
+        return ""
+    names = [LABELS[source] for source in missing]
+    if len(names) == 1:
+        return f"Needs {names[0]}."
+    return f"Needs {', '.join(names[:-1])} and {names[-1]}."
 
 
 def unlock_sentence(offering: Offering, *, connected: frozenset[Source]) -> str:
@@ -738,13 +870,7 @@ def unlock_sentence(offering: Offering, *, connected: frozenset[Source]) -> str:
     surface, and so a tile can never be shipped with the outline drawn and the
     sentence forgotten.
     """
-    missing = missing_sources(offering, connected=connected)
-    if not missing:
-        return ""
-    names = [LABELS[source] for source in missing]
-    if len(names) == 1:
-        return f"Needs {names[0]}."
-    return f"Needs {', '.join(names[:-1])} and {names[-1]}."
+    return unlock_for_sources(offering.needs, connected=connected)
 
 
 def landing_department(

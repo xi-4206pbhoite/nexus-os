@@ -1,13 +1,20 @@
-import { messageFrom } from '@/lib/api-error'
-import { AuthError } from '@/lib/auth-client'
+import { AuthError, csrfToken } from '@/lib/auth-client'
+import { HttpError, httpJson } from '@/lib/http'
 
 /**
  * The seven director pages.
  *
- * Every field here is read from the API and rendered. Nothing is computed in the
- * browser, and there is deliberately no place to put a value: an `Offering` has
- * a name, what it will show, its state and its unlock — and no number. The
- * figures arrive in a later milestone from `calculators/`, which is pure.
+ * Every field here is read from the API and rendered. **Nothing is computed in
+ * the browser** — that rule has not changed and is the point of the whole
+ * layering, but the sentence that used to follow it has: there is now a place
+ * to put a value.
+ *
+ * `DirectorBlock.figure` carries a score, its denominator and the checks that
+ * produced it, all from `calculators/audit.py` via `grounding/compute.py`. Even
+ * the percentage is served rather than divided here, so two clients cannot
+ * round differently from the drawer that shows the working. An `Offering` still
+ * has no number: that is `doc/05`'s row, and only a block is a thing on a
+ * screen.
  */
 
 /**
@@ -23,11 +30,566 @@ export type WidgetState =
   | 'locked'
   | 'warming'
   | 'self_reported'
+  | 'stale'
+  | 'unavailable'
   | 'planned'
 
-export type Offering = {
-  /** Doc 05's own numbering — `3.4` is the Growth Plan. */
+/**
+ * The nine block kinds (`doc/13` §6). The section is the unit of navigation,
+ * the block is the unit of rendering, and the capability is the unit of truth.
+ *
+ * `studio` is the ninth, found while assigning all eighty capabilities: a
+ * generator takes an instruction and produces an artefact, and forcing the
+ * content studio and the proposal studio into `panel` would have made a third
+ * of the product render as an explanation of itself.
+ */
+export type BlockKind =
+  | 'metric'
+  | 'trend'
+  | 'table'
+  | 'board'
+  | 'cards'
+  | 'queue'
+  | 'facts'
+  | 'panel'
+  | 'studio'
+
+/**
+ * One observation and the points it contributed.
+ *
+ * `evidence` is the calculator's own words and is an *observation*, never
+ * advice — "0 internal links", not "add internal links". Turning one into the
+ * other in the browser would be giving guidance nobody computed.
+ */
+export type FigureCheck = {
   id: string
+  label: string
+  passed: boolean
+  weight: number
+  evidence: string
+}
+
+/**
+ * A computed figure, its denominator, and its working.
+ *
+ * `label` and `measures` are not decoration and not the capability's name.
+ * `marketing.brand_intelligence` is presented as "Brand Intelligence" and
+ * promises voice consistency; `score_brand` measures whether a first-time
+ * visitor can tell what the company does. Both are true and only one is what
+ * the number says, so `measures` is rendered next to it — the guard against a
+ * correctly-computed figure sitting under a headline that misdescribes it.
+ */
+export type ScoreFigure = {
+  /** The tag. Narrowed on exhaustively (ADR 0033), so a third kind fails to
+   *  compile at every consumer rather than falling silently through a branch. */
+  kind: 'score'
+  label: string
+  /** What was counted, and what was not. Rendered, not stored for later. */
+  measures: string
+  score: number
+  max_score: number
+  percentage: number
+  checks: FigureCheck[]
+  checks_passed: number
+  /** The page. A score whose page cannot be opened is unverifiable. */
+  source_url: string
+  /** When the page was fetched. Stands in for the `stale` state, which the
+   *  route deliberately does not reach because nothing re-crawls on a
+   *  schedule. */
+  measured_at: string
+  method: string
+}
+
+/**
+ * A counted, totalled figure — ADR 0033's second kind.
+ *
+ * **There is no denominator and none is invented.** A pipeline is not a fraction
+ * of anything; a target to divide by would be a number the customer never gave
+ * us, which is I1's prohibition arriving as a helpful-looking percentage.
+ */
+export type AmountFigure = {
+  kind: 'amount'
+  label: string
+  /** What was counted **and what was not** — the same guard the scored figure
+   *  carries, against a correct number under a headline promising more. */
+  measures: string
+  /** The population the total came from. Not something to divide by. */
+  count: number
+  /**
+   * Minor units against `currency`. **`null` is not zero**: it means nothing
+   * could be totalled — no priced items, or more than one currency, and adding
+   * those needs a rate whose source and date nobody can see. Zero would say the
+   * pipeline is worth nothing (I10).
+   */
+  total_minor: number | null
+  /** The provider's own, never assumed to be the reporting currency. `null`
+   *  exactly when `total_minor` is. */
+  currency: string | null
+  /** Items in `count` the total leaves out. Part of the figure: a total that
+   *  did not say what it omitted is a total presented as complete. */
+  uncounted: number
+  /** What `uncounted` means here, in the calculator's words. */
+  uncounted_label: string
+  /**
+   * Whether somebody typed these rather than a system reporting them (ADR 0038).
+   *
+   * **The kind is the same and the standing is not.** A pipeline synced from a
+   * CRM and one a founder wrote down are both amounts; what differs is whether
+   * anything outside NEXUS agrees. Not the widget state, which renders quoted
+   * text and no figure — that would blank a tile whose job is a total.
+   */
+  self_reported: boolean
+  /** Where it was read from — a provider, because a CRM record has no page to
+   *  open. The scored figure's `source_url` is its equivalent. */
+  source: string
+  measured_at: string
+  method: string
+}
+
+/**
+ * Counts over records the customer typed into NEXUS themselves — ADR 0034's
+ * third kind, and the first figure computed from rows we store rather than from
+ * something we went and read.
+ *
+ * **Nothing here is a rate, and that is the point.** The ops layer fails on
+ * adoption rather than on an API: somebody who recorded three of twelve projects
+ * gives us a database indistinguishable from one who recorded twelve. A count
+ * states what was recorded and survives that; a percentage divides by a total
+ * only the customer can confirm is all of them.
+ */
+export type CountFigure = {
+  kind: 'count'
+  /** Reads "Projects recorded", never "Projects". The participle is the
+   *  sentence-level half of what the discriminated kind enforces structurally:
+   *  the figure is about the record, not about the company. */
+  label: string
+  measures: string
+  /** What one row is, in the plural — "projects", "tasks". */
+  noun: string
+  /** What `open_items` means here. "still open" for work, "below their minimum"
+   *  for stock — the same field counting a different thing. */
+  open_label: string
+  /** How many rows exist. The population, and deliberately **not** a
+   *  denominator: dividing by it is the complete-looking percentage over a
+   *  partial record that this kind exists to refuse. */
+  recorded: number
+  open_items: number
+  /** Open, past a date somebody set. No grace period and no "at risk" band. */
+  overdue: number
+  /** Open, with no due date at all. Beside `overdue` rather than dropped: a
+   *  reader deciding whether "1 overdue" is reassuring needs to know how many
+   *  were never given a date to be late against (I10). */
+  undated: number
+  /** When somebody last typed. **Not `measured_at`** — nothing was fetched. */
+  recorded_at: string
+  /**
+   * Always true — ADR 0035. The rows are the customer's own; the arithmetic over
+   * them is ours, which is why the widget state stays `live` rather than
+   * becoming `self_reported` (that state renders quoted text and no figure at
+   * all, and would blank this tile). Served rather than inferred from `kind`.
+   */
+  self_reported: boolean
+  /**
+   * The date somebody said this was all of them, or `''` if nobody has — D29.
+   *
+   * **Empty is the common case and the honest one.** It does not weaken the
+   * count, which states what was recorded either way. It refuses every rate over
+   * these rows, and the tile turns it into a sentence rather than letting a
+   * reader assume the figure describes the company.
+   */
+  complete_as_of: string
+  /** When they said it. Separate from `complete_as_of`. */
+  confirmed_on: string
+  /**
+   * Open items per severity band, worst first — empty for a record type with no
+   * severity.
+   *
+   * Still a count: ADR 0034 forbids dividing, not grouping. Every band is
+   * present even at zero, because "no high-severity issues" is the reassuring
+   * thing a reader came for and an absent row makes them count to be sure. The
+   * order is the server's — sorting here would put "high" between "low" and
+   * "medium".
+   */
+  breakdown: { label: string; count: number }[]
+  method: string
+}
+
+/**
+ * A share of something — ADR 0036's fourth kind, and the only ops figure that
+ * divides.
+ *
+ * Two gates stand in front of it: nobody has vouched the record is all of it, or
+ * nobody has said what late means here. `refused` names which, because they are
+ * different messages — one is unanswerable and one takes ten seconds.
+ */
+export type RateFigure = {
+  kind: 'rate'
+  label: string
+  measures: string
+  /** `null` whenever `refused` is set, and never `0` in its place: zero would
+   *  say every order was late where the truth is that we may not divide (I10).
+   *  Served rather than divided here, so two clients cannot round differently. */
+  percentage: number | null
+  /** Both `null` under a refusal — half a fraction is an invitation to finish it. */
+  numerator: number | null
+  denominator: number | null
+  /** Always served, gates or no gates. They are counts, true either way. */
+  outstanding: number
+  overdue: number
+  /** The customer's own rule. `null` until somebody sets it, which is one of the
+   *  refusals — a percentage whose rule is invisible cannot be checked. */
+  grace_days: number | null
+  /** What the fraction is over, in words. A rate whose denominator is unnamed
+   *  is a number nobody can check. */
+  denominator_label: string
+  /** `'count'` or `'money'`. Explicit rather than inferred from `currency`:
+   *  money with no reporting currency is a real state, and reading
+   *  `currency === null` as "counts" would print minor units at somebody. */
+  unit: string
+  /** The workspace's reporting currency, or `null` when it has not set one. */
+  currency: string | null
+  /** Recorded and deliberately outside the denominator — an unpriced supplier,
+   *  an order not yet sent. Reported rather than folded in (I10). */
+  excluded: number
+  /** `''` when shown; else `unvouched`, `no_rule`, `nothing_sent`,
+   *  `nothing_priced`. */
+  refused: string
+  self_reported: boolean
+  complete_as_of: string
+  confirmed_on: string
+  recorded_at: string
+  method: string
+}
+
+/**
+ * The figures a department score would have averaged — ADR 0040, and the only
+ * kind carrying no number.
+ *
+ * All seven inputs are counted from the customer's own records, so one number
+ * over them would measure how diligently somebody types rather than how the work
+ * is going. The tile names them, says why there is no score, and leaves each
+ * figure to speak for itself. Which inputs are producing is not served: the
+ * surface already carries those blocks.
+ */
+export type DriversFigure = {
+  kind: 'drivers'
+  label: string
+  measures: string
+  inputs: { key: string; name: string }[]
+  /** Why there is no score, in words. An empty metric slot with no sentence is
+   *  the failure `doc/13` §7 exists to avoid. */
+  reason: string
+  method: string
+}
+
+/**
+ * Ranked actions across the ops layer — a composition over records that exist,
+ * not a score over records that might not (ADR 0029).
+ *
+ * Two lists on purpose. `overdue` is ranked because everything in it is late in
+ * the same unit — days past a date somebody set. `beside` is not, and holds what
+ * deserves attention without being measured in days. One ordering over both
+ * would need a rule turning severity into days that nobody has set.
+ */
+export type PrioritiesFigure = {
+  kind: 'priorities'
+  label: string
+  measures: string
+  overdue: { kind_of: string; title: string; detail: string }[]
+  beside: { kind_of: string; title: string; detail: string }[]
+  recorded_at: string
+  self_reported: boolean
+  method: string
+}
+
+/** One tile carries one kind. The union cannot express two or none. */
+export type Figure =
+  | ScoreFigure
+  | AmountFigure
+  | CountFigure
+  | RateFigure
+  | DriversFigure
+  | PrioritiesFigure
+
+/**
+ * A stored sentence about a figure, and enough to trace it.
+ *
+ * `prompt_version` names the `SKILL.md` that wrote it, and is shown in the
+ * working drawer beside the calculator's `method` — so a disputed sentence
+ * traces back to its instructions as readily as a disputed number traces back
+ * to its arithmetic.
+ */
+export type Narration = {
+  prose: string
+  narrated_at: string
+  prompt_version: string
+}
+
+/**
+ * Why there is no sentence, named rather than described.
+ *
+ * Mirrors `UnavailableReason` on the API. The strings matter to this client for
+ * exactly one decision — whether to offer the button again — and never for
+ * composing copy: the wording is always the server's `message`.
+ */
+export type NarrationReason =
+  | 'missing_input'
+  | 'model_unavailable'
+  | 'skill_disabled'
+  | 'budget_exhausted'
+  | 'provider_failed'
+  | 'schema_invalid'
+  | 'invented_number'
+  | 'refused'
+
+/**
+ * What one attempt did — which is a different question from what a tile holds.
+ *
+ * The GET says what is true now; this says what just happened. That is why no
+ * refusal reason is stored on `DirectorBlock`: a reason kept there would
+ * resurrect yesterday's "your allowance is spent" on every page load, hours
+ * after the allowance reset.
+ */
+export type NarrationResult = {
+  key: string
+  outcome: 'answered' | 'unavailable'
+  /** Empty unless `outcome` is `unavailable`. */
+  reason: string
+  /**
+   * Never empty, and always the server's words.
+   *
+   * A reason-to-sentence map in the browser is the failure `unlock` already
+   * avoids: one wording change would then have to be made in as many places as
+   * there are clients, and a screen could ship with the space drawn and the
+   * copy forgotten.
+   */
+  message: string
+  narration?: Narration | null
+  /** Empty when no row was written, which happens only when nothing ran. */
+  generation_id: string
+  /**
+   * The figure the sentence describes.
+   *
+   * Compared against the one on screen: if the page was re-crawled between load
+   * and click, the sentence explains a number the reader cannot see, and saying
+   * so is better than showing it.
+   */
+  measured_at: string
+  tokens_left_today: number
+}
+
+/** One capability, as the rail renders it. */
+export type DirectorBlock = {
+  /** The canonical capability id — `finance.runway_alert`. */
+  key: string
+  /** Doc 05's numbering, or empty for a capability the wider document never had. */
+  doc05_id: string
+  name: string
+  shows: string
+  block: BlockKind
+  state: WidgetState
+  /** What this needs, in words. Empty only when nothing is missing. */
+  unlock: string
+  needs: string[]
+  /**
+   * The computed number, when there is one.
+   *
+   * Absent for every capability nothing computes, which is still most of them,
+   * and **never a zero-valued object**: a zero score would say the website
+   * failed every check where the truth is that nobody has looked (I10). That
+   * case arrives as no figure plus a `locked` state.
+   */
+  figure?: Figure | null
+  /**
+   * The stored sentence, when one still describes the figure above it.
+   *
+   * **A sibling of `figure`, not a field on it.** Every field on `Figure` is
+   * either the calculator's output or the provenance that makes it checkable;
+   * prose is neither — it is a model's output *about* that output, and nesting
+   * it would make the figure object partly generated. They also have different
+   * lifetimes: the figure is recomputed on every page load, the sentence is
+   * stored and can be absent while the figure is present.
+   *
+   * **Absent rather than stale.** A sentence that describes an older
+   * measurement is dropped by the API, not labelled — to a reader, "superseded"
+   * and "never explained" both render as the button, and surfacing the
+   * difference invites showing the old sentence anyway.
+   */
+  narration?: Narration | null
+}
+
+/** One tab on the rail. */
+export type Section = {
+  key: string
+  /** Doc 08's own wording, served rather than derived (finding F13). */
+  label: string
+  blocks: DirectorBlock[]
+  /**
+   * How many of this tab's blocks are not `planned`.
+   *
+   * The page opens on the first tab where this is non-zero. On a day-one
+   * dashboard that is Setup — and always opening on Overview would greet a new
+   * customer with five tiles that all say "not built yet" while the one tab
+   * with content sits two along.
+   */
+  available?: number
+}
+
+/** One answer, read back with everything needed to check it. */
+export type SetupFact = {
+  key: string
+  question: string
+  answer: string
+  answered_at: string
+  /** The capability that consumes it. An answer whose consumer cannot be named
+   *  is a form field (Q33), and this is where that shows. */
+  reads_it: string
+}
+
+/** One stated risk, and what would confirm or refute it. */
+export type WatchItem = {
+  key: string
+  label: string
+  stated: string
+  answered_at: string
+  measured_by: string
+  needs: string
+}
+
+/**
+ * The Setup and Watchlist tabs' content.
+ *
+ * Fetched separately from the rail: finding #23 is that the dashboard already
+ * spends 25 to 30 round trips, and most visits to a director page never open
+ * Setup.
+ */
+export type DirectorSetup = {
+  department: string
+  facts: SetupFact[]
+  watch: WatchItem[]
+}
+
+/** A figure NEXUS refuses to ask for, and where it comes from instead. */
+export type NotAsked = {
+  what: string
+  source: string
+}
+
+/**
+ * The reserved assistant panel (Q67).
+ *
+ * `available` is false everywhere today. A blank region where a feature is
+ * coming reads as a bug and a fake one reads as a lie, so the panel names the
+ * director and the questions it will answer.
+ */
+export type Assistant = {
+  director: string
+  questions: string[]
+  available: boolean
+}
+
+/**
+ * One passage an answer came from. `doc/20` A11.
+ *
+ * Every field is what a reader needs to **check** the claim: `documentId` and
+ * `chunkId` open it, the label and page make it recognisable before they do.
+ * A citation nobody can follow is decoration, and the numeral rule behind the
+ * answer is only meaningful if the passage can be read.
+ */
+export type AssistantCitation = {
+  chunkId: string
+  documentId: string
+  sourceLabel: string | null
+  sourcePage: number | null
+}
+
+/**
+ * What came back from asking. **One shape for both outcomes.**
+ *
+ * A refusal is a 200, not an error: `answered` false carries `sentence` — copy
+ * the API wrote — and no prose. The client never composes its own wording for
+ * a refusal, because the sentence is the one part of this feature that must not
+ * vary with who is asking or what exists (`doc/20` §5 Q6.2).
+ */
+export type AssistantReply = {
+  answered: boolean
+  prose: string
+  citations: AssistantCitation[]
+  reason: string | null
+  sentence: string | null
+}
+
+type AskWire = {
+  answered?: boolean
+  prose?: string
+  citations?: {
+    chunk_id?: string
+    document_id?: string
+    source_label?: string | null
+    source_page?: number | null
+  }[]
+  reason?: string | null
+  sentence?: string | null
+}
+
+/**
+ * Ask one director a question.
+ *
+ * **Never throws for a refusal**, because a refusal is an answer. It throws
+ * only when the exchange itself failed — and even then the caller shows a
+ * sentence rather than a stack, because "we could not reach the assistant" and
+ * "your documents do not cover that" are different facts a founder must be able
+ * to tell apart.
+ */
+export async function askDirector(
+  department: string,
+  question: string,
+): Promise<AssistantReply> {
+  // Read here rather than taken as an argument, matching `settings-client`,
+  // `ops-client` and `agent-onboarding-client`. A token passed down through
+  // props is a token a server component has to fetch and a page has to thread.
+  // The same shape `narrateBlock` uses below: the token is nullable, and
+  // omitting the header is what lets the API's own 403 be the refusal rather
+  // than a `null` reaching the wire as the string "null".
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = csrfToken()
+  if (token) headers['X-CSRF-Token'] = token
+
+  const response = await fetch(`/api/dashboards/${encodeURIComponent(department)}/ask`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ question }),
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('Cannot reach the assistant right now.')
+  }
+
+  const wire = (await response.json()) as AskWire
+  return {
+    answered: Boolean(wire.answered),
+    prose: wire.prose ?? '',
+    citations: (wire.citations ?? []).map((c) => ({
+      chunkId: c.chunk_id ?? '',
+      documentId: c.document_id ?? '',
+      sourceLabel: c.source_label ?? null,
+      sourcePage: c.source_page ?? null,
+    })),
+    reason: wire.reason ?? null,
+    sentence: wire.sentence ?? null,
+  }
+}
+
+export type Offering = {
+  /** Doc 05's own numbering — `3.4` is the Growth Plan. What the tile shows as
+   * its traceability label, because it points at the paragraph that specified it. */
+  id: string
+  /** The canonical capability id — `marketing.growth_planner`. The join to the
+   * question bank, the tool ledger and the skill that will narrate it. Not
+   * displayed today; carried so a client never has to guess it from `id`. */
+  key: string
   name: string
   shows: string
   state: WidgetState
@@ -40,16 +602,37 @@ export type Offering = {
 
 export type DirectorSummary = {
   department: string
+  /** The department's name for a person. Optional so a client built against an
+   *  older API falls back rather than rendering "undefined" in the nav. */
+  label?: string
   title: string
   remit: string
   scoreable: boolean
   path: string
   offering_count: number
+  /**
+   * Q27. How many of this department's questions are still unanswered.
+   *
+   * Optional because a client built against an older API gets `undefined`
+   * rather than a wrong zero — and zero would read as "nothing to do", which is
+   * the one thing it must not say when the truth is unknown.
+   */
+  unanswered_questions?: number
 }
 
 export type Dashboards = {
   directors: DirectorSummary[]
   /** Where to send this person. `null` when they hold no department. */
+  shell?: {
+    score: number | null
+    score_denominator: number
+    capabilities_delivered: number
+    capabilities_total: number
+    assistant_reserved: boolean
+  }
+  /** Optional so a client built against an older API gets `undefined` rather
+   *  than a wrong zero — the same reason `unanswered_questions` is optional. */
+
   landing: string | null
   delivered_count: number
 }
@@ -60,24 +643,235 @@ export type Director = {
   remit: string
   scoreable: boolean
   path: string
-  offerings: Offering[]
+  /** The flat catalogue. Optional so an older API does not break this client,
+   *  and going once nothing reads it. */
+  offerings?: Offering[]
+  /** The rail. Only tabs with something on them — doc 08 draws five that no
+   *  capability fills yet, and a tab somebody clicks into to find nothing is
+   *  worse than a tab that is not there. */
+  sections?: Section[]
+  /** Capabilities in this director's remit that doc 08's cut has no section
+   *  for (§11's deliberate gaps). Neither locked nor coming. */
+  catalogue?: DirectorBlock[]
+  /** Doc 08 §2B to §8B — what NEXUS will not ask you for, and what it reads
+   *  instead. A product surface rather than an internal rule. */
+  not_asked?: NotAsked[]
+  assistant?: Assistant
 }
 
+/**
+ * One finding on the morning brief.
+ *
+ * `headline` is the check's own label and `detail` is the calculator's
+ * evidence, both verbatim — the API does not negate the one or rewrite the
+ * other, and neither does this client. "0 / 37 images" is a finding; "add alt
+ * text" would be guidance nobody computed.
+ */
+export type BriefItem = {
+  /** `unmeasured` sorts above every `check_failed`, whatever the cost: a
+   *  missing measurement qualifies every number beneath it. */
+  kind: 'unmeasured' | 'check_failed'
+  headline: string
+  detail: string
+  /** Points this check was worth. `0` for `unmeasured`, where nothing was
+   *  scored and a number would be invented. */
+  cost: number
+  check_id: string
+  capability_id: string
+  method: string
+}
+
+/**
+ * The morning brief — ADR 0029.
+ *
+ * Computed in code, so it costs nothing, cannot refuse, and behaves the same
+ * with no API key configured. Ranked by points lost; it reports what was
+ * **found** and never what changed, because nothing re-crawls yet.
+ */
+export type Brief = {
+  /**
+   * `not_measured` is not `all_held` with zeroes in it. An audit that never ran
+   * must not read as one that found nothing, so the region is never hidden and
+   * never shows a zero (I10).
+   */
+  state: 'findings' | 'all_held' | 'not_measured'
+  items: BriefItem[]
+  /** Server-authored, never empty. One wording change reaches every surface. */
+  message: string
+  points_held: number
+  points_total: number
+  checks_passed: number
+  checks_total: number
+  /** Empty only when nothing was measured. */
+  measured_on: string
+}
+
+/**
+ * Where the product is for this company — ADR 0030.
+ *
+ * Three counts, never a percentage. A percentage of "done" invites being read
+ * as a verdict on the business, and the three bands have different remedies:
+ * `not_built` is ours, and the other two are already working.
+ */
+export type Coverage = {
+  measuring: number
+  /** Reachable and not a measurement — the Setup and Watchlist tabs. Kept
+   *  apart because a number somebody typed and a number we measured must never
+   *  look alike. */
+  reading_back: number
+  /** Ours. No connection the customer makes switches one of these on. */
+  not_built: number
+  /** Tiles only; shared with the API's other two coverage counters. */
+  total: number
+}
+
+/** One question still open, and what answering it would change. */
+export type OpenQuestion = {
+  key: string
+  department: string
+  /** The bank's own wording — the question here has to be the question setup
+   *  will ask, or a founder who answers one has not answered the other. */
+  prompt: string
+  /** What the answer is for, from the bank. A question with no stated purpose
+   *  is a form field (doc 06). */
+  why: string
+  consumed_by: string
+  consumer_name: string
+}
+
+/**
+ * What is open on the founder's side — `doc/14` step 5.
+ *
+ * **Answering informs; it does not unlock.** Every fact-consuming tile also
+ * requires a source, so no question switches a tile on by itself. The split is
+ * what makes that honest: `changes_a_figure` moves a number already on the
+ * page, and the rest are waiting on us.
+ */
+export type OpenQuestions = {
+  changes_a_figure: OpenQuestion[]
+  /** Counted, not listed — a founder cannot act on these yet, and a long list
+   *  would bury the ones they can. */
+  waiting_on_us: number
+  total: number
+}
+
+/**
+ * One department, as the common surface summarises it — `doc/14` step 6.
+ *
+ * The tab rail, demoted to a block a reader passes on the way somewhere else.
+ * Four states, because four different sentences are true, and a state whose
+ * sentence is wrong is worse than no row: telling somebody to answer questions
+ * for a department whose questions are all answered sends them looking for a
+ * form that is not there.
+ */
+export type DirectorRow = {
+  department: string
+  label: string
+  path: string
+  measuring: number
+  unanswered: number
+  state: 'measuring' | 'answerable' | 'waiting' | 'empty'
+  /** Server-authored, never empty. */
+  line: string
+}
+
+/** Everything the common surface needs, in one response. */
+export type Surface = {
+  brief: Brief
+  coverage: Coverage
+  questions: OpenQuestions
+  directors: DirectorRow[]
+  /** The tiles that carry a figure, served exactly as the director page serves
+   *  them. The surface changes where a founder reads a number, never what it
+   *  says — asserted end to end in `test_surface_tiles.py`. */
+  measured: DirectorBlock[]
+}
+
+/**
+ * F-03: this used to be `await response.json().catch(() => null)` returned
+ * unchecked — an OK response with an empty or unparseable body surfaced as a
+ * bare `null` several renders later, wherever the caller first dereferenced a
+ * field on it. Routed through the shared `httpJson` (#3), which throws at the
+ * boundary instead, and carries the timeout ceiling F-12 found missing
+ * everywhere in this file.
+ */
 async function get(path: string): Promise<unknown> {
-  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store' })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new AuthError(messageFrom(payload, 'Could not load that dashboard.'), response.status)
+  try {
+    return await httpJson<unknown>(path, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      fallbackMessage: 'Could not load that dashboard.',
+    })
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw new AuthError(error.message, error.status, error.detail)
+    }
+    throw error
   }
-  return payload
 }
 
 export async function fetchDashboards(): Promise<Dashboards> {
   return (await get('/api/dashboards')) as Dashboards
 }
 
+export async function fetchSetup(department: string): Promise<DirectorSetup> {
+  return (await get(
+    `/api/dashboards/${encodeURIComponent(department)}/setup`,
+  )) as DirectorSetup
+}
+
+export async function fetchSurface(): Promise<Surface> {
+  return (await get('/api/dashboards/surface')) as Surface
+}
+
 export async function fetchDirector(department: string): Promise<Director> {
   return (await get(`/api/dashboards/${encodeURIComponent(department)}`)) as Director
+}
+
+/**
+ * Ask a director to explain one figure.
+ *
+ * **A POST, and it carries CSRF**, because it spends tokens. A GET that spent
+ * money would break the promise `require_csrf` relies on to exempt safe methods
+ * — and a page load that quietly billed the customer for seven sentences
+ * nobody asked for is the version of this feature that cannot be undone.
+ *
+ * `key` is the capability id exactly as it arrived in `DirectorBlock.key`.
+ * Nothing is composed here from a department plus a block name: two ways to
+ * name one thing is two ways to disagree about it, and the API refuses a key
+ * that does not belong to the department in the path.
+ *
+ * A refusal is a **200 with a reason**, not a thrown error. There is a real
+ * number on the screen beside it, and pushing this into a catch block is what
+ * tempts a client to render an error state over a figure that is perfectly
+ * good.
+ */
+export async function narrateBlock(
+  department: string,
+  key: string,
+): Promise<NarrationResult> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = csrfToken()
+  if (token) headers['X-CSRF-Token'] = token
+
+  try {
+    return await httpJson<NarrationResult>(
+      `/api/dashboards/${encodeURIComponent(department)}/narrate`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ key }),
+        credentials: 'same-origin',
+        cache: 'no-store',
+        fallbackMessage: 'Could not write that explanation.',
+      },
+    )
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw new AuthError(error.message, error.status, error.detail)
+    }
+    throw error
+  }
 }
 
 export const STATE_LABEL: Record<WidgetState, string> = {
@@ -86,5 +880,7 @@ export const STATE_LABEL: Record<WidgetState, string> = {
   locked: 'Locked',
   warming: 'Warming',
   self_reported: 'Entered by you',
+  stale: 'Out of date',
+  unavailable: 'Could not compute',
   planned: 'Not built yet',
 }

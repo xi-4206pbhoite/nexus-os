@@ -23,28 +23,31 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Connection, create_engine
+from sqlalchemy import Connection, Engine, create_engine
 
 from tests.dburl import database_url
 
 DB_URL = database_url()
-requires_db = pytest.mark.skipif(
-    DB_URL is None,
-    reason="No NEXUS_DATABASE_URL — isolation tests need a real PostgreSQL as the app role",
-)
+# The real marker, declared in pyproject.toml. Previously a local
+# `pytest.mark.skipif` — nine copies of it, so nine places a database suite
+# could silently vanish from a green run. The skip decision now lives in
+# conftest.py, which fails the session if it ever fires.
+requires_db = pytest.mark.requires_db
 
 
 @pytest.fixture(scope="module")
-def engine():  # type: ignore[no-untyped-def]
-    if DB_URL is None:
-        pytest.skip("no database")
+def engine() -> Iterator[Engine]:
+    # `requires_db` guarantees a database, so a missing URL here is a broken
+    # harness rather than an absent one. Assert loudly instead of skipping —
+    # a skip is what tests/test_ci_contract.py exists to make impossible.
+    assert DB_URL is not None
     eng = create_engine(DB_URL, poolclass=sa.pool.NullPool)
     yield eng
     eng.dispose()
 
 
 @pytest.fixture
-def conn(engine) -> Iterator[Connection]:  # type: ignore[no-untyped-def]
+def conn(engine: Engine) -> Iterator[Connection]:
     """A connection in a transaction that is always rolled back."""
     connection = engine.connect()
     trans = connection.begin()
@@ -178,7 +181,7 @@ def test_cleared_workspace_sees_nothing(
 
 
 @requires_db
-def test_never_set_workspace_sees_nothing(engine) -> None:  # type: ignore[no-untyped-def]
+def test_never_set_workspace_sees_nothing(engine: Engine) -> None:
     """Default deny on a connection where the GUC was never set at all.
 
     A retry worker, a scheduled job or a second service that bypasses the
@@ -302,3 +305,45 @@ def test_switching_workspace_changes_visibility_immediately(
 
     set_workspace(conn, ws_a)
     assert conn.execute(sa.text("SELECT name FROM workspace")).scalar() == "Workspace A"
+
+
+# ── The bridge to the application's own helper (H9) ───────────
+
+
+def test_scoped_connection_sets_the_same_gucs_this_suite_hand_sets() -> None:
+    """H9 lists this file's hand-set GUCs as a "test mirror" to retire by
+    driving `scoped_connection` instead. **It is deliberately not retired**, and
+    this test is what makes that safe rather than lazy.
+
+    The suite above asserts a *database* behaviour: that the RLS policies in
+    migration 0002 isolate tenants, whatever the application does. It runs plain
+    synchronous SQL as the real unprivileged role for exactly that reason — the
+    same reason `pyproject.toml` carries `psycopg2-binary` as a test-only
+    dependency. Routing it through `scoped_connection` would change what is
+    proved from "the policy isolates" to "our helper sets a GUC", which is
+    strictly weaker: a bug in the helper would then hide a working policy, and a
+    missing policy would be masked by a correct helper.
+
+    What the mirror argument *is* right about is drift — two places that name
+    `nexus.workspace_id` can disagree. So the coupling is asserted here rather
+    than removed: if `scoped_connection` ever sets a different GUC, or stops
+    setting one, this fails and the isolation suite above is known to be
+    testing something the application no longer does.
+    """
+    import re
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "retrieval" / "scoped.py").read_text(
+        encoding="utf-8"
+    )
+    helper_gucs = set(re.findall(r"set_config\(\s*'([a-z_.]+)'", source))
+
+    this_file = Path(__file__).read_text(encoding="utf-8")
+    suite_gucs = set(re.findall(r"set_config\('([a-z_.]+)'", this_file))
+
+    assert "nexus.workspace_id" in helper_gucs
+    assert suite_gucs <= helper_gucs, (
+        f"this suite sets {sorted(suite_gucs - helper_gucs)}, which "
+        "`scoped_connection` does not — so it is proving isolation against a "
+        "scope the application never establishes."
+    )

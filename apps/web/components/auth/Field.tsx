@@ -11,7 +11,7 @@ import { useId, useState } from 'react'
  */
 export function Field({
   label,
-  type,
+  type = 'text',
   value,
   onChange,
   autoComplete,
@@ -20,17 +20,65 @@ export function Field({
   disabled,
   placeholder,
   revealable,
+  options,
+  required,
 }: {
   label: string
-  type: 'email' | 'password'
+  /**
+   * Defaults to `text`. Widened from `'email' | 'password'` in P5 for the
+   * company-registration form — a company name is not a credential, and
+   * duplicating this component to say so would have meant two places to fix the
+   * `aria-describedby` reasoning below.
+   */
+  type?: 'email' | 'password' | 'text' | 'url' | 'tel'
   value: string
   onChange: (value: string) => void
-  autoComplete: string
+  /** Optional: only credential fields have a meaningful autofill token. */
+  autoComplete?: string
   hint?: string
   error?: string
   disabled?: boolean
   placeholder?: string
   revealable?: boolean
+  /**
+   * Whether the field must be filled.
+   *
+   * **Nothing carried this until a browser run went looking**, so every form in
+   * the product — register, register the company, sign in — validated only on
+   * the server. Two things were missing rather than one: the browser did no
+   * constraint check, and a screen reader announced an optional field where the
+   * form would refuse without it.
+   *
+   * `required` sets both, because `aria-required` and the native attribute are
+   * not interchangeable: the attribute is what a screen reader reads, and
+   * `aria-required` says the same thing to assistive technology. **Neither
+   * blocks a submit here** (F-24) — every form that uses `Field` also sets
+   * `noValidate`, which turns off the browser's own constraint validation
+   * entirely, `required` included. That is deliberate: `noValidate` is what
+   * lets a form show its own styled, announced error instead of the browser's
+   * native bubble — but it means `required` is decorative unless the form's
+   * own `onSubmit` checks the field itself. Every consumer of `Field` does
+   * that validation in its `onSubmit`, the same pattern `LoginForm` uses.
+   *
+   * Optional fields say so in their **label** — "Phone (optional)" — which is
+   * the existing convention here, so this is the inverse of it and not a second
+   * way of saying the same thing.
+   */
+  required?: boolean
+  /**
+   * Render a `<select>` over these instead of a text input.
+   *
+   * Here rather than in a second component so that the label, the hint, the
+   * `role="alert"` error and the `aria-describedby` reasoning below have one
+   * implementation. A `SelectField` copy would be a second place for the
+   * describedby bug this component's comment documents.
+   *
+   * `placeholder` becomes the empty first option, which is how a `<select>`
+   * expresses "nothing chosen" — an optional field has to be able to stay
+   * unanswered, and a select with no empty option silently answers it with
+   * whatever happens to be first.
+   */
+  options?: { value: string; label: string }[]
 }) {
   const id = useId()
   const [revealed, setRevealed] = useState(false)
@@ -50,22 +98,69 @@ export function Field({
       </label>
 
       <div className="relative mt-1.5">
-        <input
-          id={id}
-          type={inputType}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          autoComplete={autoComplete}
-          disabled={disabled}
-          placeholder={placeholder}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describedById}
-          className={`h-12 w-full rounded-xl border bg-white px-4 text-[0.95rem] text-ink-900 shadow-paper outline-none transition-colors placeholder:text-ink-300 disabled:bg-bone-100 disabled:text-ink-500 ${
-            error
-              ? 'border-clay-500 focus:border-clay-500 focus:ring-2 focus:ring-clay-200'
-              : 'border-ink-200 focus:border-steel-500 focus:ring-2 focus:ring-steel-200'
-          } ${revealable ? 'pr-20' : ''}`}
-        />
+        {options ? (
+          <select
+            id={id}
+            required={required}
+            aria-required={required || undefined}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedById}
+            // `appearance-none` plus an explicit chevron: the native control
+            // renders at its own height and font on every platform, which next
+            // to these inputs reads as a different form. No `pr-20` branch —
+            // `revealable` is a password affordance and cannot apply here.
+            className={`h-12 w-full appearance-none rounded-xl border bg-white px-4 pr-10 text-[0.95rem] shadow-paper outline-none transition-colors disabled:bg-bone-100 disabled:text-ink-500 ${
+              value ? 'text-ink-900' : 'text-ink-300'
+            } ${
+              error
+                ? 'border-clay-500 focus:border-clay-500 focus:ring-2 focus:ring-clay-200'
+                : 'border-ink-200 focus:border-steel-500 focus:ring-2 focus:ring-steel-200'
+            }`}
+          >
+            <option value="">{placeholder ?? 'Select…'}</option>
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            id={id}
+            type={inputType}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            autoComplete={autoComplete}
+            disabled={disabled}
+            required={required}
+            aria-required={required || undefined}
+            placeholder={placeholder}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedById}
+            className={`h-12 w-full rounded-xl border bg-white px-4 text-[0.95rem] text-ink-900 shadow-paper outline-none transition-colors placeholder:text-ink-300 disabled:bg-bone-100 disabled:text-ink-500 ${
+              error
+                ? 'border-clay-500 focus:border-clay-500 focus:ring-2 focus:ring-clay-200'
+                : 'border-ink-200 focus:border-steel-500 focus:ring-2 focus:ring-steel-200'
+            } ${revealable ? 'pr-20' : ''}`}
+          />
+        )}
+
+        {options ? (
+          <svg
+            aria-hidden
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            className="pointer-events-none absolute inset-y-0 right-3.5 my-auto h-4 w-4 text-ink-400"
+          >
+            <path d="M6 8l4 4 4-4" />
+          </svg>
+        ) : null}
 
         {revealable ? (
           <button

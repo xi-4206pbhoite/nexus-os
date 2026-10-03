@@ -17,25 +17,31 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 
 from tests.dburl import database_url
 
 DB_URL = database_url()
-requires_db = pytest.mark.skipif(DB_URL is None, reason="No NEXUS_DATABASE_URL")
+# The real marker, declared in pyproject.toml. Previously a local
+# `pytest.mark.skipif` — nine copies of it, so nine places a database suite
+# could silently vanish from a green run. The skip decision now lives in
+# conftest.py, which fails the session if it ever fires.
+requires_db = pytest.mark.requires_db
 
 
 @pytest.fixture(scope="module")
-def engine():  # type: ignore[no-untyped-def]
-    if DB_URL is None:
-        pytest.skip("no database")
+def engine() -> Iterator[Engine]:
+    # `requires_db` guarantees a database, so a missing URL here is a broken
+    # harness rather than an absent one. Assert loudly instead of skipping —
+    # a skip is what tests/test_ci_contract.py exists to make impossible.
+    assert DB_URL is not None
     eng = create_engine(DB_URL, poolclass=sa.pool.NullPool)
     yield eng
     eng.dispose()
 
 
 @pytest.fixture
-def conn(engine) -> Iterator[Connection]:  # type: ignore[no-untyped-def]
+def conn(engine: Engine) -> Iterator[Connection]:
     connection = engine.connect()
     trans = connection.begin()
     try:
@@ -65,6 +71,12 @@ def make_claim(
     verified: bool = True,
 ) -> UUID:
     cid = uuid4()
+    # Since migration 0013 `domain_claim` is row-level secured on `user_id`, so
+    # an insert with no `nexus.user_id` fails the WITH CHECK. Set here rather
+    # than in each test: this is the seam every claim in this file goes through,
+    # and it mirrors what `app/auth/domains.py:_scope_to_user` does at the two
+    # doors into that module.
+    conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user_id)})
     conn.execute(
         text(
             "INSERT INTO domain_claim"
@@ -215,13 +227,23 @@ def test_two_different_people_may_each_attempt_the_same_domain(conn: Connection)
     real owner simply by starting a claim first.
     """
     domain = f"shared-{uuid4().hex[:8]}.om"
-    make_claim(conn, user_id=make_user(conn), domain=domain, state="pending", verified=False)
-    make_claim(conn, user_id=make_user(conn), domain=domain, state="pending", verified=False)
+    alice, bob = make_user(conn), make_user(conn)
+    # Both inserts succeeding *is* the assertion — the partial unique index
+    # permits two pending claims on one domain, and a violation would raise
+    # here rather than return a count.
+    make_claim(conn, user_id=alice, domain=domain, state="pending", verified=False)
+    make_claim(conn, user_id=bob, domain=domain, state="pending", verified=False)
 
-    count = conn.execute(
-        text("SELECT count(*) FROM domain_claim WHERE lower(domain) = :d"), {"d": domain}
-    ).scalar()
-    assert count == 2
+    # Counted per user, not in total. Since migration 0013 neither of them can
+    # see the other's attempt, which is the point of the policy and is worth
+    # asserting here: two people racing for a domain must not be able to
+    # discover each other through it.
+    for user in (alice, bob):
+        conn.execute(text("SELECT set_config('nexus.user_id', :u, true)"), {"u": str(user)})
+        mine = conn.execute(
+            text("SELECT count(*) FROM domain_claim WHERE lower(domain) = :d"), {"d": domain}
+        ).scalar()
+        assert mine == 1
 
 
 # ── Weak claims flag review ───────────────────────────────────
@@ -345,3 +367,59 @@ def test_revocation_does_not_delete_the_workspace(conn: Connection) -> None:
     ).first()
     assert row is not None, "revocation must not delete the workspace"
     assert row.owner_claim_review is True
+
+
+# ── The check is metered (finding #4) ─────────────────────────
+
+
+@requires_db
+def test_domain_check_is_metered_per_user_and_per_domain(conn: Connection) -> None:
+    """`/domains/{id}/check` performs a server-side fetch against a host the
+    caller named, and until now nothing bounded it.
+
+    It became the *only* unmetered outbound fetch in the product when P2 deleted
+    the preview's `PER_DOMAIN` bucket — which finding #4 had cited as its
+    mitigation, so removing the preview made this worse rather than better.
+
+    Two counters, because the two abuses differ. Per user bounds one account
+    looping the button; per domain is the reflected-DoS shape, where many
+    accounts pointed at one victim each stay under a per-user limit while the
+    target is hammered by requests it never asked for.
+
+    Asserted on the limits themselves rather than by driving the route 60 times:
+    what matters is that both buckets exist and that the domain ceiling is the
+    higher of the two — a per-domain limit *below* the per-user one would refuse
+    a single legitimate claimant before it ever refused a crowd.
+    """
+    from app.connectors.rate_limit import CHECK_PER_DOMAIN, CHECK_PER_USER
+
+    assert CHECK_PER_USER.max_count > 0
+    assert CHECK_PER_DOMAIN.max_count >= CHECK_PER_USER.max_count, (
+        "the per-domain ceiling is below the per-user one, so one honest "
+        "claimant hits it before any crowd does"
+    )
+    # Distinct prefixes, or the two counters share a bucket and the tighter of
+    # them silently becomes the only one.
+    assert CHECK_PER_USER.bucket_prefix != CHECK_PER_DOMAIN.bucket_prefix
+
+
+def test_the_check_route_meters_before_it_fetches() -> None:
+    """Order matters, and it is not visible from the limits alone.
+
+    A limit consulted *after* the fetch has already sent the request it exists
+    to prevent. This asserts the metering appears ahead of `perform_check` in
+    the source — crude, and it is the only way to state an ordering that no
+    return value reveals.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "routes" / "onboarding.py").read_text(
+        encoding="utf-8"
+    )
+
+    meter_at = source.index("CHECK_PER_DOMAIN, loaded.domain")
+    fetch_at = source.index("await perform_check(")
+    assert meter_at < fetch_at, (
+        "the rate limit is consulted after the outbound fetch, which means the "
+        "request it exists to prevent has already been sent"
+    )

@@ -43,13 +43,10 @@ async def test_matching_header_passes_the_csrf_gate() -> None:
     from app.auth.csrf import require_csrf
 
     request = Request({"type": "http", "method": "POST", "headers": [], "query_string": b""})
-    # Returns None rather than raising: the gate is satisfied.
-    assert (
-        await require_csrf(
-            request, nexus_csrf="a-known-csrf-value", x_csrf_token="a-known-csrf-value"
-        )
-        is None
-    )
+    # Awaited for the side effect of *not* raising: the gate is satisfied when
+    # it returns. Not compared to None - `require_csrf` is annotated as
+    # returning None, and mypy rejects testing the value of such a call.
+    await require_csrf(request, nexus_csrf="a-known-csrf-value", x_csrf_token="a-known-csrf-value")
 
 
 async def test_an_absent_csrf_cookie_is_rejected_not_waved_through() -> None:
@@ -95,10 +92,16 @@ async def test_every_route_guarded_by_csrf_also_requires_a_session() -> None:
 
     csrf_guarded = {
         "/auth/logout",
-        "/auth/workspace",
+        # `/auth/workspace` was here until P3 deleted it — one company per
+        # person means there is never a second workspace to switch to
+        # (`doc/11` §3.2). This test is what noticed, which is the point of
+        # naming the guarded routes rather than counting them.
         "/domains",
         "/domains/{claim_id}/check",
         "/domains/{claim_id}/workspace",
+        # Slice 2. A POST that spends the workspace's daily token allowance is
+        # a POST worth forging.
+        "/dashboards/{department}/narrate",
     }
     # From the OpenAPI schema, not `app.routes` — the latter does not expose
     # `.path` for these route objects, which silently yields an empty set and a

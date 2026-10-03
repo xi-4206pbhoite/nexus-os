@@ -28,6 +28,7 @@ the roles that table leaves as `None` are the ones the inviter must fill in.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Final
 
 from app.domain.scopes import DEPARTMENT_BY_ROLE, Department, Role, RoleGrant, Scope, grant_for
 from app.domain.session import ScopedSession
@@ -68,6 +69,12 @@ def outranks(inviter: RoleGrant, invited: RoleGrant) -> bool:
     )
 
 
+MAX_DEPARTMENTS_PER_MEMBER: Final = 3
+"""Q70. Not a technical limit — a person in five departments is not really in
+any of them, and the scope lattice stops meaning anything if membership is how
+people get broad access rather than the Executive role."""
+
+
 def departments_for(
     role: Role, requested: Iterable[Department], *, inviter: ScopedSession
 ) -> frozenset[Department]:
@@ -101,8 +108,23 @@ def departments_for(
             )
         return frozenset()
 
-    if len(asked) != 1:
-        raise InvitationError(f"Choose exactly one department for a {role.value}.")
+    if not asked:
+        raise InvitationError(f"Choose at least one department for a {role.value}.")
+
+    if len(asked) > MAX_DEPARTMENTS_PER_MEMBER:
+        # **Q70 widened this from exactly one.** The previous rule was `!= 1`,
+        # and it was too narrow for real companies: a finance lead who also runs
+        # operations is ordinary in a fifteen-person business, and forcing them
+        # to Executive to describe that gives them the whole company instead.
+        #
+        # Three, not unlimited: a person in five departments is not really in
+        # any of them, and the scope lattice stops meaning anything if
+        # membership becomes how people get broad access rather than the
+        # Executive role.
+        raise InvitationError(
+            f"A person can belong to at most {MAX_DEPARTMENTS_PER_MEMBER} departments. "
+            "Someone who needs more than that is probably an executive."
+        )
 
     for department in asked:
         if not inviter.may_reach_department(department):
@@ -122,10 +144,35 @@ def check_invitation(
     route calls this and nothing else, so there is one function to audit rather
     than one per check — the same reasoning as `create_workspace_for_claim`.
     """
-    if not may_administer(inviter.role):
-        raise InvitationError("Inviting people is available to owners and executives.")
+    if not may_administer(inviter.role) and inviter.role is not Role.DEPARTMENT_MANAGER:
+        raise InvitationError(
+            "Inviting people is available to owners, executives and department managers."
+        )
 
     if not outranks(grant_for(inviter.role), grant_for(role)):
         raise InvitationError(f"You cannot grant a role above your own: {role.value}.")
 
-    return departments_for(role, departments, inviter=inviter)
+    resolved = departments_for(role, departments, inviter=inviter)
+
+    if inviter.role is Role.DEPARTMENT_MANAGER and resolved - inviter.departments:
+        # D16/Q68, and this catches only the case `departments_for` cannot.
+        #
+        # A *named* department the manager cannot reach is already refused
+        # there, as "Not found" — deliberately, so the refusal does not confirm
+        # the department exists to somebody guessing. That is the better
+        # message and it stays.
+        #
+        # What is left is the **derived** case: a manager inviting an Executive
+        # names no department at all, so nothing is outside theirs to check, and
+        # then `departments_for` hands back `executive` from the role. The
+        # escalation lives in the gap between the request and the derivation,
+        # which is why this runs on `resolved` rather than on what was asked.
+        raise InvitationError("Not found")
+
+    if len(resolved) > MAX_DEPARTMENTS_PER_MEMBER:
+        raise InvitationError(
+            f"A person can belong to at most {MAX_DEPARTMENTS_PER_MEMBER} departments. "
+            "Someone who needs more than that is probably an executive."
+        )
+
+    return resolved

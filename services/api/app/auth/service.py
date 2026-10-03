@@ -15,17 +15,20 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import (
-    hash_password,
+    hash_password_async,
     needs_rehash,
-    spend_dummy_verification,
-    verify_password,
+    spend_dummy_verification_async,
+    verify_password_async,
 )
 from app.auth.tokens import hash_token, new_token
+from app.config import get_settings
 from app.domain.scopes import Department, Role
 from app.domain.session import ScopedSession
+from app.retrieval.scoped import apply_user_scope
 
 
 class AuthError(Exception):
@@ -52,14 +55,38 @@ class Membership:
     departments: frozenset[Department]
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    """An empty optional field is absent, not present-and-empty.
+
+    The check constraints reject `''`, so a form that posts a skipped field as
+    the empty string would 500 on a value the user never entered.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 # ── Registration ──────────────────────────────────────────────
 
 
 async def register_user(
-    db: AsyncSession, *, email: str, password: str, display_name: str | None = None
+    db: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    display_name: str | None = None,
+    phone: str | None = None,
 ) -> UUID:
+    """Create the account.
+
+    `phone` is stored and nothing more: not verified, not an identifier, and not
+    a second way to sign in. Email remains the only unique key, because a phone
+    number is reassigned between people and reformatted between countries, and a
+    second identity column is a second way for two humans to become one row.
+    """
     normalised = email.strip().lower()
-    password_hash = hash_password(password)
+    password_hash = await hash_password_async(password)
 
     existing = await db.execute(
         text("SELECT 1 FROM app_user WHERE lower(email) = :email"), {"email": normalised}
@@ -67,13 +94,34 @@ async def register_user(
     if existing.first() is not None:
         raise EmailAlreadyRegisteredError(normalised)
 
-    row = await db.execute(
-        text(
-            "INSERT INTO app_user (email, password_hash, display_name)"
-            " VALUES (:email, :hash, :name) RETURNING id"
-        ),
-        {"email": normalised, "hash": password_hash, "name": display_name},
-    )
+    # Finding #10. The SELECT above is a check-then-act, and between the two a
+    # concurrent registration of the same address wins the unique index — so the
+    # INSERT raised `IntegrityError`, which reached the client as a **500**.
+    #
+    # That is not merely an ugly error. `POST /auth/register` answers identically
+    # for a new and a known address *precisely* so it cannot be used to discover
+    # who has an account; a 500 on exactly the addresses that already exist is
+    # the distinguishable reply that design exists to prevent, handed out under
+    # load. The race is narrow and the oracle is not — an attacker can widen it
+    # by registering the same address twice concurrently on purpose.
+    #
+    # Caught and converted to the same refusal the sequential path raises, so
+    # both orderings produce the one response the route knows how to answer.
+    try:
+        row = await db.execute(
+            text(
+                "INSERT INTO app_user (email, password_hash, display_name, phone)"
+                " VALUES (:email, :hash, :name, :phone) RETURNING id"
+            ),
+            {
+                "email": normalised,
+                "hash": password_hash,
+                "name": _blank_to_none(display_name),
+                "phone": _blank_to_none(phone),
+            },
+        )
+    except IntegrityError as exc:
+        raise EmailAlreadyRegisteredError(normalised) from exc
     return UUID(str(row.scalar_one()))
 
 
@@ -97,10 +145,10 @@ async def authenticate(db: AsyncSession, *, email: str, password: str) -> UUID:
 
     if row is None or row.password_hash is None:
         # Spend comparable time so absence is not measurably faster.
-        spend_dummy_verification()
+        await spend_dummy_verification_async()
         raise AuthError("invalid credentials")
 
-    if not verify_password(row.password_hash, password):
+    if not await verify_password_async(row.password_hash, password):
         raise AuthError("invalid credentials")
 
     if row.disabled_at is not None:
@@ -109,7 +157,7 @@ async def authenticate(db: AsyncSession, *, email: str, password: str) -> UUID:
     if needs_rehash(row.password_hash):
         await db.execute(
             text("UPDATE app_user SET password_hash = :hash WHERE id = :id"),
-            {"hash": hash_password(password), "id": str(row.id)},
+            {"hash": await hash_password_async(password), "id": str(row.id)},
         )
 
     return UUID(str(row.id))
@@ -159,21 +207,51 @@ class ResolvedSession:
     active_workspace_id: UUID | None
 
 
-async def resolve_session(db: AsyncSession, *, token: str) -> ResolvedSession | None:
-    """Look a session up by token hash. Expired or revoked sessions are absent.
+async def resolve_session(
+    db: AsyncSession, *, token: str, ttl_seconds: int | None = None
+) -> ResolvedSession | None:
+    """Look a session up by token hash, and extend it if it is running out.
 
     The lookup is by hash, so the plaintext token is never compared in SQL and
     never stored.
+
+    **Rolling refresh** (`doc/11` §5.2). Twelve hours alone is the wrong shape
+    for both parties: someone working a long day is signed out mid-task, and a
+    fixed window is one an attacker can simply wait out.
+
+    Three things make this safe and affordable, and each is in the statement
+    below rather than in a comment asking a caller to be careful:
+
+    - **It is one statement.** An `UPDATE ... RETURNING` that carries its own
+      `revoked_at IS NULL AND expires_at > now()`, so resolving and refreshing
+      cannot disagree. A read followed by a write could extend a session revoked
+      between the two — which is how a logout, a password reset or an
+      administrator ending a session gets quietly undone.
+    - **It only writes when there is something to gain.** The extension applies
+      once more than half the window is spent. Refreshing on every request would
+      turn every authenticated read into a write, which on a serverless Postgres
+      billed per statement is a cost bug wearing a security feature's clothes.
+    - **A dead session is never revived.** The `WHERE` is the same predicate the
+      old read used, so an expired or revoked row matches nothing and is neither
+      returned nor extended.
     """
+    window = ttl_seconds if ttl_seconds is not None else get_settings().session_max_age_seconds
+
     row = (
         await db.execute(
             text(
-                "SELECT id, user_id, active_workspace_id FROM user_session"
+                "UPDATE user_session"
+                "   SET expires_at = CASE"
+                "         WHEN expires_at < now() + make_interval(secs => :half)"
+                "           THEN now() + make_interval(secs => :window)"
+                "         ELSE expires_at"
+                "       END"
                 " WHERE token_hash = :hash"
                 "   AND revoked_at IS NULL"
                 "   AND expires_at > now()"
+                " RETURNING id, user_id, active_workspace_id"
             ),
-            {"hash": hash_token(token)},
+            {"hash": hash_token(token), "half": window / 2, "window": window},
         )
     ).first()
 
@@ -216,7 +294,7 @@ async def memberships_for_user(db: AsyncSession, *, user_id: UUID) -> list[Membe
     `nexus.user_id` must be set on this connection. It discloses only the
     caller's own memberships — never another person's.
     """
-    await db.execute(text("SELECT set_config('nexus.user_id', :uid, true)"), {"uid": str(user_id)})
+    await apply_user_scope(db, user_id)
     rows = (
         await db.execute(
             text(

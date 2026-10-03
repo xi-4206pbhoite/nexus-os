@@ -27,6 +27,7 @@ from app.domain.scopes import Department, Role
 from app.main import create_app
 
 USER = UUID("11111111-1111-1111-1111-111111111111")
+EMAIL = "founder@example.com"
 WS_A = UUID("22222222-2222-2222-2222-222222222222")
 WS_B = UUID("33333333-3333-3333-3333-333333333333")
 
@@ -49,6 +50,16 @@ def signed_in(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     async def fake_memberships(db: object, *, user_id: UUID) -> list[Membership]:
         return list(memberships)
 
+    async def fake_email(db: object, user_id: UUID) -> str:
+        """Substituted for the same reason the membership lookup is.
+
+        The endpoint reports the caller's own address since finding F8 — before
+        it, `/account` had only a UUID to render on the one page that promises
+        everything is read from the API. Where the string comes from is
+        `app_user`; that it is *returned* is what these tests are about.
+        """
+        return EMAIL
+
     @asynccontextmanager
     async def fake_db() -> AsyncIterator[None]:
         """The handler opens a session before it queries, so patching only the
@@ -57,6 +68,7 @@ def signed_in(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
 
     # Patched where they are used, not where they are defined.
     monkeypatch.setattr("app.routes.auth.memberships_for_user", fake_memberships)
+    monkeypatch.setattr("app.routes.auth._email_for", fake_email)
     monkeypatch.setattr("app.routes.auth._unscoped_session", fake_db)
 
     app = create_app()
@@ -214,3 +226,22 @@ def test_logout_without_a_csrf_cookie_is_refused(client_no_auth: TestClient) -> 
     scenario `app/auth/csrf.py` exists for. It used to be waved through.
     """
     assert client_no_auth.post("/auth/logout").status_code == 403
+
+
+def test_the_session_reports_the_caller_s_email(signed_in) -> None:  # type: ignore[no-untyped-def]
+    """Finding F8. The page that renders this had only a UUID to show.
+
+    `/account` promises *"everything below is read from the API"*, and that was
+    exactly the problem: the session response carried no email, so the screen
+    identified a person by `12af801a-dd42-…` and their company by a second UUID
+    — with the company's actual name in the row directly beneath.
+
+    It discloses nothing new. This endpoint already requires that person's own
+    session cookie, and the address is the one they signed in with.
+    """
+    make, memberships = signed_in
+    memberships.clear()
+
+    body = make(None).get("/auth/session").json()
+
+    assert body["email"] == EMAIL, "the session no longer reports who the caller is"

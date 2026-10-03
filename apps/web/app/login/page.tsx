@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { LoginForm } from '@/components/auth/LoginForm'
 
@@ -27,7 +28,11 @@ export default function LoginPage() {
         </p>
       }
     >
-      <LoginForm />
+      {/* `useSearchParams` reads the post-reset flag; without this boundary
+          `next build` fails the route with a prerender error. */}
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </AuthShell>
   )
 }

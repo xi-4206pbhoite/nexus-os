@@ -17,26 +17,18 @@
 .PARAMETER ApiBase
     Where the API is listening. Default http://127.0.0.1:8000
 
-.PARAMETER PreviewUrl
-    A public website for the Preview audit. Default https://example.com
-    Limits: 20 analyses per hour per IP, 5 per domain per day. A repeat of a
-    domain already audited is served from storage and costs no domain allowance.
-
-.PARAMETER SkipPreview
-    Skip the Preview audit. Use this once you have spent the daily allowance on
-    a domain, so the rest of the walk still runs.
+.PARAMETER MailRoot
+    Where the file mailer writes. Default .mail - the same default as
+    NEXUS_MAIL_ROOT. The walk reads the verification and reset emails from here,
+    which is how it can follow a link without a provider or a mailbox.
 
 .EXAMPLE
     .\scripts\smoke.ps1
-
-.EXAMPLE
-    .\scripts\smoke.ps1 -PreviewUrl https://www.omantel.om
 #>
 [CmdletBinding()]
 param(
     [string] $ApiBase = 'http://127.0.0.1:8000',
-    [string] $PreviewUrl = 'https://example.com',
-    [switch] $SkipPreview
+    [string] $MailRoot = '.mail'
 )
 
 # Native tools are not called here, but Invoke-RestMethod raises on 4xx and this
@@ -89,6 +81,32 @@ function Invoke-ExpectingFailure {
     }
 }
 
+# The newest message the file mailer wrote, as text.
+#
+# This is what makes the verification and reset paths walkable with no provider
+# and no mailbox: `FileMailer` writes RFC-822 to disk, so the link a real user
+# would click is sitting in a file. `-Raw` matters - without it the body comes
+# back as an array of lines and the regex below never matches across the wrap.
+function Get-NewestMail {
+    param([string] $Root)
+    if (-not (Test-Path $Root)) { return $null }
+    $newest = Get-ChildItem -Path $Root -Filter '*.eml' | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($null -eq $newest) { return $null }
+    return Get-Content -Path $newest.FullName -Raw
+}
+
+# Pull a single-use token out of a link in an email body.
+function Get-TokenFrom {
+    param([string] $Body, [string] $Path)
+    if ([string]::IsNullOrWhiteSpace($Body)) { return $null }
+    # The quoted-printable encoder may wrap a long URL with `=` + newline.
+    $joined = $Body -replace "=\r?\n", ''
+    $pattern = [regex]::Escape($Path) + '\?token=([A-Za-z0-9_\-]+)'
+    $m = [regex]::Match($joined, $pattern)
+    if (-not $m.Success) { return $null }
+    return $m.Groups[1].Value
+}
+
 function Get-CookieValue {
     param($Session, [string] $Uri, [string] $Name)
     $cookies = $Session.Cookies.GetCookies([Uri] $Uri)
@@ -128,90 +146,23 @@ Assert-That 'the database is reachable' ($db.state -eq 'ok') "state=$($db.state)
 Assert-That 'pgvector is installed' ($vec.state -eq 'ok') "state=$($vec.state) detail=$($vec.detail)"
 Assert-That 'pgvector is reported but advisory (ADR 0004)' ($vec.required_now -eq $false)
 
-# -- Preview: the only feature with a UI -----------------------
+# -- The preview is gone, and that is asserted ------------------
 
-if (-not $SkipPreview) {
-    Write-Step "Preview - a real audit of $PreviewUrl, with no account"
-    Write-Host '  Every number here comes from a pure function over fetched HTML (I1).'
-    $body = @{ url = $PreviewUrl } | ConvertTo-Json
-    try {
-        $audit = Invoke-RestMethod -Uri "$ApiBase/preview" -Method Post -Body $body -ContentType 'application/json'
+# Phase 2 retired the unauthenticated audit (`doc/11` Q1). This block used to
+# run a real crawl with no account and then fire six SSRF probes at it. Both are
+# deleted rather than skipped, because there is no longer an endpoint to skip.
+#
+# What replaces them is one assertion, and it is the one that matters: nothing
+# answers there any more. The SSRF guard itself is not weaker for it - it moved
+# to `app/research/` and its 89 cases still run in `tests/test_ssrf_guard.py`,
+# which is a better venue than a smoke test that needed a live third-party
+# website to say anything at all.
 
-        Write-Host "    domain     : $($audit.domain)"
-        Write-Host "    final_url  : $($audit.final_url)"
-        Write-Host "    overall    : $($audit.overall)/100 across $($audit.scored_categories) scored categories"
-        foreach ($c in $audit.categories) {
-            Write-Host ("      {0,-16} {1,3}/{2,-3} {3,3}%" -f $c.category, $c.score, $c.max_score, $c.percentage)
-        }
-        Write-Host "    locked     : $($audit.locked.Count) categories, each naming its unlock"
-        foreach ($l in $audit.locked) {
-            Write-Host ("      {0,-22} {1}" -f $l.category, $l.unlock)
-        }
-
-        Assert-That 'the audit scores at least one category' ($audit.scored_categories -ge 1)
-        Assert-That 'locked categories are named, never scored zero (I10)' ($audit.locked.Count -gt 0)
-
-        $everyCheckHasEvidence = $true
-        $checkCount = 0
-        foreach ($c in $audit.categories) {
-            foreach ($chk in $c.checks) {
-                $checkCount++
-                if ([string]::IsNullOrWhiteSpace($chk.evidence)) { $everyCheckHasEvidence = $false }
-            }
-        }
-        Assert-That "all $checkCount checks carry evidence (I9)" $everyCheckHasEvidence
-        Assert-That 'the audit expires' ($null -ne $audit.expires_at) "expires_at=$($audit.expires_at)"
-    }
-    catch {
-        $status = -1
-        if ($null -ne $_.Exception.Response) { $status = [int] $_.Exception.Response.StatusCode }
-        $detail = ''
-        if ($null -ne $_.ErrorDetails) { $detail = $_.ErrorDetails.Message }
-        if (-not $detail) { $detail = $_.Exception.Message }
-
-        if ($status -eq 429) {
-            # Possible on repeated runs. The SSRF probes below consume the
-            # same per-IP allowance as a real audit, so one full pass costs 7 of
-            # the 20 hourly calls - comfortable now, where at the previous 5 it
-            # made a second run inside the hour impossible. The limit working is
-            # not the limit failing.
-            Write-Host '  SKIP  rate limited (429) - the allowance is spent' -ForegroundColor Yellow
-            Write-Host "        $detail"
-            Write-Host '        20/hour per IP, 5/day per domain. Wait, or use -SkipPreview'
-            Write-Host '        to run the account and workspace-gate checks now.'
-        }
-        elseif ($detail -match 'too long to respond|could not be reached|did not return') {
-            # The target website is slow, blocking us, or down. Nothing of ours
-            # is under test, so failing would blame our code for their outage -
-            # but silence would hide a skipped assertion.
-            Write-Host "  SKIP  $PreviewUrl did not answer" -ForegroundColor Yellow
-            Write-Host "        $detail"
-            Write-Host '        Not a defect - the API said so plainly. Try another -PreviewUrl.'
-        }
-        else {
-            Assert-That 'the Preview audit succeeds' $false "HTTP $status - $detail"
-        }
-    }
-
-    Write-Step 'Preview - the SSRF guard refuses what it should'
-    Write-Host '  An unauthenticated server-side fetch: the caller picks the destination.'
-    $hostile = @(
-        @{ url = 'http://127.0.0.1:8000/health'; why = 'loopback' },
-        @{ url = 'http://169.254.169.254/latest/meta-data/'; why = 'cloud metadata' },
-        @{ url = 'http://10.0.0.1/'; why = 'private network' },
-        @{ url = 'http://2130706433/'; why = 'loopback as a bare decimal' },
-        @{ url = 'gopher://evil.example/'; why = 'non-HTTP scheme' },
-        @{ url = 'http://expected.example@evil.example/'; why = 'credentials in the authority' }
-    )
-    foreach ($h in $hostile) {
-        $payload = @{ url = $h.url } | ConvertTo-Json
-        $r = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/preview" -Method Post -Body $payload -ContentType 'application/json' }
-        Assert-That "refused: $($h.why)" ($r.Status -ge 400 -and $r.Status -lt 500) "got HTTP $($r.Status) $($r.Detail)"
-    }
-}
-else {
-    Write-Step 'Preview - skipped (-SkipPreview)'
-}
+Write-Step 'The unauthenticated audit is gone'
+$rPreview = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/preview" -Method Post -Body '{"url":"https://example.com"}' -ContentType 'application/json' }
+Assert-That 'POST /preview returns 404' ($rPreview.Status -eq 404) "got HTTP $($rPreview.Status)"
+Write-Host '  A stranger could point this at any company and be handed an analysis of it.'
+Write-Host '  The engine survives behind authentication; the entry point does not.'
 
 # -- Accounts --------------------------------------------------
 
@@ -304,6 +255,74 @@ $rMe = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/auth/me" -Meth
 Assert-That '/auth/me is refused without a workspace' ($rMe.Status -eq 403) "got HTTP $($rMe.Status)"
 Write-Host '  This is the dead end described in USAGE.md: a workspace needs a verified'
 Write-Host '  domain, so a fresh account cannot reach /auth/me unless you control one.'
+
+# -- Verification and password reset (P3) ----------------------
+
+Write-Step 'Registering sent a verification email'
+Write-Host '  Read from disk, not asserted from the API response: the claim is that'
+Write-Host '  something was actually delivered, and the .eml file is the evidence.'
+$mail = Get-NewestMail -Root $MailRoot
+Assert-That "a message was written to $MailRoot" ($null -ne $mail) 'no .eml found - is NEXUS_MAILER_BACKEND=file?'
+
+$verifyToken = Get-TokenFrom -Body $mail -Path '/verify-email'
+Assert-That 'the email carries a /verify-email link with a token' ($null -ne $verifyToken)
+
+if ($null -ne $verifyToken) {
+    $vBody = @{ token = $verifyToken } | ConvertTo-Json
+    $verified = Invoke-RestMethod -Uri "$ApiBase/auth/verify-email" -Method Post -Body $vBody -ContentType 'application/json'
+    Assert-That 'the token verifies the address' ($verified.status -eq 'verified')
+
+    $rReuse = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/auth/verify-email" -Method Post -Body $vBody -ContentType 'application/json' }
+    Assert-That 'the same token cannot be used twice' ($rReuse.Status -eq 400) "got HTTP $($rReuse.Status)"
+}
+
+Write-Step 'Password reset reveals nothing about who has an account'
+$known = @{ email = $email } | ConvertTo-Json
+$unknown = @{ email = "nobody-$stamp@nexus-smoke-run.om" } | ConvertTo-Json
+$realReply = Invoke-RestMethod -Uri "$ApiBase/auth/password-reset/request" -Method Post -Body $known -ContentType 'application/json'
+$fakeReply = Invoke-RestMethod -Uri "$ApiBase/auth/password-reset/request" -Method Post -Body $unknown -ContentType 'application/json'
+Write-Host "    known address    : $($realReply.status)"
+Write-Host "    unknown address  : $($fakeReply.status)"
+Assert-That 'both addresses get an identical reply' ($realReply.status -eq $fakeReply.status)
+Write-Host '  A one-word difference here would be a complete account-enumeration oracle,'
+Write-Host '  on an endpoint that needs no account to reach.'
+
+Write-Step 'The reset link works once, and ends every session'
+# Held before the reset, because the reset is about to revoke it and the
+# assertion below is the whole point of doing so.
+$preResetSession = $session
+$resetMail = Get-NewestMail -Root $MailRoot
+$resetToken = Get-TokenFrom -Body $resetMail -Path '/reset-password'
+Assert-That 'the reset email carries a token' ($null -ne $resetToken)
+
+if ($null -ne $resetToken) {
+    $newPassword = 'a-second-passphrase-long-enough'
+    $confirm = @{ token = $resetToken; password = $newPassword } | ConvertTo-Json
+    $done = Invoke-RestMethod -Uri "$ApiBase/auth/password-reset/confirm" -Method Post -Body $confirm -ContentType 'application/json'
+    Assert-That 'the password is updated' ($done.status -eq 'password_updated')
+
+    $rOld = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/auth/login" -Method Post -Body $reg -ContentType 'application/json' }
+    Assert-That 'the old password stops working' ($rOld.Status -eq 401) "got HTTP $($rOld.Status)"
+
+    # `-SessionVariable` on purpose: this replaces `$session`, which the reset
+    # has just revoked. The Logout step below needs a live one, and its CSRF
+    # cookie is new too - reusing the old `$headers` would fail the
+    # double-submit check rather than the thing that step is testing.
+    $newLogin = @{ email = $email; password = $newPassword } | ConvertTo-Json
+    $after = Invoke-RestMethod -Uri "$ApiBase/auth/login" -Method Post -Body $newLogin `
+        -ContentType 'application/json' -SessionVariable session
+    Assert-That 'the new password works' ($null -ne $after.user_id)
+    $headers = @{ 'X-CSRF-Token' = (Get-CookieValue $session $ApiBase 'nexus_csrf') }
+
+    $rSpent = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/auth/password-reset/confirm" -Method Post -Body $confirm -ContentType 'application/json' }
+    Assert-That 'the reset token cannot be reused' ($rSpent.Status -eq 400) "got HTTP $($rSpent.Status)"
+
+    # The session opened before the reset must be dead. The usual reason to
+    # reset a password is that somebody else has it; leaving their session alive
+    # makes the reset a formality.
+    $rRevoked = Invoke-ExpectingFailure { Invoke-RestMethod -Uri "$ApiBase/auth/session" -Method Get -WebSession $preResetSession }
+    Assert-That 'the session opened before the reset was revoked' ($rRevoked.Status -eq 401) "got HTTP $($rRevoked.Status)"
+}
 
 Write-Step 'Logout'
 Invoke-RestMethod -Uri "$ApiBase/auth/logout" -Method Post -WebSession $session -Headers $headers | Out-Null

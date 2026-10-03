@@ -54,10 +54,23 @@ def _public_callables() -> Iterator[tuple[str, Any]]:
     for info in pkgutil.walk_packages(package.__path__, prefix=f"{package.__name__}."):
         modules.append(importlib.import_module(info.name))
 
+    # The three `apply_*_scope` functions are exempt because they are **the
+    # primitives this rule protects**, not something it protects against. They
+    # read nothing and return nothing: they set the GUCs every RLS policy
+    # consults, so taking an id is their entire purpose, and requiring them to
+    # take a `ScopedSession` would be circular — the session is what the GUCs
+    # make meaningful in the first place.
+    #
+    # By exact name so the exemption cannot silently widen. Three is the whole
+    # set, one per GUC: workspace, user, invitation token. A **fourth** would
+    # mean a new kind of scoping exists, and that is a decision to make
+    # deliberately rather than by adding a string here.
+    exempt = {"apply_workspace_scope", "apply_user_scope", "apply_invitation_token_scope"}
+
     seen: set[int] = set()
     for module in modules:
         for name, obj in vars(module).items():
-            if name.startswith("_"):
+            if name.startswith("_") or name in exempt:
                 continue
             if not (inspect.isfunction(obj) or inspect.isasyncgenfunction(obj)):
                 continue

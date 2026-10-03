@@ -12,7 +12,7 @@ that the first cache added cannot key on the wrong thing.
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.domain.scopes import Department, Role
 from app.domain.session import ScopedSession
@@ -25,10 +25,10 @@ WORKSPACE_B = uuid4()
 def make(
     *,
     role: Role = Role.CONTRIBUTOR,
-    workspace=WORKSPACE_A,
+    workspace: UUID = WORKSPACE_A,
     departments: set[Department] | None = None,
-    named_l4: set | None = None,
-    user_id=None,
+    named_l4: set[UUID] | None = None,
+    user_id: UUID | None = None,
 ) -> ScopedSession:
     return ScopedSession(
         user_id=user_id or uuid4(),

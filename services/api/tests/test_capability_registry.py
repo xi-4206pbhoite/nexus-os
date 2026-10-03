@@ -1,0 +1,249 @@
+"""Both numbers are derived. **No literal 6, no literal 21 or 24, anywhere.**
+
+`doc/12` P15. A denominator written as a number is a claim nobody re-checks: it
+was true when somebody counted, and it stays on screen after a department is
+added or a company selects four. A founder who counts the tiles and gets a
+different answer has found a reason to distrust every other number we show.
+"""
+
+from __future__ import annotations
+
+from app.domain.registry import (
+    BY_ID,
+    REGISTRY,
+    TILES,
+    capabilities_for,
+    completeness,
+    consumers_of,
+    score_denominator,
+    scoreable_departments,
+    scoreable_units,
+)
+from app.domain.scopes import Department
+
+
+def test_the_denominator_follows_the_company_not_a_constant() -> None:
+    """The property the whole module exists for."""
+    # Three departments, **four** units: Sales brings Customers with it. The
+    # denominator counts what is scored, not what was selected, and those stopped
+    # being the same number when #27 was resolved.
+    three = frozenset({Department.FINANCE, Department.SALES, Department.MARKETING})
+    assert score_denominator(three) == 4
+
+    one = frozenset({Department.FINANCE})
+    assert score_denominator(one) == 1
+
+    assert score_denominator(frozenset()) == 0, (
+        "a company that has chosen nothing is scored out of nothing"
+    )
+
+
+def test_synthesis_layers_are_never_scored() -> None:
+    """Chief of Staff and Strategy read the other departments. Scoring them
+    counts the same work twice."""
+    everything = frozenset(Department)
+    scoreable = scoreable_departments(everything)
+
+    assert Department.EXECUTIVE not in scoreable
+    assert Department.STRATEGY not in scoreable
+
+
+def test_the_denominator_is_six_because_customers_is_a_unit_without_a_page() -> None:
+    """Finding #27, resolved. ADR 0010's six, derived rather than asserted.
+
+    Five departments have a director page and are scored. Customers is the
+    sixth: scored, and shown inside the Sales director because that is where
+    the people who act on it already are.
+
+    The test that used to live here asserted **five** and said to delete it if
+    somebody resolved the discrepancy. This is that deletion, and the assertion
+    it leaves behind is the one worth keeping — six, arrived at by counting
+    units rather than by writing `6` down.
+    """
+    assert score_denominator(frozenset(Department)) == 6
+
+
+def test_a_company_running_sales_is_scored_on_two_units() -> None:
+    """One department, two units. That is ADR 0010's arrangement made real, and
+    it is why the denominator was never going to equal the number of pages."""
+    units = scoreable_units(frozenset({Department.SALES}))
+    assert {u.value for u in units} == {"sales", "customers"}
+
+
+def test_customers_is_not_a_department_anybody_belongs_to() -> None:
+    """The reason it is a `ScoreableUnit` and not a `Department`.
+
+    A department is something a person is *in*: it appears in onboarding
+    selection, goes on a membership, and scopes L3 rows through RLS. Nobody is
+    "in Customers", and adding it to that enum to fix a counting problem would
+    have made it selectable, assignable and permission-bearing.
+    """
+    assert "customers" not in {d.value for d in Department}
+
+
+def test_a_company_without_sales_is_not_scored_on_customers() -> None:
+    """Customers depends on Sales running. Scoring it otherwise would judge a
+    company on customer retention it has no function to manage."""
+    units = scoreable_units(frozenset({Department.FINANCE}))
+    assert {u.value for u in units} == {"finance"}
+
+
+def test_completeness_returns_a_pair_not_a_percentage() -> None:
+    """A percentage hides the denominator, and the denominator is the part that
+    makes the claim checkable."""
+    openable, total = completeness(frozenset(Department))
+    assert total == len(TILES), (
+        "the meter counts tiles. A rule shapes what other capabilities say and is"
+        " not something a customer acquires, so it must not sit in the denominator"
+        " making the meter unreachable by one for ever."
+    )
+    # Non-zero for the first time, and it is step D's ten. The meter read `0 of
+    # 89` for the whole build until something a founder could actually open
+    # existed — which is the honest number and a poor first impression, and the
+    # reason the day-one sections were worth building before the first
+    # connector.
+    assert openable == len([c for c in TILES if c.reachable])
+    assert openable > 0
+
+
+def test_completeness_counts_only_what_the_company_can_reach() -> None:
+    """A company running Finance alone should not be told it has completed 0 of
+    67 — most of those belong to departments it does not have."""
+    _, all_departments = completeness(frozenset(Department))
+    _, finance_only = completeness(frozenset({Department.FINANCE}))
+
+    assert finance_only < all_departments
+    assert finance_only == len(capabilities_for(Department.FINANCE))
+
+
+def test_every_offering_has_exactly_one_capability() -> None:
+    """Two hand-maintained lists of the same thing is the failure this module
+    prevents. Adding an offering must update the registry, the denominator and
+    the completeness meter at once.
+
+    The registry is now **larger** than the offering list, and deliberately: the
+    doc-08-only capabilities are the ones the narrower cut specified and doc 05
+    never did. So the invariant is one-to-one on the offerings rather than an
+    equal count, and `test_capability_ids.py` holds the other direction —
+    nothing in the registry claims a doc 05 number that no offering has.
+    """
+    from app.domain.dashboards import DIRECTORS
+
+    offerings = sum(len(d.offerings) for d in DIRECTORS)
+    from_doc05 = [c for c in REGISTRY if not c.doc08_only]
+
+    assert len(from_doc05) == offerings
+    assert len({c.doc05_id for c in from_doc05}) == offerings, "one capability per offering"
+
+
+def test_every_openable_capability_either_reads_answers_or_computes_a_figure() -> None:
+    """What a person can open, and on what basis.
+
+    **This assertion narrowed when slice 1 shipped.** It used to say every
+    openable capability ends in `.setup` or `.watchlist`, which was the honest
+    claim while nothing served a figure. Two Marketing audits now do, so the
+    claim worth making is the one underneath it: an openable capability is
+    openable *because* something answers it — either answers the founder
+    already gave, or a calculator.
+
+    The failure this guards has not changed. `state_from_sources` reaches a
+    figure state by the absence of contradicting evidence, so an id added to
+    `_REACHABLE` with nothing behind it renders a tile claiming a number and
+    then shows a blank space. There were three mechanisms for this one fact
+    once — `dashboards.DELIVERED`, `Capability.delivered` and
+    `marketing.DELIVERED_MARKETING` — and they disagreed. One flag now.
+    """
+    from app.grounding.compute import computes
+
+    openable = {c.id for c in REGISTRY if c.reachable}
+
+    assert openable, "step D's sections are openable, and the meter should say so"
+    unexplained = {
+        capability
+        for capability in openable
+        # `computes()` covers both dispatches — a scored audit and a counted
+        # amount (ADR 0033) — where `CRAWL_AUDITS` covers only the first.
+        if not capability.endswith((".setup", ".watchlist")) and not computes(capability)
+    }
+    assert not unexplained, (
+        f"{sorted(unexplained)} are reachable with nothing behind them — they will "
+        f"render a figure state and no figure. Add a calculator or unset reachable."
+    )
+    assert "marketing.setup" in openable
+    assert "executive.setup" not in openable, (
+        "the Chief of Staff has no question block — it consumes the other"
+        " directors rather than asking anything of its own"
+    )
+
+
+def test_the_marketing_audits_are_now_reachable_and_carry_a_figure() -> None:
+    """**The wiring landed, and this is the test that said it would change.**
+
+    Its previous form asserted the audits were `implemented` and deliberately
+    *not* `reachable`, because `calculators/audit.py` scored brand and
+    technical SEO while `marketing_state` was called from its own test and
+    nowhere else — no user could open either tile. That gap is closed:
+    `grounding/compute.py` dispatches to the scoring functions and
+    `routes/dashboards.py` serves the result.
+
+    Both flags are still separate and still earn their keep. `implemented`
+    means a calculation exists; `reachable` means a route serves it. Closing
+    the second without the first is what `_validate` raises on, and a
+    completeness meter counting only the first would tell a founder they have
+    capabilities they cannot open.
+    """
+    from app.grounding.compute import CRAWL_AUDITS
+
+    audits = {"marketing.seo_gaps", "marketing.brand_intelligence"}
+
+    assert audits <= {c.id for c in REGISTRY if c.implemented}
+    assert all(BY_ID[capability].reachable for capability in audits)
+    # And something actually computes each one, which is the claim the previous
+    # form of this test was protecting by keeping them unreachable.
+    assert audits <= set(CRAWL_AUDITS)
+
+
+def test_impact_is_a_declared_dependency_not_a_guess() -> None:
+    """Q59's input. A fact matters because things depend on it, and the
+    dependency is declared rather than inferred from how often it is mentioned.
+
+    Both halves, because for a while only the first was true: every call
+    returned `()` because the question bank's ids and the registry's ids were
+    different namespaces, and a ranking that scores everything zero looks
+    exactly like a working feature.
+    """
+    assert consumers_of("a_fact_nothing_uses") == ()
+    assert consumers_of("stale_deal_days") == ("sales.stale_deal_alert",)
+    assert consumers_of("people_risk") == ("executive.risk_register",), (
+        "a People question feeding an Executive capability — the cross-department"
+        " case, which is most of why this mapping is worth having"
+    )
+
+
+# ── The shell carries its denominator (P15) ───────────────────
+
+
+def test_the_shell_never_reports_a_score_of_zero() -> None:
+    """I10. Nothing is delivered, so nothing is computable — and `0` would be a
+    statement about the customer's business rather than about our data.
+
+    This is the failure the whole phase guards against: a dashboard showing
+    0/100 to a company that has simply connected nothing looks like a verdict.
+    """
+    from app.routes.dashboards import ShellOut
+
+    shell = ShellOut(
+        score=None, score_denominator=3, capabilities_delivered=0, capabilities_total=24
+    )
+    assert shell.score is None
+    assert shell.score_denominator == 3, "the denominator travels with the score"
+
+
+def test_the_assistant_panel_is_reserved_rather_than_absent() -> None:
+    """Q67. A blank region where a feature is coming reads as a bug; a fake one
+    reads as a lie. Reserved, with an honest empty state naming what it will do."""
+    from app.routes.dashboards import ShellOut
+
+    assert ShellOut(
+        score=None, score_denominator=0, capabilities_delivered=0, capabilities_total=0
+    ).assistant_reserved

@@ -1,26 +1,35 @@
-"""Expiring Preview data.
+"""Expiring what is time-bound.
 
-Doc 07 M3's acceptance is *"no workspace exists without a verified domain, **and
-Preview data expires**"*, and doc 06 §10 names the obligation precisely:
+Until Phase 2 this module's centre of gravity was Preview data, and the reason
+was unusual enough to be worth remembering: **the subject of that data was not
+our user.** A company whose site had been crawled by a stranger evaluating them
+had no login here, could not see what we held, and could not ask an account
+manager to remove it. Doc 06 §10 answered that with a short TTL and a
+deletion-request path keyed on the domain rather than on an account, and this
+job is what carried it out.
 
-> *Crawl data for unverified domains: short TTL, and a deletion request path for
-> the crawled company, which has no account.*
+`doc/11` Q1 retired the unauthenticated crawl, so no third-party data is
+collected and the obligation does not arise — **D9 is void rather than
+satisfied**, for the *authenticated* research crawl this module originally
+governed.
 
-That last clause is the unusual part and the reason this is a job rather than a
-lazy filter. **The subject of this data is not our user.** A company whose site
-was crawled by a stranger evaluating them has no login here, cannot see what we
-hold, and cannot ask an account manager to remove it. Retaining it past its TTL
-because nothing swept it would be indefensible, so expiry is an action taken on
-a schedule rather than a predicate applied at read time.
+**ADR 0046/0048 reopen a narrow version of it.** `public_scan` is exactly
+the shape D9 described — third-party data, no account to attach it to — and
+`expire_public_scans` is this job's replacement for `expire_previews`,
+scoped to the one table that needs it. Without this sweep,
+`store.get_fresh`'s read query keeps returning nothing (correctly filtering
+on `expires_at > now()`) while the table grows without bound — a silent
+failure in the direction that looks fine, the same shape `AUDIT-FINDINGS.md`
+already recorded once for the original sweep.
 
-A claimed preview is exempt: once its domain is verified, the data belongs to a
-workspace and falls under that workspace's retention instead.
+What remains from before Phase 2: abandoned domain claims, and rate-limit
+counters for windows that have closed.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,55 +38,18 @@ from app.logging import get_logger
 
 log = get_logger(__name__)
 
+PUBLIC_SCAN_DELETE_GRACE = timedelta(days=1)
+"""How long a soft-deleted `public_scan` row survives before this sweep hard-
+deletes it. Short — the visitor asked for it to be gone — but not zero, so a
+delete recorded a moment before the sweep runs is not lost to a race with no
+transaction spanning both."""
+
 
 @dataclass(frozen=True, slots=True)
 class ExpiryReport:
-    previews_deleted: int
     rate_limit_rows_deleted: int
     claims_expired: int
-
-
-async def expire_previews(db: AsyncSession, *, now: datetime | None = None) -> int:
-    """Delete Preview sessions past their TTL.
-
-    Deleted, not soft-deleted. A `deleted_at` column would leave the crawled
-    company's data in the table indefinitely, which is the situation this exists
-    to prevent.
-    """
-    moment = now or datetime.now(UTC)
-    result = await db.execute(
-        text(
-            "WITH gone AS ("
-            "  DELETE FROM preview_session"
-            "   WHERE expires_at <= :now AND claimed_by_workspace_id IS NULL"
-            "  RETURNING 1"
-            ") SELECT count(*) FROM gone"
-        ),
-        {"now": moment},
-    )
-    return int(result.scalar_one())
-
-
-async def delete_previews_for_domain(db: AsyncSession, *, domain: str) -> int:
-    """The deletion-request path for a crawled company with no account.
-
-    Doc 06 §10. Deliberately keyed on the domain rather than on an account,
-    because the requester has neither — they are the subject of the data, not a
-    customer.
-    """
-    result = await db.execute(
-        text(
-            "WITH gone AS ("
-            "  DELETE FROM preview_session"
-            "   WHERE lower(domain) = lower(:d) AND claimed_by_workspace_id IS NULL"
-            "  RETURNING 1"
-            ") SELECT count(*) FROM gone"
-        ),
-        {"d": domain},
-    )
-    deleted = int(result.scalar_one())
-    log.info("preview.deletion_request", deleted=deleted)
-    return deleted
+    public_scans_expired: int
 
 
 async def expire_stale_claims(db: AsyncSession, *, now: datetime | None = None) -> int:
@@ -100,21 +72,67 @@ async def expire_stale_claims(db: AsyncSession, *, now: datetime | None = None) 
     return int(result.scalar_one())
 
 
-async def run_expiry_sweep(db: AsyncSession, *, now: datetime | None = None) -> ExpiryReport:
-    """One pass of everything time-bound. Safe to run repeatedly."""
+async def expire_public_scans(db: AsyncSession, *, now: datetime | None = None) -> int:
+    """Hard-delete `public_scan` rows that have run their course.
+
+    Two conditions, because there are two ways a row is done: its TTL passed
+    (`expires_at`, ADR 0048's seven days), or a visitor deleted it themselves
+    and the grace period since has passed. No RLS on this table (ADR 0048
+    rule — it has no `workspace_id` to scope by), so this runs on `db`, the
+    same unscoped session `purge_expired` uses for `rate_limit_counter`, not
+    `jobs_db`.
+    """
+    moment = now or datetime.now(UTC)
+    result = await db.execute(
+        text(
+            "WITH gone AS ("
+            "  DELETE FROM public_scan"
+            "   WHERE expires_at <= :now"
+            "      OR (deleted_at IS NOT NULL AND deleted_at <= :grace_cutoff)"
+            "  RETURNING 1"
+            ") SELECT count(*) FROM gone"
+        ),
+        {"now": moment, "grace_cutoff": moment - PUBLIC_SCAN_DELETE_GRACE},
+    )
+    return int(result.scalar_one())
+
+
+async def run_expiry_sweep(
+    db: AsyncSession, jobs_db: AsyncSession, *, now: datetime | None = None
+) -> ExpiryReport:
+    """One pass of everything time-bound. Safe to run repeatedly.
+
+    **Two sessions, and they are different roles** (ADR 0018). The split is not
+    tidiness:
+
+    - `expire_stale_claims` spans every user's claims. Since migration 0013,
+      `domain_claim` carries a `user_id` policy, so the application role sees
+      none of them — the statement would match zero rows and this function would
+      report a clean sweep for ever. It runs as `nexus_jobs`, which holds the
+      one role-targeted policy that permits it.
+    - `purge_expired` clears `rate_limit_counter`, and `expire_public_scans`
+      clears `public_scan` — neither has RLS and `nexus_jobs` is deliberately
+      **not** granted either. Both run on `db`, the same unscoped session,
+      and both access is one table wide and stays that way.
+
+    Passed in rather than opened here so a test can drive the real function
+    against real sessions instead of a copy of its SQL.
+    """
     from app.connectors.rate_limit import purge_expired
 
-    previews = await expire_previews(db, now=now)
-    claims = await expire_stale_claims(db, now=now)
+    claims = await expire_stale_claims(jobs_db, now=now)
+    await jobs_db.commit()
+
     counters = await purge_expired(db)
+    scans = await expire_public_scans(db, now=now)
     await db.commit()
 
-    report = ExpiryReport(previews, counters, claims)
-    if previews or claims or counters:
+    report = ExpiryReport(counters, claims, scans)
+    if claims or counters or scans:
         log.info(
             "expiry.sweep",
-            previews_deleted=previews,
             claims_expired=claims,
             rate_limit_rows_deleted=counters,
+            public_scans_expired=scans,
         )
     return report

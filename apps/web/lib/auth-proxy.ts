@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server'
 /**
  * Server-side proxy for the auth endpoints.
  *
- * Same reasoning as the Preview proxy: the browser never learns the API's
- * address and there is no CORS surface. For auth it buys something further.
+ * The browser never learns the API's address and there is no CORS surface —
+ * the reasoning the Preview proxy was built on, and the reason this pattern
+ * outlived it. For auth it buys something further.
  * The session cookie is `httponly` and `SameSite=Lax`, and both properties only
  * hold if the cookie belongs to the origin the browser is actually talking to.
  * Calling the API directly from the page would make every auth request
@@ -28,8 +29,54 @@ import { NextResponse } from 'next/server'
 
 const API_BASE = process.env.NEXUS_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
-/** Comfortably above a round trip to a managed database, well below a hang. */
-const TIMEOUT_MS = 15_000
+/** Comfortably above a round trip to a managed database, well below a hang.
+ *
+ * **Correct only for routes that do not call a model.** A single Haiku call is
+ * four to five seconds and a Sonnet one can be twenty, so a route that invokes
+ * a skill and inherits this default is a timeout waiting for a slow day — see
+ * `MODEL_TIMEOUT_MS`. */
+const TIMEOUT_MS = Number(process.env.NEXUS_PROXY_TIMEOUT_MS ?? 30_000)
+
+/**
+ * For a route that invokes one skill.
+ *
+ * **Three model-backed onboarding routes were on the database default**, and a
+ * browser walkthrough hit it: the brief step aborted at thirty seconds while
+ * the API was still working, and the founder was told the service could not be
+ * reached. `/onboarding/agent/answer` was the worst of them — it can make up to
+ * `MAX_REJECTIONS` question-generation calls in one request.
+ *
+ * Named rather than sprinkled as a literal, because the failure it prevents is
+ * somebody adding a seventh model-backed route and inheriting the number meant
+ * for a database read. `lib/__tests__/auth-proxy.test.ts` asserts every such
+ * route uses it.
+ */
+export const MODEL_TIMEOUT_MS = Number(process.env.NEXUS_PROXY_MODEL_TIMEOUT_MS ?? 90_000)
+
+/**
+ * Why 30 seconds and not 15 (finding #23).
+ *
+ * Fifteen was chosen against a local Postgres answering in microseconds. It is
+ * below what real requests actually take when the API and the database are far
+ * apart: from a laptop against Neon in `us-east-1` a round trip is ~0.35s, and
+ * `POST /companies` and `GET /dashboards` each spend twenty-five to thirty of
+ * them — so the two most important requests in the product 503'd in the
+ * browser while CI stayed green, because CI's database is local.
+ *
+ * **This raises the ceiling; it does not fix the round trips.** #23 stays open
+ * for that, and it is the real defect — in production the API and database are
+ * co-located and the same request costs milliseconds, so a timeout this high
+ * should never be reached. It exists so development against a remote database
+ * is possible, and so a slow request fails as slow rather than as broken.
+ *
+ * Configurable because the right value differs by deployment, and a constant
+ * compiled into the bundle cannot be tuned by the person who feels the problem.
+ */
+
+/** Uploads get longer still. A 25 MB file on a slow connection is a slow
+ *  request, not a broken one, and even the raised JSON budget would refuse the
+ *  uploads most worth waiting for. */
+const UPLOAD_TIMEOUT_MS = 120_000
 
 /**
  * Headers copied from the browser to the API. An allowlist rather than a
@@ -37,7 +84,7 @@ const TIMEOUT_MS = 15_000
  * `X-Forwarded-For` and speak as another address, which the API trusts from this
  * hop.
  */
-function upstreamHeaders(request: Request, json: boolean): Headers {
+function upstreamHeaders(request: Request, json: boolean, extra?: Record<string, string>): Headers {
   const headers = new Headers()
   if (json) headers.set('Content-Type', 'application/json')
 
@@ -46,6 +93,13 @@ function upstreamHeaders(request: Request, json: boolean): Headers {
 
   const csrf = request.headers.get('x-csrf-token')
   if (csrf) headers.set('X-CSRF-Token', csrf)
+
+  // Server-computed, never taken from the browser's own headers — a route
+  // that passes something here (e.g. `clientAddress(request)`) is trusted to
+  // have derived it the same way, not to be relaying whatever the client sent.
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) headers.set(key, value)
+  }
 
   return headers
 }
@@ -67,24 +121,49 @@ function forwardCookies(from: Response, to: Headers): void {
 export type ProxyOptions = {
   /** Path on the API, e.g. `/auth/login`. */
   path: string
-  method: 'GET' | 'POST'
+  /**
+   * `DELETE` joined the union for `doc/15` S10.1 — archiving a project. It is
+   * the first method here that removes anything from a founder's view, and it
+   * carries no body, so `upstreamHeaders` sets no content type for it. The API
+   * means archive rather than delete, which is why widening this was safe.
+   */
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   /** Body to send. Omit for GET. */
   body?: unknown
   /** Shown if the API cannot be reached at all. */
   unavailable: string
+  /**
+   * Override the default ceiling for one route.
+   *
+   * The default is sized for a database round trip. Guided onboarding's `start`
+   * is a site crawl followed by two model calls at high effort, which is a
+   * different order of magnitude — left at the default it aborts mid-think and
+   * the browser reports the API as unreachable when it is simply still working.
+   */
+  timeoutMs?: number
+  /**
+   * Extra headers this route computed itself, forwarded as-is.
+   *
+   * For `clientAddress(request)` — never for anything read directly off the
+   * browser's own request, which is exactly the mistake
+   * `AUDIT-FINDINGS.md`'s bypassable rate limit was. `upstreamHeaders` sets
+   * these after `Cookie`/`X-CSRF-Token`, so a route cannot use this to
+   * override either.
+   */
+  headers?: Record<string, string>
 }
 
 export async function proxyToApi(
   request: Request,
-  { path, method, body, unavailable }: ProxyOptions,
+  { path, method, body, unavailable, timeoutMs, headers: extraHeaders }: ProxyOptions,
 ): Promise<NextResponse> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? TIMEOUT_MS)
 
   try {
     const upstream = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: upstreamHeaders(request, body !== undefined),
+      headers: upstreamHeaders(request, body !== undefined, extraHeaders),
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       cache: 'no-store',
@@ -103,8 +182,31 @@ export async function proxyToApi(
 
     const payload = await upstream.json().catch(() => ({ detail: 'Unexpected response.' }))
     return NextResponse.json(payload, { status: upstream.status, headers })
-  } catch {
-    return NextResponse.json({ detail: unavailable }, { status: 503 })
+  } catch (caught: unknown) {
+    // **A timeout is not an unreachable service, and saying so was a lie.**
+    //
+    // Every failure here used to produce the caller's `unavailable` sentence —
+    // for onboarding, "Cannot reach the onboarding service right now." A
+    // browser walkthrough hit it while the API was working perfectly: one
+    // request had spent 37 seconds retrying a rejected question, the abort
+    // below fired at 30, and the founder was told the service was unreachable.
+    // It was not. It was slow, it finished, and its answer arrived for a client
+    // that had already been told a different story.
+    //
+    // The two need different words because they need different actions: an
+    // unreachable service is worth reporting, a slow one is worth waiting for.
+    // `AbortError` is the only thing `controller.abort()` produces, so the
+    // distinction costs one `instanceof`.
+    const timedOut = caught instanceof DOMException && caught.name === 'AbortError'
+    return NextResponse.json(
+      {
+        detail: timedOut
+          ? 'That took longer than we allow for one request. Nothing is broken and nothing '
+            + 'was lost — this often finishes on a second try.'
+          : unavailable,
+      },
+      { status: timedOut ? 504 : 503 },
+    )
   } finally {
     clearTimeout(timeout)
   }
@@ -117,5 +219,132 @@ export async function readJson(request: Request): Promise<Record<string, unknown
     return body && typeof body === 'object' ? (body as Record<string, unknown>) : null
   } catch {
     return null
+  }
+}
+
+/**
+ * Forwards a multipart upload to the API, body untouched.
+ *
+ * `proxyToApi` cannot do this: it JSON-stringifies whatever it is given, which
+ * turns a file into the string `[object Object]` and loses the boundary the
+ * multipart parser needs. So the body streams through as-is and the API's own
+ * `UploadFile` parser sees exactly what the browser sent.
+ *
+ * **`Content-Type` is copied from the request, not set here.** It carries the
+ * multipart boundary, which is generated per-request by the browser — writing a
+ * fixed one would break every upload, and omitting it makes the API read the
+ * body as a single unnamed blob.
+ *
+ * The timeout is longer than the JSON one. A 25 MB file over a hotel connection
+ * is a slow request rather than a broken one, and cutting it off at fifteen
+ * seconds would refuse the uploads most worth waiting for.
+ */
+export async function proxyUpload(
+  request: Request,
+  { path, unavailable }: { path: string; unavailable: string },
+): Promise<NextResponse> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+  try {
+    const headers = new Headers()
+    const cookie = request.headers.get('cookie')
+    if (cookie) headers.set('Cookie', cookie)
+    const csrf = request.headers.get('x-csrf-token')
+    if (csrf) headers.set('X-CSRF-Token', csrf)
+    const contentType = request.headers.get('content-type')
+    if (contentType) headers.set('Content-Type', contentType)
+
+    const upstream = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: await request.arrayBuffer(),
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+
+    const responseHeaders = new Headers()
+    forwardCookies(upstream, responseHeaders)
+    responseHeaders.set('cache-control', 'no-store')
+
+    const payload = await upstream.json().catch(() => ({ detail: 'Unexpected response.' }))
+    return NextResponse.json(payload, { status: upstream.status, headers: responseHeaders })
+  } catch {
+    return NextResponse.json({ detail: unavailable }, { status: 503 })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
+ * Stream a signed file through from the API.
+ *
+ * `storage.signed_url` mints a **relative** `/files/{key}?expires=…&sig=…`, so
+ * the browser resolves it against this app's origin rather than the API's. That
+ * is the right default — it means the API need not be publicly reachable — but
+ * it only works if this app serves the path, which is what this exists for.
+ *
+ * **No cookie is forwarded, deliberately.** `/files` is the one route in the
+ * product with no session: the signature *is* the authorisation, decided once
+ * by `/documents/{id}/download` against the uploader. Sending credentials would
+ * imply this endpoint consults them, and the day it started to, a link that had
+ * already been authorised would begin depending on who clicked it.
+ *
+ * The body streams rather than buffering — a 25 MB document read into memory
+ * here would be read into memory twice, once by this route and once by the
+ * response — and the API's own `Content-Disposition`, `nosniff` and cache
+ * headers are forwarded verbatim rather than restated, so there is one place
+ * that decides a document is never rendered inline.
+ */
+export async function proxyDownload(
+  request: Request,
+  { path, unavailable }: { path: string; unavailable: string },
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+  try {
+    const upstream = await fetch(`${API_BASE}${path}`, {
+      method: 'GET',
+      signal: controller.signal,
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+
+    if (!upstream.ok) {
+      // The API answers a bad signature, an expired link, an unsafe key and a
+      // missing file identically, so they cannot be told apart. This hop keeps
+      // that true and closes one seam of its own: a URL with no `sig` at all
+      // fails FastAPI's query validation with a 422, so forwarding the status
+      // verbatim would distinguish "you sent no signature" from "your
+      // signature is wrong". Neither reveals whether a key exists — both
+      // answer the same for a real key and an invented one — but normalising
+      // the body while leaving the status to vary is half a decision, so every
+      // client error becomes the same 404.
+      //
+      // 5xx passes through: a broken service is not a missing file, and
+      // dressing one as the other is how an outage gets diagnosed as a bug.
+      const status = upstream.status >= 500 ? upstream.status : 404
+      return NextResponse.json({ detail: 'Not found' }, { status })
+    }
+
+    const headers = new Headers()
+    for (const header of [
+      'content-type',
+      'content-disposition',
+      'content-length',
+      'x-content-type-options',
+    ]) {
+      const value = upstream.headers.get(header)
+      if (value) headers.set(header, value)
+    }
+    headers.set('cache-control', 'private, no-store')
+
+    return new Response(upstream.body, { status: upstream.status, headers })
+  } catch {
+    return NextResponse.json({ detail: unavailable }, { status: 503 })
+  } finally {
+    clearTimeout(timeout)
   }
 }

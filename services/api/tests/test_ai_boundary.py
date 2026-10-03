@@ -160,11 +160,10 @@ def test_computed_values_are_put_in_the_prompt_with_an_explicit_prohibition() ->
     Checked here because it is the difference between a model *reporting* a
     number and a model *producing* one.
     """
-    from app.ai.anthropic_provider import _system_with_grounding
+    from app.ai.anthropic_provider import _system_blocks
 
-    system = _system_with_grounding(
-        request_for(grounding={"revenue_omr": 128_400, "margin_pct": 34})
-    )
+    system = _system_blocks(request_for(grounding={"revenue_omr": 128_400, "margin_pct": 34}))
+    assert isinstance(system, str)
 
     assert "128400" in system.replace(",", "")
     assert "34" in system
@@ -173,19 +172,35 @@ def test_computed_values_are_put_in_the_prompt_with_an_explicit_prohibition() ->
 
 
 def test_a_request_with_no_grounding_is_left_alone() -> None:
-    from app.ai.anthropic_provider import _system_with_grounding
+    from app.ai.anthropic_provider import _system_blocks
 
-    assert _system_with_grounding(request_for()) == "You are a test."
+    assert _system_blocks(request_for()) == "You are a test."
 
 
 def test_grounding_is_ordered_so_the_prompt_is_reproducible() -> None:
     """Two identical requests must produce byte-identical prompts, or the
     prompt version recorded in `generation` means nothing."""
-    from app.ai.anthropic_provider import _system_with_grounding
+    from app.ai.anthropic_provider import _system_blocks
 
-    a = _system_with_grounding(request_for(grounding={"b": 2, "a": 1}))
-    b = _system_with_grounding(request_for(grounding={"a": 1, "b": 2}))
+    a = _system_blocks(request_for(grounding={"b": 2, "a": 1}))
+    b = _system_blocks(request_for(grounding={"a": 1, "b": 2}))
     assert a == b
+
+
+def test_grounding_sits_after_the_cache_breakpoint_not_inside_it() -> None:
+    """The stable half is cached; the per-call half must not be.
+
+    Caching is a prefix match. One block holding both would write a new entry on
+    every request and read none — paying the premium forever for no hit.
+    """
+    from app.ai.anthropic_provider import _system_blocks
+
+    blocks = _system_blocks(request_for(grounding={"pages": 47}, cache_system=True))
+    assert isinstance(blocks, list) and len(blocks) == 2
+    assert blocks[0]["text"] == "You are a test."
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "47" in blocks[1]["text"]
+    assert "cache_control" not in blocks[1]
 
 
 # ── Vendor errors are mapped, never leaked ────────────────────
@@ -257,16 +272,33 @@ def test_nothing_outside_the_ai_package_names_the_vendor() -> None:
 
     `config.py` is exempt: it holds the key and the model name, which are
     configuration rather than an SDK dependency.
+
+    **One string is exempt rather than one file.** HubSpot publishes its MCP
+    server at `https://mcp.hubspot.com/anthropic` — their path, named after the
+    protocol's author, and nothing to do with which model we call. Swapping our
+    provider does not change that URL, so it is not the dependency this test
+    exists to prevent. Exempting the literal keeps the guard over the rest of
+    `connectors/hubspot.py`; exempting the file would leave a connector free to
+    import the SDK tomorrow, which is exactly what this asserts against.
     """
     from pathlib import Path
 
+    # A third party's own endpoint, not a dependency of ours. Listed so a second
+    # one has to be added deliberately and with a reason beside it.
+    their_urls = ("https://mcp.hubspot.com/anthropic",)
+
     app_dir = Path(__file__).resolve().parents[1] / "app"
+
+    def names_the_vendor(path: Path) -> bool:
+        source = path.read_text(encoding="utf-8").lower()
+        for url in their_urls:
+            source = source.replace(url.lower(), "")
+        return "anthropic" in source
+
     offenders = sorted(
         path.relative_to(app_dir).as_posix()
         for path in app_dir.rglob("*.py")
-        if "anthropic" in path.read_text(encoding="utf-8").lower()
-        and path.parent.name != "ai"
-        and path.name != "config.py"
+        if names_the_vendor(path) and path.parent.name != "ai" and path.name != "config.py"
     )
 
     assert offenders == [], (

@@ -1,5 +1,16 @@
 # Runs exactly what .github/workflows/ci.yml runs.
-# Per ADR 0002 there is no remote yet, so this is the real gate for now.
+#
+# The suite needs a real PostgreSQL. Ninety-two tests assert database
+# behaviour - row-level security above all - and without one they used to
+# skip while the run still reported green. They no longer can:
+# tests/test_ci_contract.py fails when no database is configured, and
+# conftest.py fails the session if a requires_db test skips.
+#
+# The URL comes from $env:NEXUS_DATABASE_URL, or from .env when that is
+# unset. For a database built the way CI builds it - bootstrap.sql, then
+# migrations in both directions on a clean local cluster - run
+# .\scripts\db-ci.ps1 first.
+#
 # Usage:  .\scripts\ci.ps1
 
 $ErrorActionPreference = 'Stop'
@@ -72,7 +83,9 @@ if (-not (Test-Path $py)) {
 } else {
     Invoke-Step 'api: ruff check'   'services\api' { & (Join-Path $venv 'ruff.exe') check . }
     Invoke-Step 'api: ruff format'  'services\api' { & (Join-Path $venv 'ruff.exe') format --check . }
-    Invoke-Step 'api: mypy strict'  'services\api' { & (Join-Path $venv 'mypy.exe') app }
+    # 'app tests' rather than 'app'. The suite is what proves the
+    # invariants, so untyped test code is untyped proof.
+    Invoke-Step 'api: mypy strict'  'services\api' { & (Join-Path $venv 'mypy.exe') app tests }
     Invoke-Step 'api: pytest'       'services\api' { & (Join-Path $venv 'pytest.exe') -q }
 }
 

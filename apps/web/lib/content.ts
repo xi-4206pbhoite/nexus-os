@@ -31,7 +31,7 @@ export const hero = {
   headlineAccent: 'executive team.',
   headlineBottom: 'Built around your company.',
   sub: 'Connect your website, documents and tools once. NEXUS learns how your business works, tells you what needs attention, helps you decide — and does the work.',
-  primaryCta: 'Start the 7-minute audit',
+  primaryCta: 'Create your account',
   secondaryCta: 'See how it works',
   note: 'Built for Oman and the wider GCC — OMR/AED/SAR, regional business norms, Arabic on the roadmap.',
   ticker: [
@@ -271,9 +271,16 @@ export const moments = {
   sub: 'Not a demo. Your business.',
   list: [
     {
-      when: 'Minute 7',
-      title: 'The audit',
-      body: 'Onboarding ends with a real assessment of your business — pages analysed, services identified, competitors detected, SEO gaps found, a digital maturity score.',
+      // Was 'Minute 7 — The audit', promising 'pages analysed, services
+      // identified, competitors detected, SEO gaps found, a digital maturity
+      // score'. `calculators/audit.py` computes those scores and **no route
+      // serves them** (M19), so this was the one concrete promise on the page
+      // and the one thing the product could not do. Replaced with what
+      // onboarding actually ends with, which is a real thing and states its
+      // own limits — see the same correction in `finalCta` below.
+      when: 'Minute 10',
+      title: 'The first read',
+      body: 'Onboarding ends with a Company Brain — what you sell, who you sell it to, what you charge — and a dashboard that names, department by department, what it can already tell you and what it still needs.',
     },
     {
       when: 'Day 1',
@@ -354,9 +361,14 @@ export const pricing = {
       cadence: '/month',
       for: 'Small teams proving the value',
       cta: 'Start free trial',
+      // Every tier used to share `href="#cta"`, so the button scrolled to the
+      // final section and the real `/register` link was one more click inside
+      // it. Destination is per-tier data now because the three tiers do not
+      // have the same one: Starter is self-serve at a stated price.
+      href: '/register',
       featured: false,
       includes: [
-        'Company Brain & onboarding audit',
+        'Company Brain & guided onboarding',
         'Morning Brief & Health Score',
         'CRM & pipeline',
         'Growth Planner & Content Studio',
@@ -370,6 +382,14 @@ export const pricing = {
       cadence: '',
       for: 'The core product',
       cta: 'Book a walkthrough',
+      // **Still the scroll, deliberately.** This tier is priced "Let's talk",
+      // so sending it to `/register` would bypass the conversation the price
+      // requires — and there is no booking system, no `/contact` route and no
+      // support address anywhere in this repo to send it to instead. Inventing
+      // one would be inventing a fact about the business. Raised in
+      // `DECISIONS-REQUIRED.md` as D24; `#cta` at least lands on a section
+      // with a working button rather than nothing.
+      href: '#cta',
       featured: true,
       includes: [
         'Everything in Starter',
@@ -388,6 +408,7 @@ export const pricing = {
       cadence: '',
       for: 'Multi-brand / multi-division',
       cta: 'Talk to us',
+      href: '#cta', // D24, as Growth above.
       featured: false,
       includes: [
         'Everything in Growth',
@@ -412,7 +433,11 @@ export const faq = {
     },
     {
       q: 'What happens on day one if I have almost no data?',
-      a: 'The onboarding audit is designed to work from your website alone, so you get a real assessment before connecting anything. Where a data source is missing, NEXUS shows a visible gap and asks you to connect it — it will not fill the space with a plausible guess. The product gets meaningfully better as you connect more.',
+      // The first sentence used to promise 'a real assessment before
+      // connecting anything' from the website alone — the same M19 claim as
+      // the moment above. What is left is the behaviour that *is* built and is
+      // the strongest thing on this page: a named gap instead of a guess.
+      a: 'You still get a dashboard on day one, but it is honest about itself: every tile says what it can compute from what NEXUS already knows and what it needs before it can compute the rest. Where a data source is missing, NEXUS shows a visible gap and asks you to connect it — it will not fill the space with a plausible guess. The product gets meaningfully better as you connect more.',
     },
     {
       q: 'Can I trust the numbers it shows me?',
@@ -434,13 +459,25 @@ export const faq = {
 } as const
 
 export const finalCta = {
-  headline: 'Seven minutes from now, you could be reading an honest audit of your own business.',
-  sub: 'Connect your website. NEXUS does the rest.',
+  // Was "Seven minutes from now, you could be reading an honest audit of your
+  // own business." — and the audit is the one thing on this page the product
+  // cannot currently do: `calculators/audit.py` scores a crawl and **no route
+  // serves it** (M19). Phase 2 also retired the pre-signup audit this sentence
+  // was written for, so it had been promising a screen that no longer existed
+  // in the flow it described.
+  //
+  // Replaced with what a founder actually gets at the end of setup: the Brain,
+  // built from their own answers, with every line naming its source. That is
+  // real today and it is the better promise anyway — the audit is a number, and
+  // the Brain is the reason to believe the numbers when they arrive.
+  headline: 'Ten minutes from now, NEXUS will know your business well enough to be useful.',
+  sub: 'Answer what only you can answer. Every line it writes back names where it came from.',
   primary: 'Create your account',
-  // Was "Book a walkthrough". There is no booking system, and a button that
-  // opens nothing is worse than one fewer button. This points at the audit,
-  // which is real, needs no account, and is the better first step anyway.
-  secondary: 'Run a free audit first',
+  // Was "Book a walkthrough", then "Run a free audit first". There is no
+  // booking system, and Phase 2 retired the pre-signup audit — so both labels
+  // named something that does not exist. A button that opens nothing is worse
+  // than one fewer button. This one points back up the page, which is real.
+  secondary: 'See how it works',
   reassure: 'No card required for the trial · Cancel any time',
 } as const
 
@@ -459,13 +496,16 @@ export const footer = {
       ],
     },
     // Only pages that exist are listed. About, Design partners, Careers,
-    // Contact, Security, Privacy and Terms were all `href="#"` — seven controls
-    // that looked like navigation and scrolled to the top.
+    // Contact and Security were all `href="#"` — controls that looked like
+    // navigation and scrolled to the top.
     //
-    // Privacy and Terms are the ones worth noting: they are removed rather than
+    // **Privacy and Terms are back (H11).** They were removed rather than
     // pointed at a placeholder, because a link to a privacy policy that does not
-    // exist implies a document a customer could rely on. They belong back here
-    // the moment the pages are written, and before anyone real signs up.
+    // exist implies a document a customer could rely on. The pages now exist and
+    // are linked — with the caveat that they describe what the software does and
+    // say plainly, at the top of each, that the contractual half is unwritten and
+    // unreviewed. That is a weaker claim than a finished policy and a much
+    // stronger one than a dead link.
     {
       title: 'Account',
       links: [
@@ -475,7 +515,11 @@ export const footer = {
     },
     {
       title: 'Trust',
-      links: [{ label: 'How grounding works', href: '#trust' }],
+      links: [
+        { label: 'How grounding works', href: '#trust' },
+        { label: 'Privacy', href: '/privacy' },
+        { label: 'Terms', href: '/terms' },
+      ],
     },
   ],
   legal: 'Product in active development. Figures shown in product illustrations are illustrative, not measured results.',

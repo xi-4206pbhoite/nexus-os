@@ -3,7 +3,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { PaperLandscape } from '@/components/art/PaperLandscape'
 import { Button, ArrowRight } from '@/components/ui/Button'
-import { PreviewForm } from '@/components/preview/PreviewForm'
 import { RevealWords } from '@/components/motion/Reveal'
 import { IconSparkle, IconCheck } from '@/components/art/Icons'
 import { hero } from '@/lib/content'
@@ -153,7 +152,7 @@ export function Hero() {
                   viewBox="0 0 340 18"
                   preserveAspectRatio="none"
                   aria-hidden="true"
-                  className="absolute -bottom-1 left-0 h-3 w-full text-gold-400"
+                  className="absolute -bottom-[0.12em] left-0 h-[0.16em] w-full text-gold-500"
                 >
                   <motion.path
                     d="M3 12C58 5 132 3 190 6c46 2 96 5 147 8"
@@ -182,16 +181,22 @@ export function Hero() {
               {hero.sub}
             </p>
 
-            {/* Doc 06 §1: one primary action — enter your website. The URL is
-                captured before registration and becomes the first fact NEXUS
-                holds. */}
-            <div style={{ animationDelay: '0.84s' }} className="animate-rise mt-9">
-              <PreviewForm />
-              <div className="mt-4">
-                <Button href="#loop" size="md" variant="ghost">
-                  {hero.secondaryCta}
-                </Button>
-              </div>
+            {/* `doc/11` Q1 (D18): one action, and it is sign up. This was a URL
+                field feeding the unauthenticated Preview audit, which Phase 2
+                retired — a stranger could type a competitor's address and be
+                handed an analysis of a company they do not own. The website is
+                asked for at stage 2 instead, once there is an account to attach
+                it to, and the crawl starts there. */}
+            <div
+              style={{ animationDelay: '0.84s' }}
+              className="animate-rise mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center"
+            >
+              <Button href="/register" size="lg" icon={<ArrowRight />}>
+                {hero.primaryCta}
+              </Button>
+              <Button href="#loop" size="lg" variant="secondary">
+                {hero.secondaryCta}
+              </Button>
             </div>
 
             <p
@@ -201,6 +206,19 @@ export function Hero() {
               <IconCheck className="mt-0.5 h-4 w-4 shrink-0 text-steel-500" />
               {hero.note}
             </p>
+
+            {/* G10, ADR 0046. Deliberately `quiet` — sign-up stays the one
+                primary action per Q1/D18's own reasoning above; this is a
+                second door for a visitor not ready to create an account yet,
+                not a second competing call to action. Not the retired hero
+                URL form: that fed the unauthenticated Preview audit directly
+                on this page; this is a link to `/scan`, its own screen with
+                its own narrow, rate-limited, robots-respecting crawl. */}
+            <div style={{ animationDelay: '1.1s' }} className="animate-fade-in mt-3">
+              <Button href="/scan" variant="quiet" size="sm">
+                Or see 3 real gaps on your own site first
+              </Button>
+            </div>
           </div>
 
           {/* ── Illustration ─────────────────────────────────── */}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { AuthError, fetchSession, logout, type SessionState } from '@/lib/auth-client'
+import { Waiting } from '@/components/ui/Waiting'
 
 /**
  * What a signed-in person can currently see.
@@ -62,7 +63,7 @@ export function AccountPanel() {
   }
 
   if (state.status === 'loading') {
-    return <p className="font-mono text-sm text-ink-500">Loading your account…</p>
+    return <Waiting>Loading your account…</Waiting>
   }
 
   if (state.status === 'error') {
@@ -90,47 +91,47 @@ export function AccountPanel() {
   }
 
   const { session } = state
-  const hasWorkspace = session.workspaces.length > 0
+  // One company per account (`doc/11` §3.2), so this is a single row rather
+  // than a list, and there is no switcher — `POST /auth/workspace` was deleted
+  // in P3 because there is never a second workspace to switch to.
+  //
+  // `session.workspaces` stays an array. The schema is many-to-many by choice
+  // (see `app/domain/membership.py`), so the wire format that carries zero or
+  // one entry today can carry more if doc 06 §2.1's agency case is revived.
+  const company = session.workspaces[0] ?? null
 
   return (
     <div className="flex flex-col gap-8">
-      {/* ── Identity ── */}
-      <dl className="grid gap-px overflow-hidden rounded-2xl border border-ink-100 bg-ink-100 sm:grid-cols-2">
-        <div className="bg-white px-5 py-4">
-          <dt className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-400">
-            Signed in as
-          </dt>
-          <dd className="mt-1 break-all font-mono text-sm text-ink-800">{session.user_id}</dd>
-        </div>
-        <div className="bg-white px-5 py-4">
-          <dt className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-400">
-            Active workspace
-          </dt>
-          <dd className="mt-1 font-mono text-sm text-ink-800">
-            {session.active_workspace_id ?? 'None'}
-          </dd>
-        </div>
+      {/* ── Identity ──
+
+          Finding F8. This showed a user UUID beside a workspace UUID, on the
+          one page that promises *"everything below is read from the API"* —
+          with the company's actual name sitting in the row directly beneath.
+          `GET /auth/session` now carries the email, and the second cell is gone
+          rather than restated: the company already has a section of its own,
+          and printing its name twice over is how the UUID came to look
+          acceptable in the first place. */}
+      <dl className="overflow-hidden rounded-2xl border border-ink-100 bg-white px-5 py-4">
+        <dt className="font-mono text-2xs uppercase tracking-[0.12em] text-ink-400">
+          Signed in as
+        </dt>
+        <dd className="mt-1 break-all text-sm text-ink-800">
+          {session.email ?? <span className="font-mono">{session.user_id}</span>}
+        </dd>
       </dl>
 
       {/* ── Workspaces ── */}
       <section>
-        <h2 className="font-display text-lg font-medium text-ink-900">Your workspaces</h2>
+        <h2 className="font-display text-lg font-medium text-ink-900">Your company</h2>
 
-        {hasWorkspace ? (
+        {company ? (
           <>
-            <ul className="mt-3 flex flex-col gap-2">
-              {session.workspaces.map((workspace) => (
-                <li
-                  key={workspace.workspace_id}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper"
-                >
-                  <span className="font-medium text-ink-900">{workspace.name}</span>
-                  <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
-                    {workspace.role}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-ink-100 bg-white px-4 py-3 shadow-paper">
+              <span className="font-medium text-ink-900">{company.name}</span>
+              <span className="rounded-full bg-bone-200 px-2.5 py-1 font-mono text-2xs uppercase tracking-[0.08em] text-ink-600">
+                {company.role}
+              </span>
+            </div>
 
             <div className="mt-4 rounded-2xl border border-ink-100 bg-white px-5 py-5 shadow-paper">
               <p className="font-display text-lg text-ink-900">Set up your workspace</p>
@@ -145,54 +146,49 @@ export function AccountPanel() {
                 <Button href="/onboarding" variant="secondary">
                   Workspace setup
                 </Button>
+                <Button href="/settings" variant="secondary">
+                  Settings
+                </Button>
               </div>
             </div>
           </>
         ) : (
-          <div className="mt-3 rounded-2xl border border-gold-300 bg-gold-100 px-5 py-5">
-            <p className="font-mono text-2xs uppercase tracking-[0.12em] text-clay-600">
-              Nothing here yet — and why
-            </p>
-            <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-800">
-              A workspace only exists once someone has <strong>proved they control the
-              domain</strong>. Nobody can create one for a domain they do not own — not
-              even by typing it — which is the same rule that stops a competitor claiming
-              yours.
+          <div className="mt-3 rounded-2xl border border-ink-100 bg-white px-5 py-5 shadow-paper">
+            {/* **D19: creating a company needs no domain claim.**
+
+                This said a workspace "only exists once someone has proved they
+                control the domain", and pointed at the API. Both stopped being
+                true when D19 split creation from verification —
+                `app/auth/companies.py` carries the split, and `/register-company`
+                is the screen.
+
+                It stranded every founder who had just registered: the one page
+                they land on told them to go and edit a DNS record, and nothing
+                anywhere linked to the step they actually needed. Verification
+                still gates *inviting colleagues*, which is where it belongs. */}
+            <p className="font-display text-lg text-ink-900">Create your company</p>
+            <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-700">
+              One step, and you can start straight away. You do not need to prove you own
+              the domain first — that comes later, and only when you want to invite your
+              colleagues, which is the rule that stops anyone adding themselves to your
+              company.
             </p>
             <p className="mt-3 text-[0.95rem] leading-relaxed text-ink-700">
-              Claiming a domain needs a DNS TXT record or a file published on the site.
-              That flow has no screen yet, so it currently runs through the API:{' '}
-              <code className="rounded border border-ink-200 bg-white px-1.5 py-0.5 font-mono text-[0.8rem] text-ink-800">
-                POST /domains
-              </code>
-              .
+              When you do come to prove it, that needs a DNS TXT record, a file published
+              on the site, or an email address on the domain itself.{' '}
+              <Link
+                href="/settings"
+                className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+              >
+                Settings
+              </Link>{' '}
+              walks through whichever you pick.
             </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button href="/register-company">Create your company</Button>
+            </div>
           </div>
         )}
-      </section>
-
-      {/* ── What is not built ── */}
-      <section>
-        <h2 className="font-display text-lg font-medium text-ink-900">
-          What is not built yet
-        </h2>
-        <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-600">
-          The seven directors have pages, and every widget on them says what it will show
-          and what it needs — but <strong>none of them is built</strong>, so none carries a
-          number. The Company Brain and the morning brief that would fill them are later
-          milestones, and the scoped retrieval layer they depend on comes first, because
-          adding permissions after the features is how these products leak.
-        </p>
-        <p className="mt-3 text-[0.95rem] text-ink-600">
-          The free audit needs no account and works today —{' '}
-          <Link
-            href="/#top"
-            className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
-          >
-            run one
-          </Link>
-          .
-        </p>
       </section>
 
       <div>

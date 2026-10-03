@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.workspaces import find_verified_workspace_for_domain
 from app.connectors.domain_check import (
     STRENGTH_BY_METHOD,
     CheckResult,
@@ -36,7 +37,10 @@ from app.connectors.domain_check import (
     new_challenge,
     normalise_domain,
 )
+from app.db import jobs_session
+from app.domain import audit
 from app.logging import get_logger
+from app.retrieval.scoped import apply_user_scope, apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -65,12 +69,33 @@ class Claim:
     state: str
     evidence: str | None
     verified_at: datetime | None
+    workspace_id: UUID | None
+    """The workspace this claim produced, once it has produced one.
+
+    Written by `create_workspace_for_claim` after the insert. Read back by that
+    same function on a *second* call so a repeat can be told from a genuine
+    dispute — see finding #9.
+    """
 
 
 # ── Starting a claim ──────────────────────────────────────────
 
 
+async def _scope_to_user(db: AsyncSession, user_id: UUID) -> None:
+    """Set the GUC `domain_claim`'s policy reads (migration 0013).
+
+    Transaction-scoped, so one call covers every statement until the commit —
+    which is why the two entry points below are enough rather than every query.
+
+    Without it the policy matches nothing and a user cannot see **their own**
+    claim. That is the safe direction to fail and still a bug, so it is set at
+    the two doors into this module rather than remembered per query.
+    """
+    await apply_user_scope(db, user_id)
+
+
 async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, method: Method) -> Claim:
+    await _scope_to_user(db, user_id)
     domain = normalise_domain(raw_domain)
     if not domain or "." not in domain:
         raise DomainClaimError("Enter a valid domain, for example acme.om")
@@ -114,15 +139,17 @@ async def start_claim(db: AsyncSession, *, user_id: UUID, raw_domain: str, metho
         state="pending",
         evidence=None,
         verified_at=None,
+        workspace_id=None,
     )
 
 
 async def _load_claim(db: AsyncSession, claim_id: UUID, user_id: UUID) -> Claim:
+    await _scope_to_user(db, user_id)
     row = (
         await db.execute(
             text(
                 "SELECT id, domain, user_id, method, strength, challenge_token,"
-                "       state, evidence, verified_at, expires_at"
+                "       state, evidence, verified_at, expires_at, workspace_id"
                 "  FROM domain_claim WHERE id = :id AND user_id = :u"
             ),
             {"id": str(claim_id), "u": str(user_id)},
@@ -147,20 +174,34 @@ async def _load_claim(db: AsyncSession, claim_id: UUID, user_id: UUID) -> Claim:
         state=row.state,
         evidence=row.evidence,
         verified_at=row.verified_at,
+        workspace_id=UUID(str(row.workspace_id)) if row.workspace_id else None,
     )
 
 
 # ── Checking a claim ──────────────────────────────────────────
 
 
-async def check_claim(
-    db: AsyncSession, *, claim_id: UUID, user_id: UUID, user_email: str | None = None
-) -> Claim:
-    """Run the claim's method and record the outcome."""
-    claim = await _load_claim(db, claim_id, user_id)
-    if claim.state == "verified":
-        return claim
+async def load_claim_for_check(db: AsyncSession, *, claim_id: UUID, user_id: UUID) -> Claim:
+    """The database half, before the network call.
 
+    Split out for finding #11. `check_claim` used to load, then perform DNS or
+    HTTP against a host the *claimant* named, then write — all on one session,
+    so a slow or hostile target held a pooled connection for the duration. Ten
+    concurrent checks against a tarpit exhausted a pool of five, and every other
+    request in the process waited behind them.
+
+    Three calls now, with **no session held across the network I/O**:
+    `load_claim_for_check` → `perform_check` → `record_check_result`.
+    """
+    return await _load_claim(db, claim_id, user_id)
+
+
+async def perform_check(claim: Claim, *, user_email: str | None = None) -> CheckResult:
+    """The network half. Takes no session, and that is the point.
+
+    It cannot hold a connection because it is not given one — the guarantee is
+    structural rather than a comment asking the next caller to be careful.
+    """
     if claim.method is Method.DNS_TXT:
         result = await check_dns_txt(claim.domain, claim.challenge_token)
     elif claim.method is Method.FILE:
@@ -182,6 +223,19 @@ async def check_claim(
         )
     else:
         raise DomainClaimError("This verification method requires support review.")
+
+    return result
+
+
+async def record_check_result(
+    db: AsyncSession, *, claim_id: UUID, user_id: UUID, result: CheckResult
+) -> Claim:
+    """The second database half. Re-reads the claim rather than trusting the
+    one loaded before the network call — it may have expired, been disputed or
+    been verified by another request while the check was in flight."""
+    claim = await _load_claim(db, claim_id, user_id)
+    if claim.state == "verified":
+        return claim
 
     now = datetime.now(UTC)
     if result.verified:
@@ -222,6 +276,11 @@ async def create_workspace_for_claim(
     Every precondition is checked here rather than at the route, so there is one
     place to attack and one place to audit.
     """
+    # Before anything else: `doc/11` §3.2, one person one company. Checked
+    # first because it is the cheapest refusal and the one least dependent on
+    # the claim's state — a user who already belongs somewhere cannot create a
+    # workspace no matter how good their domain claim is.
+
     claim = await _load_claim(db, claim_id, user_id)
 
     if claim.state == "disputed":
@@ -229,27 +288,59 @@ async def create_workspace_for_claim(
     if claim.state != "verified" or claim.verified_at is None:
         raise DomainClaimError("Verify the domain before creating a workspace.")
 
-    existing = (
-        await db.execute(
-            text(
-                "SELECT id FROM workspace"
-                " WHERE lower(domain) = :d AND domain_verified_at IS NOT NULL"
-            ),
-            {"d": claim.domain},
-        )
-    ).first()
+    # Finding #18. This was the same SELECT on `db`, and it has returned
+    # nothing since M3 — `workspace` is row-level secured and a rival claimant
+    # matches neither policy, so "first verified wins" never once executed.
+    #
+    # Nothing was corrupted by it: the partial unique index on
+    # `lower(domain) WHERE domain_verified_at IS NOT NULL` refused the second
+    # verification anyway. But it refused it as a constraint violation, so the
+    # user got a 500 where they should have been told the company already
+    # exists, and no dispute record was ever written for support to look at.
+    existing_id = await find_verified_workspace_for_domain(claim.domain)
 
-    if existing is not None:
+    if existing_id is not None and existing_id == claim.workspace_id:
+        # Finding #9. The claim already produced *this* workspace, so the
+        # "existing" one is the caller's own — a double-clicked button, a
+        # retried request, a browser replaying a POST.
+        #
+        # Falling through would mark the user's own claim `disputed` against
+        # their own workspace and raise `DomainDisputedError`, which is
+        # permanent: the claim can never be used again, the workspace exists,
+        # and onboarding is stuck with no path forward that does not involve
+        # someone editing the database. The concurrent race was handled; the
+        # sequential one was not, and the sequential one is the likely one.
+        #
+        # Idempotent instead: the workspace they asked for already exists, and
+        # returning it is the honest answer to "create this".
+        log.info("workspace.create.repeat", claim_id=str(claim.id))
+        return existing_id
+
+    if existing_id is not None:
         # First verified wins. The loser gets a dispute record rather than a
         # silent failure — someone has to be able to resolve this, and a
         # support conversation needs an artefact.
-        await db.execute(
-            text(
-                "UPDATE domain_claim SET state = 'disputed', disputes_workspace_id = :ws"
-                " WHERE id = :id"
-            ),
-            {"ws": str(existing.id), "id": str(claim.id)},
-        )
+        # ADR 0018. The row belongs to the *loser* and the actor is the winner,
+        # so the application role's `user_id` policy (migration 0013) refuses
+        # this write — correctly. It runs as `nexus_jobs` instead, on its own
+        # connection.
+        #
+        # A separate transaction, and that is the point rather than a
+        # side-effect: this function is about to raise, aborting everything it
+        # has done. The dispute record must **survive** that abort — it is the
+        # artefact a support conversation needs, and the version of this that
+        # rolled back with the failure left nothing behind at all.
+        async with jobs_session() as jobs_db:
+            await jobs_db.execute(
+                text(
+                    "UPDATE domain_claim SET state = 'disputed', disputes_workspace_id = :ws"
+                    " WHERE id = :id"
+                ),
+                {"ws": str(existing_id), "id": str(claim.id)},
+            )
+            await jobs_db.commit()
+
+        log.info("domain.disputed", claim_id=str(claim.id))
         raise DomainDisputedError("This domain is already claimed by another workspace.")
 
     tenant_row = await db.execute(
@@ -274,10 +365,7 @@ async def create_workspace_for_claim(
     # the GUC already set, which is what the migration's comment intends by
     # "`workspace_id` mirrors `id`" and what this now does.
     workspace_id = uuid4()
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(workspace_id)},
-    )
+    await apply_workspace_scope(db, str(workspace_id))
 
     try:
         await db.execute(
@@ -317,6 +405,16 @@ async def create_workspace_for_claim(
         ),
         {"ws": str(workspace_id), "u": str(user_id)},
     )
+    await audit.record(
+        db,
+        workspace_id=workspace_id,
+        action=audit.AuditAction.WORKSPACE_CREATED,
+        actor_user_id=user_id,
+        target_type="workspace",
+        target_id=str(workspace_id),
+        reason=f"domain {claim.domain} verified by {claim.method.value}",
+    )
+
     await db.execute(
         text("UPDATE domain_claim SET workspace_id = :ws WHERE id = :id"),
         {"ws": str(workspace_id), "id": str(claim.id)},

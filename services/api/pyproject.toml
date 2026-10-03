@@ -16,6 +16,24 @@ dependencies = [
   "argon2-cffi>=23.1",
   "itsdangerous>=2.2",
   "httpx>=0.28",
+  # Encrypts provider credentials at rest (ADR 0032, D27). A **base**
+  # dependency rather than an optional extra: unlike the language model, where
+  # an absent key is a supported operating state (ADR 0011), a connector that
+  # cannot decrypt its token is not a supported state — it is a connection that
+  # silently stops working.
+  "cryptography>=44.0",
+  # The official MCP SDK (ADR 0031). A **base** dependency because a connector
+  # that cannot open a session is not a degraded state, it is a connection that
+  # does nothing — and five of the vendors this product connects to publish a
+  # vendor-hosted MCP server.
+  #
+  # It brings `httpx2`, which is a *different distribution* from the `httpx`
+  # this service already uses, not a different version of it. The two are not
+  # reconciled: `app/connectors/session.py` is the only file that imports
+  # httpx2, and `connectors/rest.py` and the crawler keep httpx untouched.
+  # Migrating the service for tidiness on a path with no shared state would be
+  # a large change for nothing; the cost is a second package in the image.
+  "mcp>=2.2",
   "tenacity>=9.0",
   "structlog>=24.4",
   # Scheduler for expiry sweeps and, later, crawls and score recomputation.
@@ -26,12 +44,27 @@ dependencies = [
   # upload route accepts a file plus a consent field, and FastAPI raises at
   # import time without it.
   "python-multipart>=0.0.20",
+  # HTML parsing for the research engine's extractor. **Undeclared until Phase
+  # 2**, and it had been red in CI since the file was written: `pip install -e
+  # ".[dev]"` on a clean runner did not install it, so `mypy` failed with
+  # "cannot find implementation or library stub for module named bs4" and the
+  # test step never ran. It passed on the developer's machine because another
+  # package had pulled bs4 in transitively — the exact shape of bug a lockless
+  # install hides. 4.13+ ships `py.typed`, so no stubs package is needed.
+  "beautifulsoup4>=4.13",
   # Document parsing (M5). No OCR: a scanned PDF must fail visibly,
   # not be silently indexed as an empty document.
   "pypdf>=5.1",
   "python-docx>=1.1",
   "python-pptx>=1.0",
   "openpyxl>=3.1",
+  # `.docx`/`.pptx`/`.xlsx` are zip archives of XML, and `python-docx`,
+  # `python-pptx` and `openpyxl` all parse that XML with the stdlib's
+  # `xml.etree`, which has no built-in defence against a billion-laughs
+  # entity expansion or an external-entity fetch (L-05). `defuse_stdlib()`
+  # patches the stdlib parser process-wide at import, so every library that
+  # calls it is covered without touching three vendored parsers.
+  "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +103,9 @@ dev = [
   "mypy>=1.13",
   "types-python-dateutil",
   "types-openpyxl",
+  # Coverage with a floor. The floor exists to make a deletion of tests visible;
+  # it starts at the measured number and is never lowered to make a build pass.
+  "pytest-cov>=6.0",
 ]
 
 [build-system]
@@ -122,6 +158,13 @@ module = ["pgvector.*", "fastembed.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# `types-defusedxml` on PyPI stubs only the `.common` exceptions, not
+# `defuse_stdlib` — the one function this codebase calls. `ignore_missing_imports`
+# rather than a per-line `type: ignore`, matching the row above.
+module = ["defusedxml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # `anthropic` is an OPTIONAL dependency, deliberately not installed by default.
 # The product is required to run with no language model configured, so the SDK
 # is imported lazily inside app/ai/anthropic_provider.py and its absence is a
@@ -135,5 +178,70 @@ ignore_missing_imports = true
 # ─────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
-filterwarnings = ["error"]
+testpaths = ["tests", "evals"]
+filterwarnings = [
+  "error",
+  # `starlette` 1.6.0's TestClient imports `anyio.abc.BlockingPortal`, which
+  # `anyio` 4.15.0 deprecated in favour of `anyio.from_thread.BlockingPortal`.
+  # Neither package is ours and nothing in this repository names either symbol,
+  # so `error` turned a third-party deprecation into nine collection errors —
+  # every module that builds a TestClient.
+  #
+  # Narrow on purpose: the message is matched, not the category, so a *different*
+  # DeprecationWarning still fails the build. Delete this line when starlette
+  # stops using the alias; the suite will not tell you it has become redundant,
+  # so check it when starlette is next upgraded.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+  # `fastembed` warns at model construction that
+  # `intfloat/multilingual-e5-large` now uses **mean pooling instead of CLS**.
+  # Under `error` that exception surfaces as `EmbeddingTransientError`, which
+  # made the real embedder unloadable in the whole suite — so every test that
+  # needed one skipped or failed, and the message blamed a download.
+  #
+  # **The warning is not cosmetic and ignoring it is not the end of it.** Two
+  # fastembed versions produce different vectors for the same text under the
+  # same `model_name`, and `ck_chunk_embedding_provenance` records only the
+  # model id and the dimension — both unchanged. A workspace embedded across an
+  # upgrade would hold two incompatible vector spaces with nothing on the row to
+  # say so, and the symptom is worse retrieval rather than an error. Tracked as
+  # a finding; this line only stops it blocking the suite.
+  #
+  # Narrow on purpose: the message is matched, not the category.
+  "ignore:The model intfloat/multilingual-e5-large now uses mean pooling:UserWarning",
+]
+
+# --strict-markers: a misspelled marker is an error, not a silent no-op. Nine
+#   modules previously kept `requires_db` as a local `skipif` variable, so a
+#   tenth misspelling it would have applied nothing at all.
+# --strict-config: an unknown key in this table is an error too.
+# --cov-fail-under: the floor, branch coverage, set to the measured figure
+#   rounded down so it cannot flake on a fraction. 74 at Phase 0, raised to 75
+#   at Phase 1 (measured 75.85). It exists to make a deleted test visible, so
+#   it goes up and never down. A coverage figure is not a quality claim - 75%
+#   here sits beside four of ten invariants proved - it is only a ratchet.
+addopts = "--strict-markers --strict-config --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=75"
+
+# Skipped only when no database is configured — and conftest.py fails the
+# session when that happens, because a database test that does not run proves
+# nothing. tests/test_ci_contract.py asserts the other half.
+markers = [
+  "requires_db: needs a real PostgreSQL, connected as the unprivileged app role",
+  # **Costs money and is never run by default.** `evals/` has no `conftest.py`,
+  # so the key-pinning fixture in `tests/conftest.py` does not reach it and a
+  # live key in `.env` is readable there — an accidental `pytest evals` must not
+  # make a billable call. `evals/live.py` holds the gate; `NEXUS_LIVE_EVALS=1`
+  # is the switch, and one switch covers every live half so nobody sets one and
+  # believes they ran both.
+  "live_eval: sends real requests to a real model; opt-in, never gates CI",
+]
+
+[tool.coverage.run]
+source = ["app"]
+# Both halves of every branch, not just every line. A permission predicate with
+# only its allow path exercised is the failure mode this guards against, and
+# line coverage cannot see it.
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

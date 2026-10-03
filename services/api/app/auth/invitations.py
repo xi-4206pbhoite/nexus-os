@@ -26,8 +26,11 @@ from sqlalchemy import CursorResult, RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import hash_token, new_token
+from app.auth.workspaces import require_verified_domain
+from app.domain import audit
 from app.domain.scopes import Department, Role
 from app.logging import get_logger
+from app.retrieval.scoped import apply_invitation_token_scope, apply_workspace_scope
 
 log = get_logger(__name__)
 
@@ -125,6 +128,12 @@ async def issue(
     links for one person is two different roles they might end up with,
     depending on which email they happen to open.
     """
+    # D19. Creation no longer waits for verification, but **inviting does** —
+    # an invitation adds somebody to a company, and the only evidence that this
+    # is your company is the domain. Without it anyone could register `acme.om`,
+    # invite `finance@acme.om`, and receive whatever that person brought along.
+    await require_verified_domain(db, workspace_id=workspace_id, action="inviting people")
+
     token = new_token()
     normalised = email.strip().lower()
 
@@ -165,6 +174,19 @@ async def issue(
     )
 
     log.info("invitation.issued", role=role.value, departments=len(departments))
+    await audit.record(
+        db,
+        workspace_id=workspace_id,
+        action=audit.AuditAction.INVITATION_ISSUED,
+        actor_user_id=invited_by_user_id,
+        target_type="invitation",
+        target_id=str(row["id"]),
+        # The role, because that is the part an administrator is asked about
+        # later. Not the address: the log is read by people who can already see
+        # the member list, but a trail is a place data outlives its purpose.
+        reason=f"role {role.value}",
+    )
+
     return IssuedInvitation(invitation=_row_to_invitation(row), token=token)
 
 
@@ -223,10 +245,7 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
 
     Note the signature once more: `token` and `user_id`. Nothing about the role.
     """
-    await db.execute(
-        text("SELECT set_config('nexus.invitation_token_hash', :h, true)"),
-        {"h": hash_token(token)},
-    )
+    await apply_invitation_token_scope(db, hash_token(token))
 
     row = (
         (
@@ -255,24 +274,30 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
     # else would seat the wrong person in a role chosen for the invited one —
     # and a forwarded link is the ordinary way that happens, not an attack.
     #
-    # Known gap, recorded rather than hidden: this proves the account *claims*
-    # the address, not that the address was ever confirmed. Nothing in the
-    # product sends a verification email yet (see `RegisterForm`), so requiring
-    # `email_verified_at` here would make every invitation unusable. When
-    # delivery lands, this predicate is where the check belongs.
+    # `email_verified_at IS NOT NULL` is required here, matching the check
+    # `routes/onboarding.py` already applies. Registration sends a verification
+    # email (`routes/auth.py`, `issue_verification`), so an unverified address
+    # is one nobody has proven they control yet — accepting an invitation on
+    # its behalf would let anyone claiming an address they do not own seat
+    # themselves in the role chosen for its real owner.
     email = (
         await db.execute(
-            text("SELECT lower(email) FROM app_user WHERE id = :u"), {"u": str(user_id)}
+            text(
+                "SELECT lower(email) FROM app_user WHERE id = :u AND email_verified_at IS NOT NULL"
+            ),
+            {"u": str(user_id)},
         )
     ).scalar()
 
     if email is None or email != invitation.email.lower():
         return Accepted(outcome=AcceptOutcome.WRONG_ACCOUNT)
 
-    await db.execute(
-        text("SELECT set_config('nexus.workspace_id', :ws, true)"),
-        {"ws": str(invitation.workspace_id)},
-    )
+    # `doc/11` §3.2. Checked after the address matches, not before: telling
+    # somebody holding a forwarded link that the *invited* account already
+    # belongs to a company would answer a question they were never entitled to
+    # ask. By this line the caller has proved the invitation names them.
+
+    await apply_workspace_scope(db, str(invitation.workspace_id))
 
     result: CursorResult[Any] = await db.execute(  # type: ignore[assignment]
         text(
@@ -290,6 +315,17 @@ async def accept(db: AsyncSession, *, token: str, user_id: UUID) -> Accepted:
     )
 
     already_member = not result.rowcount
+
+    if not already_member:
+        await audit.record(
+            db,
+            workspace_id=invitation.workspace_id,
+            action=audit.AuditAction.INVITATION_ACCEPTED,
+            actor_user_id=user_id,
+            target_type="invitation",
+            target_id=str(invitation.id),
+            reason=f"role {invitation.role.value}",
+        )
 
     # Burn the token either way. A link that has been through this once must not
     # work again, whether or not it changed anything.

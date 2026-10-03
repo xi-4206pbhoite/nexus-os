@@ -2,13 +2,22 @@ name: CI
 
 # Doc 07 §3: "Type checking and linting must pass in CI from milestone 0."
 #
-# Per ADR 0002 there is no remote yet, so nothing executes this workflow.
-# It is committed now so the gate exists the moment a remote is added, and
-# `make ci` runs the identical checks locally in the meantime.
+# Until Phase 0 this workflow ran the suite with **no database**, so 92 tests
+# skipped and the job reported green — row-level security, the product's central
+# claim, was never exercised anywhere. The `postgres` service below is the whole
+# point of this file: the api job now boots a real PostgreSQL, bootstraps the
+# unprivileged application role, migrates in both directions, and refuses to
+# pass if a database test skips (`tests/test_ci_contract.py`).
+#
+# `.\scripts\ci.ps1` runs the same checks locally.
 
 on:
   push:
-    branches: [main]
+    # `dev` as well as `main`. Work happens on `dev` and lands on `main`, so a
+    # workflow triggered only by `main` would run after the fact - and this one
+    # exists to catch a broken policy or a drifted constraint before it is
+    # merged, not to confirm it afterwards.
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -23,6 +32,38 @@ jobs:
     defaults:
       run:
         working-directory: services/api
+
+    env:
+      # `NEXUS_ENV` has no default since Phase 1 — a forgotten one used to mean
+      # `local`, which served /docs publicly and set secure=False on both
+      # cookies. So it must be set here: `conftest.py` pins it for tests, but
+      # `alembic` builds Settings of its own and there is no `.env` in CI, so
+      # the migration step would refuse to start without this line.
+      NEXUS_ENV: ci
+
+    services:
+      postgres:
+        # pgvector, not plain postgres. `db/bootstrap.sql` runs
+        # `CREATE EXTENSION vector` and the official image does not ship it, so
+        # the bootstrap would fail on the first statement. ADR 0006 chose this
+        # image for the same reason locally.
+        #
+        # POSTGRES_USER is a superuser in this image — which is exactly why the
+        # bootstrap creates a separate `nexus_app`. A superuser, or any role
+        # with BYPASSRLS, ignores every policy in migration 0002 while the
+        # isolation suite passes.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nexus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +71,62 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # The lockfile, not pyproject.toml — the cache key must change when
+          # the resolved set changes, and pyproject only states ranges.
+          cache-dependency-path: services/api/requirements-dev.lock
 
       - name: Install
+        # From the lockfile, not from the ranges in pyproject.toml (finding #16).
+        #
+        # `pip install -e ".[dev]"` resolved whatever was newest each morning, so
+        # CI ran a different environment from every developer, every run. That is
+        # how `beautifulsoup4` went undeclared for four milestones — present
+        # locally by accident, absent here — and how an `anyio`/`starlette`
+        # deprecation broke collection with nothing in the repo having changed.
+        #
+        # `--require-hashes` is implied by the hashes in the file: pip refuses
+        # the whole install if any artefact does not match. Then the project
+        # itself, `--no-deps`, because its dependencies are already pinned above
+        # and letting pip re-resolve them would defeat the point.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements-dev.lock
+          pip install -e . --no-deps
+
+      - name: Install the postgres client
+        working-directory: .
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends postgresql-client
+
+      - name: Bootstrap the database and the application role
+        working-directory: .
+        env:
+          PGPASSWORD: postgres
+        run: |
+          APP_PASSWORD="$(openssl rand -hex 24)"
+          JOBS_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$APP_PASSWORD"
+          echo "::add-mask::$JOBS_PASSWORD"
+          psql -h localhost -U postgres -d nexus \
+               -v app_password="$APP_PASSWORD" \
+               -v jobs_password="$JOBS_PASSWORD" -f db/bootstrap.sql
+          echo "NEXUS_DATABASE_URL=postgresql+asyncpg://nexus_app:$APP_PASSWORD@localhost:5432/nexus" \
+               >> "$GITHUB_ENV"
+          # The maintenance role (ADR 0018). Without it the expiry sweep runs as
+          # nexus_app, matches zero rows under the domain_claim policy, and
+          # reports success - so the suite would be green over a broken sweep.
+          echo "NEXUS_JOBS_DATABASE_URL=postgresql+asyncpg://nexus_jobs:$JOBS_PASSWORD@localhost:5432/nexus" \
+               >> "$GITHUB_ENV"
+
+      - name: Migrations, both directions
+        # upgrade → downgrade base → upgrade, on a clean database. A downgrade
+        # that has never run is not a downgrade; it is a function that has never
+        # been called, and the first person to need it will be mid-incident.
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
 
       - name: Lint (ruff)
         run: ruff check .
@@ -43,9 +135,14 @@ jobs:
         run: ruff format --check .
 
       - name: Types (mypy --strict)
-        run: mypy app
+        # `tests` as well as `app`. The suite is what proves the invariants, so
+        # untyped test code is untyped proof.
+        run: mypy app tests
 
       - name: Tests
+        # `pytest -q` fails if NEXUS_DATABASE_URL is missing, if any
+        # `requires_db` test skips, or if coverage falls below the floor. See
+        # tests/test_ci_contract.py and [tool.pytest.ini_options].
         run: pytest -q
 
   web:
@@ -72,8 +169,152 @@ jobs:
       - name: Lint
         run: npx next lint
 
+      - name: Component and BFF tests
+        run: npm test
+
       - name: Build
         run: npx next build
+
+  e2e:
+    name: E2E — the journey, against the composed stack
+    runs-on: ubuntu-latest
+    # After the cheap jobs. A browser journey that fails because of a type error
+    # wastes four minutes proving something `tsc` proves in forty seconds.
+    needs: [api, web]
+    env:
+      # Test credentials for a database that lives and dies with this job. Not
+      # secrets: nothing here outlives the runner, and putting them in the repo
+      # secret store would imply they protect something.
+      NEXUS_DB_SUPERUSER_PASSWORD: ci-superuser-password
+      NEXUS_APP_DB_PASSWORD: ci-app-password
+      NEXUS_ENV: production
+      NEXUS_DATABASE_URL: postgresql+asyncpg://nexus_app:ci-app-password@db:5432/nexus
+      NEXUS_JOBS_DATABASE_URL: postgresql+asyncpg://nexus_jobs:ci-jobs-password@db:5432/nexus
+      NEXUS_JOBS_DB_PASSWORD: ci-jobs-password
+      NEXUS_SESSION_SIGNING_SECRET: ci-session-signing-secret-not-a-real-one
+      NEXUS_STORAGE_SIGNING_SECRET: ci-storage-signing-secret-not-a-real-one
+      NEXUS_PUBLIC_BASE_URL: https://localhost
+      # `production` rather than a test env on purpose: it is the only setting
+      # under which cookies are `secure` and the docs page is closed, and those
+      # are two of the things this job exists to prove.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      # The journey reads the verification link out of the `.eml` the API
+      # actually wrote. The bind mount in docker-compose.ci.yml needs the
+      # directory to exist first, or Docker creates it owned by root and the
+      # container cannot write to it.
+      # Mail is really sent over SMTP to Mailpit, because `NEXUS_ENV=production`
+      # forbids the file mailer — a production process writing `.eml` files to
+      # disk sends no mail (finding #24). Production also refuses plaintext
+      # SMTP, and that refusal is right: credentials and every verification
+      # token travel over that connection. So rather than weaken it for the
+      # test, Mailpit gets a certificate and the API is told to trust it.
+      #
+      # `subjectAltName` is not optional — Python has verified hostnames against
+      # the SAN and ignored the Common Name since 3.7, so a cert with only a CN
+      # fails with an error that looks like a trust problem and is not.
+      - name: A certificate the API will actually trust
+        run: |
+          mkdir -p .certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -keyout .certs/mail.key -out .certs/mail.crt \
+            -subj "/CN=mail" -addext "subjectAltName=DNS:mail"
+          chmod 644 .certs/mail.key .certs/mail.crt
+
+      - name: Build the images
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+
+      - name: Bring up the stack
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+      # `migrate` is a job: it runs and exits. `api` and `worker` wait on it
+      # completing successfully, so if it failed they never started and the wait
+      # below is what surfaces it.
+      # Separately from the site, because the BFF returning 503 tells you the
+      # web app is up and the API is not — and that is a different problem from
+      # nothing being up at all.
+      - name: Wait for the API
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+                 exec -T api curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "the API answered"; exit 0
+            fi
+            sleep 5
+          done
+          echo "the API never answered its own health check"; exit 1
+
+      - name: Wait for the site
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsSk https://localhost/ >/dev/null 2>&1; then
+              echo "up after ${i}0s"; exit 0
+            fi
+            sleep 10
+          done
+          echo "the site never answered"; exit 1
+
+      # Proves the SMTP path before the journey depends on it. If mail is not
+      # being delivered, the journey fails at "verify by email" with a timeout
+      # that says nothing about why — and the answer would be four containers
+      # away.
+      - name: Mail is being delivered
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v1/info >/dev/null 2>&1; then
+              echo "the sink is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Mailpit never answered"; exit 1
+
+      - name: The journey
+        working-directory: apps/web
+        env:
+          NEXUS_E2E_BASE_URL: https://localhost
+          NEXUS_E2E_MAIL_API: http://localhost:8025
+        run: npx playwright test
+
+      # The API is the one that matters and the one a shared `--tail` truncates
+      # first, so it gets its own dump. `ps` before logs, because "container is
+      # restarting" and "container is running and refusing" look identical from
+      # the outside and want opposite investigations.
+      - name: What the stack said
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
+          echo "───────── api ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color api
+          echo "───────── web ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color --tail=60 web
+          echo "───────── the rest ─────────"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs --no-color --tail=60
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   secrets:
     name: Secret scan

@@ -13,27 +13,33 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 
 from app.auth.email_verification import build_email
 from app.auth.tokens import hash_token, new_token
 from tests.dburl import database_url
 
 DB_URL = database_url()
-requires_db = pytest.mark.skipif(DB_URL is None, reason="No NEXUS_DATABASE_URL")
+# The real marker, declared in pyproject.toml. Previously a local
+# `pytest.mark.skipif` — nine copies of it, so nine places a database suite
+# could silently vanish from a green run. The skip decision now lives in
+# conftest.py, which fails the session if it ever fires.
+requires_db = pytest.mark.requires_db
 
 
 @pytest.fixture(scope="module")
-def engine():  # type: ignore[no-untyped-def]
-    if DB_URL is None:
-        pytest.skip("no database")
+def engine() -> Iterator[Engine]:
+    # `requires_db` guarantees a database, so a missing URL here is a broken
+    # harness rather than an absent one. Assert loudly instead of skipping —
+    # a skip is what tests/test_ci_contract.py exists to make impossible.
+    assert DB_URL is not None
     eng = create_engine(DB_URL, poolclass=sa.pool.NullPool)
     yield eng
     eng.dispose()
 
 
 @pytest.fixture
-def conn(engine) -> Iterator[Connection]:  # type: ignore[no-untyped-def]
+def conn(engine: Engine) -> Iterator[Connection]:
     connection = engine.connect()
     trans = connection.begin()
     try:

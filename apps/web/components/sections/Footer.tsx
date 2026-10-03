@@ -4,7 +4,7 @@ import { footer, site } from '@/lib/content'
 export function Footer() {
   return (
     <footer className="border-t border-bone-200 bg-bone-50">
-      <div className="shell py-16">
+      <div className="shell-full py-16">
         <div className="grid gap-12 lg:grid-cols-[1.4fr_2fr]">
           <div>
             <Logo />
@@ -28,7 +28,7 @@ export function Footer() {
                     <li key={l.label}>
                       <a
                         href={l.href}
-                        className="link-underline text-sm text-ink-600 transition-colors hover:text-ink-900"
+                        className="link-underline inline-flex min-h-[1.75rem] items-center text-sm text-ink-600 transition-colors duration-base ease-out hover:text-ink-900"
                       >
                         {l.label}
                       </a>

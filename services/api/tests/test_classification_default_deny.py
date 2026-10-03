@@ -60,7 +60,7 @@ def test_low_confidence_lands_in_l5_and_the_review_queue() -> None:
 
     assert result.scope is Scope.L5_PERSONAL
     assert result.owner_user_id == UPLOADER
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW
 
 
 def test_a_parse_failure_lands_in_l5_not_in_the_open() -> None:
@@ -68,7 +68,7 @@ def test_a_parse_failure_lands_in_l5_not_in_the_open() -> None:
     result = classify_chunk(make(text="", parse_failed=True, confidence=0.99), uploader_id=UPLOADER)
 
     assert result.scope is Scope.L5_PERSONAL
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW
 
 
 def test_a_classifier_failure_lands_in_l5() -> None:
@@ -76,7 +76,7 @@ def test_a_classifier_failure_lands_in_l5() -> None:
     result = classify_chunk(make(classifier_failed=True, confidence=0.99), uploader_id=UPLOADER)
 
     assert result.scope is Scope.L5_PERSONAL
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW
 
 
 @pytest.mark.parametrize("confidence", [0.0, 0.1, 0.49, CONFIDENCE_THRESHOLD - 0.001])
@@ -130,7 +130,7 @@ def test_an_l3_classification_without_a_department_is_not_trusted() -> None:
         uploader_id=UPLOADER,
     )
     assert result.scope is Scope.L5_PERSONAL
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW
 
 
 # ── Sensitive material needs a human, however confident ───────
@@ -149,7 +149,7 @@ def test_sensitive_material_requires_human_confirmation(sensitivity: Sensitivity
     )
 
     assert result.scope is Scope.L5_PERSONAL
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW
     assert result.sensitivity is sensitivity
 
 
@@ -209,4 +209,4 @@ def test_l4_is_never_assigned_automatically() -> None:
         make(suggested_scope=Scope.L4_RESTRICTED, confidence=0.99), uploader_id=UPLOADER
     )
     assert result.scope is not Scope.L4_RESTRICTED
-    assert result.review_state is ReviewState.NEEDS_REVIEW
+    assert result.review_state is ReviewState.PENDING_REVIEW

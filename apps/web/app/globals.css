@@ -208,6 +208,81 @@
     @apply transition-[background-color,border-color,box-shadow,transform] duration-base ease-out;
     @apply hover:border-ink-200 hover:shadow-e2 active:translate-y-px;
   }
+
+  /* ── The product theme (ADR 0066) ──────────────────────────────────────────
+     A white-based, indigo-accented system for the signed-in app: onboarding,
+     the dashboard, auth and the rest of the authenticated shell. Everything
+     here is scoped under `.theme-app`, and the landing page never carries that
+     class, so the cut-paper identity on `/` is untouched by any of it.
+
+     Components inside the app address their appearance through these classes
+     rather than literal colours, exactly as the marketing side addresses the
+     paper surfaces through `.paper`. */
+  .theme-app {
+    @apply bg-white text-cloud-700;
+    /* Opaque white: covers the body's paper grain so the app reads as a clean
+       product surface rather than the marketing page's warm stock. */
+    background-image: none;
+  }
+
+  /* The app re-bases its focus ring onto white and onto the brand hue, so the
+     signed-in product has one focus colour and the marketing side keeps steel. */
+  .theme-app :focus-visible {
+    @apply ring-brand-500 ring-offset-white;
+  }
+
+  /* Surfaces. `app-card` is the resting white card; `app-panel` is a larger
+     grouping; `app-sunken` is the inset tint used for wells and empty rows. */
+  .app-card {
+    @apply rounded-data border border-cloud-200 bg-white shadow-e1;
+  }
+  .app-panel {
+    @apply rounded-card border border-cloud-200 bg-white shadow-e1;
+  }
+  .app-sunken {
+    @apply rounded-data border border-cloud-200 bg-cloud-50;
+  }
+  .app-hairline {
+    @apply h-px w-full bg-cloud-200;
+  }
+
+  /* The primary action. One indigo button for the whole app. */
+  .app-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-control bg-brand-500 px-4 py-2.5 text-body font-medium text-white;
+    @apply transition-[background-color,box-shadow,transform] duration-base ease-out;
+    @apply hover:bg-brand-600 active:translate-y-px;
+    @apply disabled:cursor-not-allowed disabled:bg-cloud-300 disabled:text-white/80;
+  }
+  /* The quiet action. A bordered white button for secondary choices. */
+  .app-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-cloud-300 bg-white px-4 py-2.5 text-body font-medium text-cloud-700;
+    @apply transition-[background-color,border-color,box-shadow] duration-base ease-out;
+    @apply hover:border-cloud-400 hover:bg-cloud-50;
+    @apply disabled:cursor-not-allowed disabled:text-cloud-400;
+  }
+
+  /* One control shape for every input/select/textarea inside the app theme —
+     the white-based counterpart of `.control`. */
+  .app-field {
+    @apply w-full rounded-control border border-cloud-300 bg-white px-3.5 py-2.5 text-body text-cloud-800;
+    @apply transition-[border-color,box-shadow] duration-base ease-out;
+    @apply placeholder:text-cloud-400 hover:border-cloud-400;
+    @apply focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white;
+    @apply disabled:cursor-not-allowed disabled:bg-cloud-100 disabled:text-cloud-400;
+  }
+  select.app-field {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none'%3E%3Cpath d='m4 6.25 4 4 4-4' stroke='%23475569' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-position: right 0.875rem center;
+  }
+
+  /* A label on an app control. */
+  .app-label {
+    @apply block text-label font-medium text-cloud-700;
+  }
+  .app-hint {
+    @apply text-meta text-cloud-500;
+  }
 }
 
 /* ── Above-the-fold entrance animations ──────────────────────────────────────

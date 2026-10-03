@@ -122,6 +122,55 @@ const config: Config = {
           500: '#A55D35',
           600: '#84492A',
         },
+
+        /**
+         * ── The product theme (ADR 0066) ──────────────────────────────────
+         * Three families that belong to the signed-in app only — onboarding,
+         * the dashboard, auth and the rest of the authenticated shell. The
+         * landing page does not reference any of them, so it keeps the
+         * cut-paper ink/gold/bone identity untouched.
+         *
+         * `brand` is the indigo primary (buttons, active nav, progress, focus),
+         * `azure` is the logo's blue accent, and `cloud` is the cool neutral
+         * for white-based surfaces, borders and text. Text steps are checked on
+         * white: cloud-600 is 7.0:1, cloud-500 is 4.8:1, brand-600 is 6.6:1.
+         */
+        brand: {
+          DEFAULT: '#5B50E5',
+          50: '#EEEEFE',
+          100: '#E2E1FC',
+          200: '#C7C4FA',
+          300: '#A6A2F3',
+          400: '#847DEC',
+          500: '#5B50E5',
+          600: '#4A3ECE',
+          700: '#3C32A6',
+          800: '#322B84',
+          900: '#2B2769',
+        },
+        azure: {
+          DEFAULT: '#2F6BFF',
+          100: '#E3ECFF',
+          200: '#C2D5FF',
+          300: '#8FB2FF',
+          400: '#5C8CFF',
+          500: '#2F6BFF',
+          600: '#1E54E6',
+          700: '#1842B4',
+        },
+        cloud: {
+          DEFAULT: '#64748B',
+          50: '#F8FAFC',
+          100: '#F1F4F9',
+          200: '#E6EBF2',
+          300: '#D3DBE6',
+          400: '#9CA8BA',
+          500: '#64748B',
+          600: '#475569',
+          700: '#334155',
+          800: '#1E293B',
+          900: '#0F172A',
+        },
       },
 
       fontFamily: {

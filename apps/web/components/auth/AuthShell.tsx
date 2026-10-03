@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Logo } from '@/components/ui/Logo'
-import { PaperLandscape } from '@/components/art/PaperLandscape'
+import { NexusMark } from '@/components/ui/NexusMark'
 
 /**
  * The frame around every auth page.
@@ -36,17 +35,17 @@ export function AuthShell({
   footer?: ReactNode
 }) {
   return (
-    <main id="main" tabIndex={-1} className="min-h-screen bg-bone-50">
+    <main id="main" tabIndex={-1} className="theme-app min-h-screen">
       <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-2">
         {/* ── The form ── */}
         <div className="flex flex-col items-center px-6 py-8 sm:px-10 lg:py-12">
           <div className="w-full max-w-md">
             <Link
               href="/"
-              className="inline-flex w-fit rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-steel-500 focus-visible:ring-offset-4 focus-visible:ring-offset-bone-50"
-              aria-label="NEXUS OS home"
+              className="inline-flex w-fit rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-4 focus-visible:ring-offset-white"
+              aria-label="NEXUS home"
             >
-              <Logo />
+              <NexusMark />
             </Link>
           </div>
 
@@ -55,37 +54,35 @@ export function AuthShell({
               at the top, which on a 900px window left ~180px of nothing between
               them and put the heading below the midpoint. */}
           <div className="flex w-full max-w-md flex-1 flex-col justify-center py-8">
-            <h1 className="text-page text-ink-900">{title}</h1>
-            <p className="mt-3 text-body leading-relaxed text-ink-600">{intro}</p>
+            <h1 className="font-sans text-page font-semibold text-cloud-900">{title}</h1>
+            <p className="mt-3 text-body leading-relaxed text-cloud-600">{intro}</p>
             <div className="mt-7">{children}</div>
           </div>
 
-          {footer ? <div className="w-full max-w-md text-meta text-ink-500">{footer}</div> : null}
+          {footer ? <div className="w-full max-w-md text-meta text-cloud-500">{footer}</div> : null}
         </div>
 
-        {/* ── The artwork ──
-            A column, not a stack. The caption used to be absolutely positioned
-            over the illustration, which worked while the grid was 1152px wide
-            and the SVG letterboxed well short of the bottom. Giving the column
-            the full half of a 1440px window made the artwork taller than its
-            own scrim, and the promise — the one line on this page that states
-            what the product is for — printed across a boat.
-
-            The artwork now takes the space that is left after the caption has
-            had what it needs, so the two cannot collide at any height. */}
-        <div className="hidden flex-col overflow-hidden bg-ink-900 lg:flex" aria-hidden="true">
-          {/* No `object-cover`: it has no effect on inline SVG. The viewBox
-              letterboxes against `bg-ink-900`, which is the artwork's own
-              ground, so the fit is invisible. */}
-          <div className="relative min-h-0 flex-1">
-            <PaperLandscape className="absolute inset-0 h-full w-full" />
+        {/* ── The welcome panel ──
+            The signed-in product's own indigo, not the landing page's navy
+            artwork — so the brand the user is about to enter is the brand they
+            see while entering it. A column so the promise sits at the bottom and
+            cannot collide with the decorative field above it at any height. */}
+        <div
+          className="relative hidden flex-col justify-end overflow-hidden bg-brand-600 lg:flex"
+          aria-hidden="true"
+        >
+          {/* A soft field of brand light — token colours only, no image request. */}
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-400/40 blur-3xl" />
+            <div className="absolute -bottom-16 -left-10 h-80 w-80 rounded-full bg-azure-500/30 blur-3xl" />
           </div>
-          <div className="shrink-0 px-10 pb-10 pt-8">
-            <p className="max-w-sm font-display text-xl leading-snug text-bone-50">
+          <div className="relative shrink-0 px-12 pb-14 pt-10">
+            <NexusMark tone="dark" className="mb-8" />
+            <p className="max-w-sm font-sans text-2xl font-semibold leading-snug text-white">
               Every number NEXUS shows you is fetched or computed. None of them are
               generated.
             </p>
-            <p className="mt-3 text-2xs uppercase tracking-[0.14em] text-slate-300">
+            <p className="mt-3 text-2xs uppercase tracking-[0.14em] text-brand-100">
               The rule the product is built on
             </p>
           </div>

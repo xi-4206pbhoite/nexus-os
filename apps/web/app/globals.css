@@ -253,8 +253,8 @@
     /* Recolour the shared Button to the product's indigo, and square its corners
        to the control radius the reference uses (ADR 0066). */
     --btn-radius: 0.625rem;
-    --btn-primary-bg: #5b50e5; /* brand-500 */
-    --btn-primary-bg-hover: #4a3ece; /* brand-600 */
+    --btn-primary-bg: #1a3d63; /* brand-500 */
+    --btn-primary-bg-hover: #163453; /* brand-600 */
     --btn-primary-fg: #ffffff;
     --btn-secondary-fg: #334155; /* cloud-700 */
     --btn-secondary-border: #d3dbe6; /* cloud-300 */
@@ -265,8 +265,8 @@
     --btn-ghost-fg-hover: #0f172a; /* cloud-900 */
     --btn-quiet-fg: #64748b; /* cloud-500 */
     --btn-quiet-deco: #d3dbe6; /* cloud-300 */
-    --btn-quiet-fg-hover: #4a3ece; /* brand-600 */
-    --btn-quiet-deco-hover: #847dec; /* brand-400 */
+    --btn-quiet-fg-hover: #163453; /* brand-600 */
+    --btn-quiet-deco-hover: #4a7fa7; /* brand-400 */
   }
 
   /* The app re-bases its focus ring onto white and onto the brand hue, so the

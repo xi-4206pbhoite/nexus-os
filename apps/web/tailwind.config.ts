@@ -130,33 +130,40 @@ const config: Config = {
          * landing page does not reference any of them, so it keeps the
          * cut-paper ink/gold/bone identity untouched.
          *
-         * `brand` is the indigo primary (buttons, active nav, progress, focus),
-         * `azure` is the logo's blue accent, and `cloud` is the cool neutral
-         * for white-based surfaces, borders and text. Text steps are checked on
-         * white: cloud-600 is 7.0:1, cloud-500 is 4.8:1, brand-600 is 6.6:1.
+         * The "Minimalist Blue" palette (ADR 0066, revised): a deep-blue primary
+         * with steel accents on cool white, replacing the first pass's indigo —
+         * calmer and more credible for an executive product.
+         *
+         * `brand` is the deep blue (buttons, active nav, progress, focus); 500 is
+         * #1A3D63, 900 is #0A1931. `azure` is the steel-blue accent (#4A7FA7 —
+         * the logo arm, state dots, "good" tone), kept separate because at AA it
+         * cannot carry white button text, so it is never the primary fill.
+         * `cloud` is the cool neutral for surfaces, borders and text. On white:
+         * cloud-600 is 7.0:1, cloud-500 is 4.8:1, brand-500 #1A3D63 is 9.3:1, and
+         * brand-400 #4A7FA7 is 3.9:1 — accent-only, never small body text.
          */
         brand: {
-          DEFAULT: '#5B50E5',
-          50: '#EEEEFE',
-          100: '#E2E1FC',
-          200: '#C7C4FA',
-          300: '#A6A2F3',
-          400: '#847DEC',
-          500: '#5B50E5',
-          600: '#4A3ECE',
-          700: '#3C32A6',
-          800: '#322B84',
-          900: '#2B2769',
+          DEFAULT: '#1A3D63',
+          50: '#EEF3F8',
+          100: '#D9E6F1',
+          200: '#B3CFE5',
+          300: '#86AECC',
+          400: '#4A7FA7',
+          500: '#1A3D63',
+          600: '#163453',
+          700: '#112943',
+          800: '#0D1F34',
+          900: '#0A1931',
         },
         azure: {
-          DEFAULT: '#2F6BFF',
-          100: '#E3ECFF',
-          200: '#C2D5FF',
-          300: '#8FB2FF',
-          400: '#5C8CFF',
-          500: '#2F6BFF',
-          600: '#1E54E6',
-          700: '#1842B4',
+          DEFAULT: '#4A7FA7',
+          100: '#E3EDF5',
+          200: '#C2D8E8',
+          300: '#8FB4D4',
+          400: '#6699C0',
+          500: '#4A7FA7',
+          600: '#3A6689',
+          700: '#2C4E6B',
         },
         cloud: {
           DEFAULT: '#64748B',

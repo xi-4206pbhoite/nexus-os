@@ -59,6 +59,15 @@ page's tokens and `Logo` exactly as they are.
   word "NEXUS". Colours come from Tailwind `stroke-*`/`text-*` utilities, so no
   raw hex sits in the component.
 
+> **Amendment (same session) — palette:** Parul found the indigo too generic for
+> the product. The `brand` and `azure` token *values* were swapped to the
+> "Minimalist Blue" palette (deep blue `#1A3D63` primary, steel `#4A7FA7` accent,
+> pale `#B3CFE5`, deepest `#0A1931`, cool white `#F6FAFD`). Only the token values
+> and the `.theme-app` button variables changed — every component keeps addressing
+> `brand`/`azure`/`cloud`, so the whole app (and the logo's accent arm) re-themed
+> at once. Steel `#4A7FA7` is accent-only: at 3.9:1 on white it never carries
+> small body text or white button labels, so the deep blue is the primary fill.
+>
 > **Amendment (same session):** Parul then asked for the new mark on the landing
 > page as well. `NexusMark` now replaces the cut-paper `Logo` in the landing
 > `Nav` and `Footer` too, so the product has **one mark everywhere**. The old

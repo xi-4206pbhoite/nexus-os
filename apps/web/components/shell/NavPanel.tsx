@@ -141,7 +141,7 @@ export function NavPanel({
       {groupsFor(all).map((group) => (
         <div key={group.key}>
           {group.label ? (
-            <p className="mb-1.5 px-3 text-2xs font-medium uppercase tracking-[0.1em] text-ink-400">
+            <p className="mb-1.5 px-3 text-2xs font-medium uppercase tracking-[0.1em] text-cloud-400">
               {group.label}
             </p>
           ) : null}
@@ -156,10 +156,10 @@ export function NavPanel({
                     aria-current={current ? 'page' : undefined}
                     // 44px minimum. The old rows were 38px and the mobile menu
                     // button 56×30, both under every platform's touch floor.
-                    className={`group flex min-h-[2.75rem] items-center gap-2 rounded-control px-3 py-2 text-body transition-colors duration-base ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-steel-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bone-50 ${
+                    className={`group flex min-h-[2.75rem] items-center gap-2 rounded-control border-l-2 px-3 py-2 text-body transition-colors duration-base ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
                       current
-                        ? 'bg-ink-800 font-medium text-bone-50'
-                        : 'text-ink-600 hover:bg-bone-200 hover:text-ink-900'
+                        ? 'border-brand-500 bg-brand-50 font-medium text-brand-700'
+                        : 'border-transparent text-cloud-600 hover:bg-cloud-50 hover:text-cloud-900'
                     }`}
                   >
                     <span className="min-w-0 flex-1">
@@ -167,7 +167,7 @@ export function NavPanel({
                       {item.hint ? (
                         <span
                           className={`block truncate text-2xs ${
-                            current ? 'text-slate-300' : 'text-ink-400'
+                            current ? 'text-brand-500' : 'text-cloud-400'
                           }`}
                         >
                           {item.hint}
@@ -181,7 +181,7 @@ export function NavPanel({
                     {item.count ? (
                       <span
                         className={`tnum shrink-0 rounded-full px-1.5 py-0.5 text-2xs font-medium ${
-                          current ? 'bg-ink-700 text-slate-300' : 'bg-bone-200 text-ink-500'
+                          current ? 'bg-brand-100 text-brand-700' : 'bg-cloud-100 text-cloud-500'
                         }`}
                       >
                         {item.count}

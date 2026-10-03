@@ -111,7 +111,7 @@ export function AccountMenu() {
         // this menu actually behaves like.
         aria-haspopup="true"
         aria-label={email ? `Account — ${email}` : 'Account'}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-ink-200 bg-white text-2xs font-semibold tracking-[0.02em] text-ink-600 transition-[background-color,border-color] duration-micro ease-out hover:border-ink-300 hover:bg-bone-100 hover:text-ink-900"
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-cloud-200 bg-white text-2xs font-semibold tracking-[0.02em] text-cloud-600 transition-[background-color,border-color] duration-micro ease-out hover:border-cloud-300 hover:bg-cloud-50 hover:text-cloud-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
       >
         {email ? initials(email) : <span aria-hidden="true">··</span>}
       </button>
@@ -123,11 +123,11 @@ export function AccountMenu() {
             initial="hidden"
             animate="show"
             exit="leave"
-            className="absolute right-0 top-full z-overlay mt-1.5 w-64 rounded-data border border-ink-100 bg-white p-1.5 shadow-e3"
+            className="absolute right-0 top-full z-overlay mt-1.5 w-64 rounded-data border border-cloud-200 bg-white p-1.5 shadow-e3"
           >
-            <div className="border-b border-ink-100 px-2.5 pb-2.5 pt-1.5">
-              <p className="text-2xs uppercase tracking-[0.1em] text-ink-400">Signed in as</p>
-              <p className="mt-0.5 break-all text-meta font-medium text-ink-700">
+            <div className="border-b border-cloud-200 px-2.5 pb-2.5 pt-1.5">
+              <p className="text-2xs uppercase tracking-[0.1em] text-cloud-400">Signed in as</p>
+              <p className="mt-0.5 break-all text-meta font-medium text-cloud-700">
                 {email ?? 'Checking…'}
               </p>
             </div>
@@ -135,14 +135,14 @@ export function AccountMenu() {
             <Link
               href="/account"
               onClick={() => setOpen(false)}
-              className="mt-1 block rounded-control px-2.5 py-2 text-body text-ink-700 transition-colors duration-micro ease-out hover:bg-bone-100 hover:text-ink-900"
+              className="mt-1 block rounded-control px-2.5 py-2 text-body text-cloud-700 transition-colors duration-micro ease-out hover:bg-cloud-50 hover:text-cloud-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
               Your account
             </Link>
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
-              className="block rounded-control px-2.5 py-2 text-body text-ink-700 transition-colors duration-micro ease-out hover:bg-bone-100 hover:text-ink-900"
+              className="block rounded-control px-2.5 py-2 text-body text-cloud-700 transition-colors duration-micro ease-out hover:bg-cloud-50 hover:text-cloud-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
               Workspace settings
             </Link>
@@ -152,7 +152,7 @@ export function AccountMenu() {
               onClick={() => void signOut()}
               disabled={leaving}
               aria-busy={leaving || undefined}
-              className="mt-1 block w-full rounded-control border-t border-ink-100 px-2.5 py-2 pt-2.5 text-left text-body text-ink-700 transition-colors duration-micro ease-out hover:bg-bone-100 hover:text-ink-900 disabled:text-ink-400"
+              className="mt-1 block w-full rounded-control border-t border-cloud-200 px-2.5 py-2 pt-2.5 text-left text-body text-cloud-700 transition-colors duration-micro ease-out hover:bg-cloud-50 hover:text-cloud-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:text-cloud-400"
             >
               {leaving ? 'Signing out…' : 'Sign out'}
             </button>

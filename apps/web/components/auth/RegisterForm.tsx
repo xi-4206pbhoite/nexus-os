@@ -154,7 +154,6 @@ export function RegisterForm() {
         value={fullName}
         onChange={setFullName}
         autoComplete="name"
-        hint="What NEXUS will call you."
         disabled={busy}
       />
 
@@ -166,7 +165,6 @@ export function RegisterForm() {
         onChange={setEmail}
         autoComplete="email"
         placeholder="you@yourcompany.om"
-        hint="Use an address on your company's domain — it is how you will claim the domain later."
         disabled={busy}
       />
 
@@ -179,7 +177,6 @@ export function RegisterForm() {
         autoComplete="new-password"
         disabled={busy}
         revealable
-        hint={`At least ${MIN_PASSWORD_LENGTH} characters. A passphrase beats a short complicated one.`}
         error={tooShort ? `${MIN_PASSWORD_LENGTH - password.length} more characters needed.` : undefined}
       />
 
@@ -193,7 +190,6 @@ export function RegisterForm() {
         onChange={setPhone}
         autoComplete="tel"
         placeholder="+968 9xxx xxxx"
-        hint="Only so a person can reach you. Never used to sign in, and not verified."
         disabled={busy}
       />
 

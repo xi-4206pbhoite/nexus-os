@@ -24,7 +24,7 @@ _hasher = PasswordHasher(
 
 # Long enough to matter, short enough that argon2's memory cost is not a DoS
 # vector. Without an upper bound, a multi-megabyte password is a free CPU burn.
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 1024
 
 

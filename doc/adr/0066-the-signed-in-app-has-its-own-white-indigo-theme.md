@@ -56,9 +56,15 @@ page's tokens and `Logo` exactly as they are.
   signed-in shells carry the class.
 - **A new `NexusMark` component** — a bold "X" built from token-coloured strokes
   (`stroke-cloud-900` ink, `stroke-azure-500` for the upper-right arm) and the
-  word "NEXUS". It is the app/auth/error mark; the landing page keeps the
-  cut-paper `Logo`. Colours come from Tailwind `stroke-*`/`text-*` utilities, so
-  no raw hex sits in the component.
+  word "NEXUS". Colours come from Tailwind `stroke-*`/`text-*` utilities, so no
+  raw hex sits in the component.
+
+> **Amendment (same session):** Parul then asked for the new mark on the landing
+> page as well. `NexusMark` now replaces the cut-paper `Logo` in the landing
+> `Nav` and `Footer` too, so the product has **one mark everywhere**. The old
+> `components/ui/Logo.tsx` had no remaining importers and was removed. The landing
+> page keeps the rest of its cut-paper identity (serif type, gold accent, bone
+> surfaces) — only the wordmark changed there.
 
 The magenta standing rule is **overridden for the signed-in product by this ADR**,
 at Parul's explicit direction. The landing page does not adopt indigo and is not
@@ -68,10 +74,11 @@ in scope for the override.
 
 - The landing page is provably untouched: it shares no token with the app theme
   and keeps its own `Logo`.
-- The product now carries two marks — cut-paper on `/`, the new "X" everywhere
-  behind sign-in. This is a deliberate split, accepted so that "change the app
-  logo" and "do not touch the landing page" can both hold. A later decision may
-  unify them; until then the split is intentional, not drift.
+- The product carries **one mark everywhere** — `NexusMark`, in both the landing
+  page and the signed-in app (see the amendment above). The earlier split between
+  a cut-paper landing mark and the new app mark is retired. The landing page's
+  colour identity (serif, gold, bone) is otherwise unchanged; only its wordmark
+  moved to the new mark.
 - The magenta design-token rule and the `adf-brand-guide` no longer describe the
   signed-in product. If the team wants one brand across marketing and app, that is
   a separate decision that would supersede this one.

@@ -13,6 +13,18 @@
     --app-x: clamp(1rem, 2.5vw, 2rem);
     --app-header-h: 3.5rem;
     --app-nav-w: 15rem;
+
+    /* Button skin (ADR 0066). The defaults are the landing page's ink pill;
+       `.theme-app` overrides them to the product's indigo. Raw values live here,
+       in the token file, mirroring the Tailwind palette they name in comments. */
+    --btn-radius: 9999px;
+    --btn-primary-bg: #091f46; /* ink-800 */
+    --btn-primary-bg-hover: #0f2851; /* ink-700 */
+    --btn-primary-fg: #fbfaf8; /* bone-50 */
+    --btn-secondary-fg: #091f46; /* ink-800 */
+    --btn-secondary-border: #c2cee2; /* ink-200 */
+    --btn-secondary-border-hover: #93a8c7; /* ink-300 */
+    --btn-secondary-bg-hover: #fbfaf8; /* bone-50 */
   }
 
   html {
@@ -223,6 +235,17 @@
     /* Opaque white: covers the body's paper grain so the app reads as a clean
        product surface rather than the marketing page's warm stock. */
     background-image: none;
+
+    /* Recolour the shared Button to the product's indigo, and square its corners
+       to the control radius the reference uses (ADR 0066). */
+    --btn-radius: 0.625rem;
+    --btn-primary-bg: #5b50e5; /* brand-500 */
+    --btn-primary-bg-hover: #4a3ece; /* brand-600 */
+    --btn-primary-fg: #ffffff;
+    --btn-secondary-fg: #334155; /* cloud-700 */
+    --btn-secondary-border: #d3dbe6; /* cloud-300 */
+    --btn-secondary-border-hover: #9ca8ba; /* cloud-400 */
+    --btn-secondary-bg-hover: #f8fafc; /* cloud-50 */
   }
 
   /* The app re-bases its focus ring onto white and onto the brand hue, so the

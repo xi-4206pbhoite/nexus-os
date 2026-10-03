@@ -61,15 +61,20 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'quiet' | 'danger' | 'onDark'
 type Size = 'sm' | 'md' | 'lg' | 'icon'
 
 const base =
-  'group relative inline-flex select-none items-center justify-center gap-2 rounded-full ' +
+  'group relative inline-flex select-none items-center justify-center gap-2 rounded-[var(--btn-radius)] ' +
   'font-medium transition-[background-color,border-color,box-shadow,transform,color] ' +
   'duration-base ease-out active:translate-y-px ' +
   'disabled:pointer-events-none disabled:opacity-45 aria-busy:cursor-progress'
 
+// `primary` and `secondary` are driven by custom properties so the signed-in app
+// (ADR 0066, `.theme-app`) can recolour them to indigo without a second button
+// component, while the landing page keeps the ink values the `:root` defaults
+// carry. The raw values for both live in `globals.css`, the token file.
 const variants: Record<Variant, string> = {
-  primary: 'bg-ink-800 text-bone-50 shadow-e1 hover:bg-ink-700 hover:shadow-e2',
+  primary:
+    'bg-[var(--btn-primary-bg)] text-[var(--btn-primary-fg)] shadow-e1 hover:bg-[var(--btn-primary-bg-hover)] hover:shadow-e2',
   secondary:
-    'border border-ink-200 bg-white text-ink-800 shadow-e1 hover:border-ink-300 hover:bg-bone-50 hover:shadow-e2',
+    'border bg-white text-[var(--btn-secondary-fg)] border-[var(--btn-secondary-border)] shadow-e1 hover:border-[var(--btn-secondary-border-hover)] hover:bg-[var(--btn-secondary-bg-hover)] hover:shadow-e2',
   ghost: 'text-ink-700 hover:bg-bone-200 hover:text-ink-900',
   // A control that must be reachable but must not compete — "Explain again"
   // beside a sentence that is already written.

@@ -75,11 +75,12 @@ const variants: Record<Variant, string> = {
     'bg-[var(--btn-primary-bg)] text-[var(--btn-primary-fg)] shadow-e1 hover:bg-[var(--btn-primary-bg-hover)] hover:shadow-e2',
   secondary:
     'border bg-white text-[var(--btn-secondary-fg)] border-[var(--btn-secondary-border)] shadow-e1 hover:border-[var(--btn-secondary-border-hover)] hover:bg-[var(--btn-secondary-bg-hover)] hover:shadow-e2',
-  ghost: 'text-ink-700 hover:bg-bone-200 hover:text-ink-900',
+  ghost:
+    'text-[var(--btn-ghost-fg)] hover:bg-[var(--btn-ghost-bg-hover)] hover:text-[var(--btn-ghost-fg-hover)]',
   // A control that must be reachable but must not compete — "Explain again"
   // beside a sentence that is already written.
   quiet:
-    'text-ink-500 underline decoration-ink-300 underline-offset-2 hover:text-ink-800 hover:decoration-ink-500',
+    'text-[var(--btn-quiet-fg)] underline decoration-[var(--btn-quiet-deco)] underline-offset-2 hover:text-[var(--btn-quiet-fg-hover)] hover:decoration-[var(--btn-quiet-deco-hover)]',
   // Destructive. Outlined rather than filled: a filled red button is the most
   // prominent thing on a page, and deleting is never the primary action.
   danger:

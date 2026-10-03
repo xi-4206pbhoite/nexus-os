@@ -74,6 +74,21 @@ page's tokens and `Logo` exactly as they are.
 > `components/ui/Logo.tsx` had no remaining importers and was removed. The landing
 > page keeps the rest of its cut-paper identity (serif type, gold accent, bone
 > surfaces) — only the wordmark changed there.
+>
+> **Amendment (same session) — auth layout:** The auth pages (`AuthShell`, shared
+> by login, register, verify, reset) went through two layout directions at Parul's
+> direction. First a 50/50 split — form on the left, a brand panel on the right
+> that mirrored the landing hero (tagline + the Morning Brief / Health Score
+> product cards, tagged *Illustrative*). Parul then rejected the split and chose,
+> from a supplied reference, a **single elevated white card centred over a
+> full-bleed deep-blue background** (gradient, faint grid, soft glows). That is the
+> accepted layout. **Reasoning:** the card-over-background reads as one focused
+> surface rather than two competing halves, and collapses to mobile with no second
+> column to hide; the background is built from theme tokens so it needs no image,
+> with a marked slot to drop a real image behind the card later. The product cards
+> from the split panel were retired with it. **Revisit trigger:** if a real
+> background image or product screenshot is introduced, or if the auth flow grows
+> steps that no longer fit one card.
 
 The magenta standing rule is **overridden for the signed-in product by this ADR**,
 at Parul's explicit direction. The landing page does not adopt indigo and is not

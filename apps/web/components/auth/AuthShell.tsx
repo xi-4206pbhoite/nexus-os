@@ -5,23 +5,21 @@ import { NexusMark } from '@/components/ui/NexusMark'
 /**
  * The frame around every auth page.
  *
- * Two columns on desktop: the form on the left, the paper-cut landscape on the
- * right. The landscape is the landing page's own artwork rather than a stock
- * illustration, so signing in does not feel like leaving the product — but it is
- * `aria-hidden` and drops away entirely below `lg`, where a form has better uses
- * for the space.
+ * Two columns on desktop: the form on the left, a brand panel on the right that
+ * deliberately echoes the landing page — the same tagline, and the same
+ * "Morning Brief" / "Health Score" product cards the hero floats over its
+ * landscape — rebuilt in the product's blue palette (ADR 0066). The point is
+ * that signing in does not feel like leaving the site: the thing the visitor
+ * was just reading about is the thing they see while entering it. The panel is
+ * `aria-hidden` and drops away below `lg`, where a form has better uses for the
+ * space.
  *
- * ## The artwork reaches the edge of the glass
+ * ## The cards carry the `Illustrative` tag
  *
- * It did not. The grid was `max-w-6xl mx-auto`, so at 1440 the whole two-column
- * layout was 1152px wide and centred — which left a 144px strip of bone
- * page-background to the right of a full-bleed navy artwork panel. A dark panel
- * that stops 144px short of the window reads as a layout that failed to finish
- * loading, and it was the first thing anybody saw on the sign-in page.
- *
- * The grid is now full width. The *form* is what stays measured: its column
- * centres a `max-w-md` block, so the reading column is unchanged and only the
- * artwork gained the space it should always have had.
+ * CLAUDE.md's content rule — never invent a number — binds the marketing surface
+ * too, and these cards show numbers that were written for the page. Each carries
+ * the same `Illustrative` marker the landing hero uses, because a card is
+ * screenshot-shaped and the screenshot travels without a footnote.
  */
 export function AuthShell({
   title,
@@ -54,7 +52,10 @@ export function AuthShell({
               at the top, which on a 900px window left ~180px of nothing between
               them and put the heading below the midpoint. */}
           <div className="flex w-full max-w-md flex-1 flex-col justify-center py-8">
-            <h1 className="font-sans text-page font-semibold text-cloud-900">{title}</h1>
+            <p className="font-mono text-2xs uppercase tracking-[0.2em] text-brand-500">
+              AI Business Operating System
+            </p>
+            <h1 className="mt-3 font-sans text-page font-semibold text-cloud-900">{title}</h1>
             <p className="mt-3 text-body leading-relaxed text-cloud-600">{intro}</p>
             <div className="mt-7">{children}</div>
           </div>
@@ -62,32 +63,121 @@ export function AuthShell({
           {footer ? <div className="w-full max-w-md text-meta text-cloud-500">{footer}</div> : null}
         </div>
 
-        {/* ── The welcome panel ──
-            The signed-in product's own indigo, not the landing page's navy
-            artwork — so the brand the user is about to enter is the brand they
-            see while entering it. A column so the promise sits at the bottom and
-            cannot collide with the decorative field above it at any height. */}
-        <div
-          className="relative hidden flex-col justify-end overflow-hidden bg-brand-600 lg:flex"
+        {/* ── The brand panel ──
+            A deep-blue composition that mirrors the landing hero in the app's
+            own palette: tagline, the hero's product cards, and the promise the
+            product is built on. `aria-hidden` and desktop-only — it is
+            reassurance and context, never content the form depends on. */}
+        <aside
+          className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 lg:flex"
           aria-hidden="true"
         >
-          {/* A soft field of brand light — token colours only, no image request. */}
+          {/* Depth: two soft glows and a faint grid — token colours only. */}
           <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-400/40 blur-3xl" />
-            <div className="absolute -bottom-16 -left-10 h-80 w-80 rounded-full bg-azure-500/30 blur-3xl" />
+            <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-400/30 blur-3xl" />
+            <div className="absolute -bottom-24 -left-20 h-96 w-96 rounded-full bg-azure-500/20 blur-3xl" />
+            <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(theme(colors.white)_1px,transparent_1px),linear-gradient(90deg,theme(colors.white)_1px,transparent_1px)] [background-size:46px_46px]" />
           </div>
-          <div className="relative shrink-0 px-12 pb-14 pt-10">
-            <NexusMark tone="dark" className="mb-8" />
-            <p className="max-w-sm font-sans text-2xl font-semibold leading-snug text-white">
+
+          {/* Top: mark, tagline, headline. */}
+          <div className="relative px-12 pt-14">
+            <NexusMark tone="dark" />
+            <p className="mt-12 font-mono text-2xs uppercase tracking-[0.22em] text-brand-200">
+              Your AI executive team
+            </p>
+            <h2 className="mt-4 max-w-md font-sans text-[2rem] font-semibold leading-tight text-white">
+              Built around your company.
+            </h2>
+            <p className="mt-4 max-w-sm text-body leading-relaxed text-brand-100">
+              Connect your website, documents and tools once. NEXUS tells you what
+              needs attention — and does the work.
+            </p>
+          </div>
+
+          {/* Middle: the hero's product cards, in the blue palette. */}
+          <div className="relative my-8 px-12">
+            <div className="mx-auto max-w-sm space-y-4">
+              {/* Morning Brief */}
+              <div className="rounded-2xl border border-cloud-200 bg-white p-4 shadow-e3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-azure-500" />
+                  <span className="font-mono text-2xs uppercase tracking-[0.18em] text-cloud-400">
+                    Morning Brief
+                  </span>
+                  <IllustrativeTag />
+                </div>
+                <p className="mt-2.5 text-[0.92rem] font-medium leading-snug text-cloud-800">
+                  Pipeline value rose while three deals went quiet for 11 days.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {['CRM', 'GA4'].map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-md bg-cloud-100 px-1.5 py-0.5 font-mono text-2xs text-cloud-500"
+                    >
+                      source: {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Health Score */}
+              <div className="ml-auto w-[88%] rounded-2xl border border-cloud-200 bg-white p-4 shadow-e3">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-2xs uppercase tracking-[0.18em] text-cloud-400">
+                    Health Score
+                  </span>
+                  <IllustrativeTag />
+                </div>
+                <div className="mt-1 flex items-end gap-1.5">
+                  <span className="font-sans text-4xl font-semibold leading-none text-cloud-900">
+                    72
+                  </span>
+                  <span className="pb-1 text-xs text-cloud-400">/ 100</span>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {[
+                    { label: 'Sales', v: 84 },
+                    { label: 'Marketing', v: 61 },
+                    { label: 'Finance', v: 77 },
+                  ].map((d) => (
+                    <div key={d.label} className="flex items-center gap-2">
+                      <span className="w-16 shrink-0 text-2xs text-cloud-500">{d.label}</span>
+                      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-cloud-200">
+                        <span
+                          className="block h-full rounded-full bg-brand-500"
+                          style={{ width: `${d.v}%` }}
+                        />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom: the promise. */}
+          <div className="relative px-12 pb-14">
+            <div className="h-px w-full bg-white/10" />
+            <p className="mt-6 max-w-sm font-sans text-lg font-medium leading-snug text-white">
               Every number NEXUS shows you is fetched or computed. None of them are
               generated.
             </p>
-            <p className="mt-3 text-2xs uppercase tracking-[0.14em] text-brand-100">
+            <p className="mt-2 font-mono text-2xs uppercase tracking-[0.14em] text-brand-200">
               The rule the product is built on
             </p>
           </div>
-        </div>
+        </aside>
       </div>
     </main>
+  )
+}
+
+/** The marker every product mock carries — see the file's top note. */
+function IllustrativeTag() {
+  return (
+    <span className="ml-auto shrink-0 rounded-md bg-cloud-100 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-[0.14em] text-cloud-500">
+      Illustrative
+    </span>
   )
 }

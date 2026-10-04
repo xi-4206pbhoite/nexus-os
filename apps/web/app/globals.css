@@ -384,6 +384,28 @@
   .animate-word-rise {
     animation: word-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
+
+  /* A line that draws itself in from the left — the gold underline on the auth
+     card's heading. Paired with an `animation-delay` so it lands after the words. */
+  @keyframes grow-x {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  .animate-grow-x {
+    transform-origin: left;
+    animation: grow-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* A slow sheen travelling along a gradient — the blue↔gold accent bar on the
+     auth card. Animates `background-position`, which the compositor handles. */
+  @keyframes sheen-x {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+  .animate-sheen {
+    background-size: 200% 100%;
+    animation: sheen-x 7s linear infinite;
+  }
 }
 
 @layer utilities {

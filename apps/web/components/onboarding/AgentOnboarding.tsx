@@ -1936,6 +1936,10 @@ function ReadingBubble({
       <p>{domain ? `Reading ${domain} now.` : 'Reading your website now.'}</p>
       {label && <p className="mt-1 text-cloud-500">{label}</p>}
 
+      {/* The same scan motion as the research screen, compact — so "reading your
+          site" looks the same whether it is the opening screen or a turn here. */}
+      <ScanMock className="mt-3" />
+
       {pages.length > 0 && (
         <>
           {/* A real count of a real array. Never "about a dozen pages". */}
@@ -2130,28 +2134,7 @@ function ResearchAnimation() {
   ]
   return (
     <div className="w-full max-w-md" aria-hidden="true">
-      {/* A browser being scanned. */}
-      <div className="relative overflow-hidden rounded-2xl border border-cloud-200 bg-white shadow-e2">
-        <div className="flex items-center gap-1.5 border-b border-cloud-100 px-4 py-3">
-          <span className="h-2 w-2 rounded-full bg-cloud-200" />
-          <span className="h-2 w-2 rounded-full bg-cloud-200" />
-          <span className="h-2 w-2 rounded-full bg-cloud-200" />
-          <span className="ml-2 h-2.5 w-28 rounded-full bg-cloud-100" />
-        </div>
-        <div className="space-y-3 p-5">
-          <span className="block h-3.5 w-1/2 rounded bg-brand-100 motion-safe:animate-breathe" />
-          <span className="block h-2.5 w-full rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.2s' }} />
-          <span className="block h-2.5 w-11/12 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.35s' }} />
-          <div className="flex gap-2 pt-1">
-            <span className="h-5 w-16 rounded-full bg-gold-100 motion-safe:animate-breathe" style={{ animationDelay: '0.5s' }} />
-            <span className="h-5 w-12 rounded-full bg-brand-100 motion-safe:animate-breathe" style={{ animationDelay: '0.65s' }} />
-            <span className="h-5 w-14 rounded-full bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.8s' }} />
-          </div>
-          <span className="block h-2.5 w-4/5 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.95s' }} />
-        </div>
-        {/* The sweeping scan line + a soft veil riding just above it. */}
-        <span className="pointer-events-none absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-brand-500 to-transparent shadow-[0_0_12px_2px_theme(colors.brand.400)] motion-safe:animate-scan-line" />
-      </div>
+      <ScanMock className="shadow-e2" />
 
       {/* What it is doing, named — pulsing to show it is live. */}
       <ul className="mt-5 space-y-2.5">
@@ -2167,6 +2150,41 @@ function ResearchAnimation() {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+/**
+ * A website being scanned — the shared scan visual. A browser frame over pulsing
+ * skeleton rows with a sweeping brand-coloured line, used both on the full
+ * research screen and, compact, inside the in-conversation reading bubble, so the
+ * two read as the same "we are looking at your site" motion.
+ */
+function ScanMock({ className = '' }: { className?: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`relative overflow-hidden rounded-xl border border-cloud-200 bg-white ${className}`}
+    >
+      <div className="flex items-center gap-1.5 border-b border-cloud-100 px-3 py-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-cloud-200" />
+        <span className="h-1.5 w-1.5 rounded-full bg-cloud-200" />
+        <span className="h-1.5 w-1.5 rounded-full bg-cloud-200" />
+        <span className="ml-1.5 h-2 w-24 rounded-full bg-cloud-100" />
+      </div>
+      <div className="space-y-2.5 p-4">
+        <span className="block h-3 w-1/2 rounded bg-brand-100 motion-safe:animate-breathe" />
+        <span className="block h-2 w-full rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.2s' }} />
+        <span className="block h-2 w-11/12 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.35s' }} />
+        <div className="flex gap-2 pt-0.5">
+          <span className="h-4 w-14 rounded-full bg-gold-100 motion-safe:animate-breathe" style={{ animationDelay: '0.5s' }} />
+          <span className="h-4 w-10 rounded-full bg-brand-100 motion-safe:animate-breathe" style={{ animationDelay: '0.65s' }} />
+          <span className="h-4 w-12 rounded-full bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.8s' }} />
+        </div>
+        <span className="block h-2 w-4/5 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.95s' }} />
+      </div>
+      {/* The sweeping scan line. */}
+      <span className="pointer-events-none absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-brand-500 to-transparent shadow-[0_0_12px_2px_theme(colors.brand.400)] motion-safe:animate-scan-line" />
     </div>
   )
 }

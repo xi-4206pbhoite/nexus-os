@@ -104,6 +104,21 @@ page's tokens and `Logo` exactly as they are.
 > (shapes behind the card, marquee as a sibling band) remove the overlap the
 > scattered chips caused. **Revisit trigger:** if a dark theme is introduced, or
 > if a real illustration/photo replaces the geometric accents.
+>
+> **Amendment (same session) — onboarding research animation:** The onboarding
+> loading screen (`/onboarding/agent`, before the session loads) was a bare
+> centred spinner. At Parul's direction it now wears the same two-column frame as
+> the conversation — the step rail on the left, and a canvas that *shows the
+> research happening*: a shared `ScanMock` (a browser frame over pulsing skeleton
+> rows with a sweeping brand scan line) plus the real work named (fetching,
+> reading, writing up). The same `ScanMock` renders compact inside the
+> in-conversation reading bubble. **Reasoning:** a loading state that shows the
+> work reads as progress rather than a hang, the rail orients the user from the
+> first screen, and one shared component keeps the opening screen and the
+> in-conversation "reading" turn visually identical. It stays honest — no
+> percentage or step count, because reading a site has no denominator.
+> **Revisit trigger:** if real per-page progress becomes available (then the
+> animation can show actual counts), or if onboarding stops reading the website.
 
 The magenta standing rule is **overridden for the signed-in product by this ADR**,
 at Parul's explicit direction. The landing page does not adopt indigo and is not

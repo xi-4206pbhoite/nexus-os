@@ -89,6 +89,21 @@ page's tokens and `Logo` exactly as they are.
 > from the split panel were retired with it. **Revisit trigger:** if a real
 > background image or product screenshot is introduced, or if the auth flow grows
 > steps that no longer fit one card.
+>
+> **Amendment (same session) — auth ground:** The centred card was first given a
+> dark full-bleed deep-blue background with animated aurora and drifting domain
+> chips. Parul found the dark panel heavy and the scattered chips cluttered (they
+> collided with the footer), and chose, from a supplied reference, a **light,
+> airy ground instead** — near-white with a faint blue/gold wash and a few subtle
+> drifting geometric shapes (hexagons, a cube, a ring, a diamond). The card stays
+> white and premium (blue+gold sheen bar, gold sparkle eyebrow, animated gold
+> underline); the domains moved into one contained "every domain" marquee at the
+> bottom. The palette still pairs the app blue with the landing gold as accents.
+> **Reasoning:** the light ground reads calmer and more premium than a heavy dark
+> panel, keeps the brand's blue+gold without shouting, and contained layers
+> (shapes behind the card, marquee as a sibling band) remove the overlap the
+> scattered chips caused. **Revisit trigger:** if a dark theme is introduced, or
+> if a real illustration/photo replaces the geometric accents.
 
 The magenta standing rule is **overridden for the signed-in product by this ADR**,
 at Parul's explicit direction. The landing page does not adopt indigo and is not

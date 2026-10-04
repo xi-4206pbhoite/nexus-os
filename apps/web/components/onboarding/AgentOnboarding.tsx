@@ -2020,17 +2020,179 @@ function Booting({
     )
   }
 
+  // The landing/loading state is the first screen of the product, so it wears the
+  // same two-column frame the conversation does — a static rail saying where you
+  // are, and a canvas that *shows the research happening* rather than a bare
+  // spinner. The rail is static here (there is no session yet), with Conversation
+  // marked as the step in progress.
   return (
-    <div className="theme-app relative grid min-h-screen place-items-center px-6">
+    <div className="theme-app relative min-h-screen lg:grid lg:grid-cols-[21.5rem_minmax(0,1fr)]">
       <OnboardingAura state="thinking" />
-      <div role="status" aria-live="polite" className="flex flex-col items-center gap-5">
-        {/* The same mark as the header, drawn large. Three staggered dots used
-            to sit here saying "something is happening" in triplicate, next to a
-            background disc saying it a fourth time. One thing, once. */}
-        <PresenceMark state="thinking" size={56} />
-        <p className="max-w-md text-center text-sm text-cloud-400">{label}</p>
-      </div>
+
+      {/* Static rail — mirrors `Rail` without a live session. */}
+      <aside className="z-10 flex flex-col border-b border-cloud-200 bg-white px-4 py-4 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:px-7 lg:py-8">
+        <span className="flex items-center gap-2.5">
+          <PresenceMark state="thinking" />
+          <NexusMark />
+        </span>
+        <div className="mt-8 hidden animate-rise lg:block">
+          <h2 className="font-sans text-xl font-semibold text-cloud-900">Welcome to NEXUS OS.</h2>
+          <p className="mt-1.5 text-sm leading-relaxed text-cloud-500">
+            A short conversation, and your workspace is built around your company — and you.
+          </p>
+        </div>
+        <ol className="mt-5 flex flex-1 flex-row items-stretch gap-1.5 lg:mt-7 lg:flex-col">
+          {SECTIONS.map((section, index) => {
+            const here = index === 0
+            return (
+              <li
+                key={section.key}
+                className={`relative flex-1 animate-rise rounded-xl px-2.5 py-2 transition-colors duration-500 lg:flex-none lg:px-3 lg:py-2.5 ${here ? 'bg-brand-50' : ''}`}
+                style={{ animationDelay: `${index * 70}ms` }}
+              >
+                {here && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-2.5 bottom-0 h-[3px] rounded-full bg-brand-500 lg:inset-x-auto lg:-left-px lg:bottom-3 lg:top-3 lg:h-auto lg:w-[3px]"
+                  />
+                )}
+                <div className="flex items-center gap-2 lg:items-start lg:gap-3">
+                  <span
+                    aria-hidden
+                    className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl border transition-colors duration-500 lg:h-9 lg:w-9 ${
+                      here
+                        ? 'border-brand-300 bg-white text-brand-600 shadow-e1'
+                        : 'border-cloud-200 bg-white text-cloud-300'
+                    }`}
+                  >
+                    <SectionGlyph section={section.key} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`truncate text-xs font-medium lg:text-sm ${here ? 'text-cloud-900' : 'text-cloud-300'}`}>
+                      {section.label}
+                    </p>
+                    <p className={`mt-0.5 hidden text-xs lg:block ${here ? 'text-cloud-400' : 'text-cloud-300'}`}>
+                      {section.hint}
+                    </p>
+                    {here && (
+                      <p className="mt-1 animate-fade-in truncate text-[11px] font-medium text-brand-600 lg:mt-1.5 lg:text-xs">
+                        Researching your company…
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      </aside>
+
+      {/* Canvas — the research animation. */}
+      <main id="main" tabIndex={-1} className="relative flex min-h-screen flex-col bg-cloud-50">
+        <header className="mx-auto w-full max-w-3xl px-6 pt-10">
+          {/* No "Step N of 3" here: this screen precedes the session, so a step
+              count would be invented — and it would duplicate the real one the
+              loaded rail carries. The rail beside this already marks Conversation
+              as the step in progress. */}
+          <p className="animate-fade-in font-mono text-[11px] uppercase tracking-[0.22em] text-cloud-400">
+            Getting started
+            <span className="text-cloud-300"> · {SECTIONS[0].label}</span>
+          </p>
+          <h1 className="mt-1.5 animate-rise font-sans text-title font-semibold text-cloud-900">
+            Researching your company
+          </h1>
+        </header>
+
+        <div
+          role="status"
+          aria-live="polite"
+          className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-6 pb-16"
+        >
+          <ResearchAnimation />
+          <p className="max-w-md text-center text-sm text-cloud-400">{label}</p>
+        </div>
+      </main>
     </div>
+  )
+}
+
+/**
+ * The "gathering information" visual: a site being scanned, with the real work
+ * named beside it. Honest by construction — a sweeping line and pulsing rows say
+ * *something is happening*, but there is no percentage or step count, because
+ * reading a website has no denominator (the same rule the loading copy follows).
+ */
+function ResearchAnimation() {
+  const tasks = [
+    { label: 'Fetching the website', glyph: 'globe' as const },
+    { label: 'Reading the pages', glyph: 'doc' as const },
+    { label: 'Writing up what’s there', glyph: 'spark' as const },
+  ]
+  return (
+    <div className="w-full max-w-md" aria-hidden="true">
+      {/* A browser being scanned. */}
+      <div className="relative overflow-hidden rounded-2xl border border-cloud-200 bg-white shadow-e2">
+        <div className="flex items-center gap-1.5 border-b border-cloud-100 px-4 py-3">
+          <span className="h-2 w-2 rounded-full bg-cloud-200" />
+          <span className="h-2 w-2 rounded-full bg-cloud-200" />
+          <span className="h-2 w-2 rounded-full bg-cloud-200" />
+          <span className="ml-2 h-2.5 w-28 rounded-full bg-cloud-100" />
+        </div>
+        <div className="space-y-3 p-5">
+          <span className="block h-3.5 w-1/2 rounded bg-brand-100 motion-safe:animate-breathe" />
+          <span className="block h-2.5 w-full rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.2s' }} />
+          <span className="block h-2.5 w-11/12 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.35s' }} />
+          <div className="flex gap-2 pt-1">
+            <span className="h-5 w-16 rounded-full bg-gold-100 motion-safe:animate-breathe" style={{ animationDelay: '0.5s' }} />
+            <span className="h-5 w-12 rounded-full bg-brand-100 motion-safe:animate-breathe" style={{ animationDelay: '0.65s' }} />
+            <span className="h-5 w-14 rounded-full bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.8s' }} />
+          </div>
+          <span className="block h-2.5 w-4/5 rounded bg-cloud-100 motion-safe:animate-breathe" style={{ animationDelay: '0.95s' }} />
+        </div>
+        {/* The sweeping scan line + a soft veil riding just above it. */}
+        <span className="pointer-events-none absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-brand-500 to-transparent shadow-[0_0_12px_2px_theme(colors.brand.400)] motion-safe:animate-scan-line" />
+      </div>
+
+      {/* What it is doing, named — pulsing to show it is live. */}
+      <ul className="mt-5 space-y-2.5">
+        {tasks.map((t, i) => (
+          <li key={t.label} className="flex items-center gap-3">
+            <span
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600 motion-safe:animate-pulse-dot"
+              style={{ animationDelay: `${i * 0.5}s` }}
+            >
+              <TaskGlyph glyph={t.glyph} />
+            </span>
+            <span className="text-sm text-cloud-600">{t.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function TaskGlyph({ glyph }: { glyph: 'globe' | 'doc' | 'spark' }) {
+  const common = { viewBox: '0 0 20 20', fill: 'none', 'aria-hidden': true, className: 'h-3.5 w-3.5' } as const
+  if (glyph === 'globe') {
+    return (
+      <svg {...common}>
+        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3 10h14M10 3c2.5 2 2.5 12 0 14M10 3c-2.5 2-2.5 12 0 14" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    )
+  }
+  if (glyph === 'doc') {
+    return (
+      <svg {...common}>
+        <path d="M5 3.5h6l4 4V16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M7 9.5h6M7 12.5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg {...common}>
+      <path d="M10 3l1.6 4.4L16 9l-4.4 1.6L10 15l-1.6-4.4L4 9l4.4-1.6L10 3Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
   )
 }
 

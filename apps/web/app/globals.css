@@ -406,6 +406,18 @@
     background-size: 200% 100%;
     animation: sheen-x 7s linear infinite;
   }
+
+  /* A scan line sweeping down a surface — the onboarding "researching your
+     company" animation. Its container clips it; `top` sweeps 0 → 100%. */
+  @keyframes scan-line {
+    0% { top: 0; opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+  .animate-scan-line {
+    animation: scan-line 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
 }
 
 @layer utilities {

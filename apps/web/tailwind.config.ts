@@ -122,6 +122,62 @@ const config: Config = {
           500: '#A55D35',
           600: '#84492A',
         },
+
+        /**
+         * ── The product theme (ADR 0066) ──────────────────────────────────
+         * Three families that belong to the signed-in app only — onboarding,
+         * the dashboard, auth and the rest of the authenticated shell. The
+         * landing page does not reference any of them, so it keeps the
+         * cut-paper ink/gold/bone identity untouched.
+         *
+         * The "Minimalist Blue" palette (ADR 0066, revised): a deep-blue primary
+         * with steel accents on cool white, replacing the first pass's indigo —
+         * calmer and more credible for an executive product.
+         *
+         * `brand` is the deep blue (buttons, active nav, progress, focus); 500 is
+         * #1A3D63, 900 is #0A1931. `azure` is the steel-blue accent (#4A7FA7 —
+         * the logo arm, state dots, "good" tone), kept separate because at AA it
+         * cannot carry white button text, so it is never the primary fill.
+         * `cloud` is the cool neutral for surfaces, borders and text. On white:
+         * cloud-600 is 7.0:1, cloud-500 is 4.8:1, brand-500 #1A3D63 is 9.3:1, and
+         * brand-400 #4A7FA7 is 3.9:1 — accent-only, never small body text.
+         */
+        brand: {
+          DEFAULT: '#1A3D63',
+          50: '#EEF3F8',
+          100: '#D9E6F1',
+          200: '#B3CFE5',
+          300: '#86AECC',
+          400: '#4A7FA7',
+          500: '#1A3D63',
+          600: '#163453',
+          700: '#112943',
+          800: '#0D1F34',
+          900: '#0A1931',
+        },
+        azure: {
+          DEFAULT: '#4A7FA7',
+          100: '#E3EDF5',
+          200: '#C2D8E8',
+          300: '#8FB4D4',
+          400: '#6699C0',
+          500: '#4A7FA7',
+          600: '#3A6689',
+          700: '#2C4E6B',
+        },
+        cloud: {
+          DEFAULT: '#64748B',
+          50: '#F8FAFC',
+          100: '#F1F4F9',
+          200: '#E6EBF2',
+          300: '#D3DBE6',
+          400: '#9CA8BA',
+          500: '#64748B',
+          600: '#475569',
+          700: '#334155',
+          800: '#1E293B',
+          900: '#0F172A',
+        },
       },
 
       fontFamily: {

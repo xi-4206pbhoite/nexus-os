@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { NavPanel } from '@/components/shell/NavPanel'
 import { WorkspaceMenu } from '@/components/shell/WorkspaceMenu'
 import { AccountMenu } from '@/components/shell/AccountMenu'
-import { Logo } from '@/components/ui/Logo'
+import { NexusMark } from '@/components/ui/NexusMark'
 import { Sheet } from '@/components/ui/Overlay'
 import { ToastProvider } from '@/components/ui/Toast'
 import { AuthError } from '@/lib/auth-client'
@@ -148,8 +148,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ToastProvider>
       <DashboardsContext.Provider value={all}>
         <WorkspacesContext.Provider value={workspaces}>
-          <div className="on-bone min-h-screen bg-bone-50">
-            <header className="sticky top-0 z-header border-b border-ink-100 bg-bone-50/90 backdrop-blur-md">
+          <div className="theme-app min-h-screen">
+            <header className="sticky top-0 z-header border-b border-cloud-200 bg-white/90 backdrop-blur-md">
               <div className="app-shell flex h-[var(--app-header-h)] items-center gap-3">
                 <button
                   type="button"
@@ -160,7 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   // An icon at 44×44, not a 56×30 box labelled "MENU". The old
                   // one was under the touch minimum on both axes and spelled a
                   // word every other app draws.
-                  className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-600 transition-colors duration-micro ease-out hover:bg-bone-200 hover:text-ink-900 lg:hidden"
+                  className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-cloud-600 transition-colors duration-micro ease-out hover:bg-cloud-100 hover:text-cloud-900 lg:hidden"
                 >
                   <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-5 w-5">
                     <path
@@ -174,10 +174,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                 <Link
                   href="/dashboard"
-                  className="inline-flex shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-steel-500 focus-visible:ring-offset-4 focus-visible:ring-offset-bone-50"
-                  aria-label="NEXUS OS dashboard"
+                  className="inline-flex shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-4 focus-visible:ring-offset-white"
+                  aria-label="NEXUS dashboard"
                 >
-                  <Logo />
+                  <NexusMark />
                 </Link>
 
                 {/* Which company you are in. Always, not only when there are
@@ -220,7 +220,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               description={workspaces?.find((w) => w.active)?.name}
             >
               <NavPanel all={all} onNavigate={close} />
-              <div className="mt-6 border-t border-ink-100 pt-4 sm:hidden">
+              <div className="mt-6 border-t border-cloud-200 pt-4 sm:hidden">
                 <WorkspaceMenu workspaces={workspaces} />
               </div>
             </Sheet>

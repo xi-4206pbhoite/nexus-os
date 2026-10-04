@@ -90,7 +90,7 @@ export function LoginForm() {
       {justReset && state.status !== 'error' ? (
         <div
           role="status"
-          className="rounded-xl border border-steel-300 bg-steel-100 px-4 py-3 text-sm text-steel-700"
+          className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700"
         >
           Your password is set. Sign in with it — you were signed out everywhere, which is what
           makes a reset worth doing.
@@ -130,7 +130,7 @@ export function LoginForm() {
 
       <Link
         href="/forgot-password"
-        className="-mt-2 w-fit text-sm font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+        className="-mt-2 w-fit text-sm font-medium text-brand-600 underline decoration-brand-300 underline-offset-2 hover:text-brand-700"
       >
         Forgot your password?
       </Link>

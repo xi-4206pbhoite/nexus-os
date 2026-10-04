@@ -9,7 +9,7 @@ import { HttpError, httpJson } from '@/lib/http'
  */
 
 /** Mirrors the API's `MIN_PASSWORD_LENGTH`. Checked there too; this is only so the form can say so first. */
-export const MIN_PASSWORD_LENGTH = 12
+export const MIN_PASSWORD_LENGTH = 8
 
 export type WorkspaceSummary = {
   workspace_id: string

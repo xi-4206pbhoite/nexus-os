@@ -44,7 +44,7 @@ export function ResetPasswordForm() {
         </div>
         <Link
           href="/forgot-password"
-          className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+          className="font-medium text-brand-600 underline decoration-brand-300 underline-offset-2 hover:text-brand-700"
         >
           Ask for a new link
         </Link>
@@ -125,7 +125,7 @@ export function ResetPasswordForm() {
         error={mismatched ? 'These do not match.' : undefined}
       />
 
-      <p className="text-sm text-ink-500">
+      <p className="text-sm text-cloud-500">
         Setting a new password signs you out on every device — including this one.
       </p>
 

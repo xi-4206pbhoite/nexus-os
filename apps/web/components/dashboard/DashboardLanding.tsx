@@ -159,7 +159,7 @@ function TodaySkeleton() {
         <PageHeadSkeleton />
         <div className="flex flex-col gap-4">
           <Bone className="h-4 w-36" />
-          <div className="surface flex flex-col gap-3 px-5 py-5">
+          <div className="app-card flex flex-col gap-3 px-5 py-5">
             <Bone className="h-4 w-48" />
             <Bone className="h-3 w-full" />
             <Bone className="h-3 w-4/5" />
@@ -228,13 +228,13 @@ function NoDepartment() {
 
   return (
     <Section title="No department dashboard for you">
-      <div className="flex flex-col gap-4 rounded-data border border-ink-100 bg-white px-5 py-5">
-        <p className="max-w-read text-body leading-relaxed text-ink-700">
+      <div className="app-card flex flex-col gap-4 px-5 py-5">
+        <p className="max-w-read text-body leading-relaxed text-cloud-700">
           Each director&rsquo;s page belongs to a department, and your account is not in
           one. That is the normal state for a viewer — you can see company-wide material
           and nothing that belongs to a single department.
         </p>
-        <p className="max-w-read text-body leading-relaxed text-ink-500">
+        <p className="max-w-read text-body leading-relaxed text-cloud-500">
           If you expected a dashboard, an owner sets which department an account is in
           when they invite it.
         </p>

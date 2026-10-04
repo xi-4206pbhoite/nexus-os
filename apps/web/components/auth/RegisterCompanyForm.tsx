@@ -164,7 +164,7 @@ export function RegisterCompanyForm() {
   if (state.status === 'requested') {
     return (
       <div className="flex flex-col gap-4">
-        <p className="text-ink-700">
+        <p className="text-cloud-700">
           Your request is with that company&rsquo;s administrators. You will be able to sign in
           once somebody approves it.
         </p>
@@ -177,7 +177,7 @@ export function RegisterCompanyForm() {
       <div className="flex flex-col gap-6">
         <div
           role="status"
-          className="rounded-xl border border-gold-300 bg-gold-100 px-4 py-3 text-sm text-ink-800"
+          className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-cloud-800"
         >
           {state.offer.detail}
         </div>
@@ -301,7 +301,7 @@ export function RegisterCompanyForm() {
           options={departments}
         />
       </div>
-      <p className="-mt-2 text-sm text-ink-500">
+      <p className="-mt-2 text-sm text-cloud-500">
         Used to decide what NEXUS asks you and shows you first. It does not change what you
         are allowed to see — that comes from your membership of this workspace.
       </p>
@@ -309,11 +309,11 @@ export function RegisterCompanyForm() {
       {/* "In Settings" is now a link, because there is now a Settings
           (finding F3). This sentence, its twin on the page's intro and the
           API's own invitation refusal all named a screen that did not exist. */}
-      <p className="text-sm text-ink-500">
+      <p className="text-sm text-cloud-500">
         You can start straight away. Proving you own the domain happens in{' '}
         <Link
           href="/settings"
-          className="font-medium text-steel-600 underline decoration-steel-300 underline-offset-2 hover:text-steel-700"
+          className="font-medium text-brand-600 underline decoration-brand-300 underline-offset-2 hover:text-brand-700"
         >
           Settings
         </Link>

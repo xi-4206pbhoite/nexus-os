@@ -23,13 +23,12 @@ import {
   submitAnswer,
 } from '@/lib/agent-onboarding-client'
 import { AuthError } from '@/lib/auth-client'
-import { fetchDepartments, saveDepartments, type DepartmentState } from '@/lib/settings-client'
+import { fetchDepartments } from '@/lib/settings-client'
 import { useSlowLabel } from '@/lib/slow'
 import { duration, easing, useMotionSafe } from '@/lib/motion'
-import { BrainPanel } from '@/components/onboarding/BrainPanel'
 import { DocumentsStep } from '@/components/onboarding/DocumentsStep'
 import { ToolsStep } from '@/components/onboarding/ToolsStep'
-import { OnboardingAura, PresenceMark, type AuraState } from '@/components/onboarding/OnboardingAura'
+import { AmbientGradient, OnboardingAura, PresenceMark, type AuraState } from '@/components/onboarding/OnboardingAura'
 import {
   greetingFor,
   sentence,
@@ -37,8 +36,11 @@ import {
 } from '@/components/onboarding/AgentOnboarding'
 
 /**
- * Phase 1 of ADR 0069: the chat column + live Company Brain panel, over the
- * existing `onboarding_agent` engine.
+ * The onboarding chat, over the existing `onboarding_agent` engine (ADR 0069
+ * phase 1). The live Company Brain side-panel it originally shipped with was
+ * removed on product direction (ADR 0072); the full Company Brain, with the
+ * same provenance, lives on its own page (`/brain`) after onboarding. The chat
+ * is a single centred column now.
  *
  * **This replaces `AgentOnboarding` as the mounted onboarding experience** —
  * see `OnboardingEntry`. `AgentOnboarding` is left in the tree unmodified per
@@ -46,13 +48,14 @@ import {
  * functions it already exported for reuse (`greetingFor`, `sentence`,
  * `transcript`).
  *
- * **Department selection happens in the chat**, as quick-reply chips, between
- * the brief being confirmed and the first discovery question — the wireframe's
- * "pick your directors" beat. It is driven by `fetchDepartments`/
- * `saveDepartments`, not by the engine, because department choice is workspace
- * configuration and not a declared field the agent's catalogue owns. `deptStep`
- * tracks it locally so a refresh mid-pick resumes rather than re-asking: it is
- * seeded from `fetchDepartments()` on boot, alongside the agent's own state.
+ * **Department selection no longer happens here** (ADR 0071 amends ADR 0069).
+ * It used to be an in-chat quick-reply beat (`DeptPicker`) between the brief
+ * being confirmed and the first discovery question; it is now its own
+ * tile-selection screen (`AreasStage`) that `OnboardingEntry` shows *before*
+ * this component ever mounts, so by the time the chat boots the departments
+ * are already chosen. This component only *reads* them — `chosenDepartments`
+ * is seeded from `fetchDepartments()` once on boot, for `ToolsStep`'s
+ * recommendations — and never writes them.
  *
  * **No model, no fabricated conversation.** `ModelUnavailableError` (503) —
  * raised by `start`/`read`/`openDiscovery`/`submitAnswer` — renders `Blocked`:
@@ -95,11 +98,6 @@ const PHASE_PROGRESS: Record<Phase, number> = {
 
 const DISCOVERY_FIELD = 'persona.stated_purpose'
 
-type DeptStep =
-  | { status: 'loading' }
-  | { status: 'choosing'; options: DepartmentState[] }
-  | { status: 'done'; selected: string[] }
-
 export function ConversationalOnboarding() {
   const router = useRouter()
   const motionSafe = useMotionSafe()
@@ -111,8 +109,10 @@ export function ConversationalOnboarding() {
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState<(() => void) | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
-  const [deptStep, setDeptStep] = useState<DeptStep>({ status: 'loading' })
-  const [deptPicking, setDeptPicking] = useState<Set<string>>(new Set())
+  // Read once on boot, for the Brain panel and `ToolsStep`'s recommendations —
+  // chosen on the `AreasStage` screen `OnboardingEntry` shows before this
+  // component ever mounts, never written here.
+  const [chosenDepartments, setChosenDepartments] = useState<string[]>([])
   const endRef = useRef<HTMLDivElement>(null)
 
   const guard = useCallback(async (label: string, work: () => Promise<void>) => {
@@ -163,16 +163,11 @@ export function ConversationalOnboarding() {
       if (outstanding.done) setState(await readState())
     }
 
-    // Seeded alongside the agent's own state so a refresh mid-pick resumes at
-    // the chip screen rather than skipping it or re-asking it.
+    // Read once, for the Brain panel and `ToolsStep`'s recommendations —
+    // chosen on `AreasStage` before this component ever mounted.
     const { departments } = await fetchDepartments()
-    const selectable = departments.filter((d) => d.value !== 'executive')
-    const alreadyChosen = selectable.filter((d) => d.running).map((d) => d.value)
-    setDeptStep(
-      alreadyChosen.length > 0
-        ? { status: 'done', selected: alreadyChosen }
-        : { status: 'choosing', options: selectable },
-    )
+    const chosen = departments.filter((d) => d.value !== 'executive' && d.running).map((d) => d.value)
+    setChosenDepartments(chosen)
   }, [router])
 
   useEffect(() => {
@@ -183,7 +178,7 @@ export function ConversationalOnboarding() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [state?.turns.length, state?.phase, question, deptStep.status])
+  }, [state?.turns.length, state?.phase, question])
 
   const bootLabel = useSlowLabel(
     busy !== null,
@@ -210,24 +205,14 @@ export function ConversationalOnboarding() {
     (turn) => turn.role === 'user' && turn.target === DISCOVERY_FIELD,
   )
 
-  // The department beat sits between the brief closing and the interview's
-  // opening question — the engine has already moved its own `phase` to
-  // `discovery` by the time the brief is confirmed, so "has this beat
-  // happened yet" is tracked here rather than read off `phase`.
-  const showDeptPicker =
-    deptStep.status === 'choosing' &&
-    (state.phase === 'discovery' || state.phase === 'documents' || state.phase === 'tools')
-
   const ask: {
     question: string
     choices?: string[]
     hint?: string
     onSubmit: (text: string) => void
   } | null =
-    showDeptPicker
-      ? null
-      : state.phase === 'discovery' && !discoveryAnswered && !question
-        ? {
+    state.phase === 'discovery' && !discoveryAnswered && !question
+      ? {
             question: 'What are you responsible for, day to day?',
             hint: 'This decides what gets asked next.',
             onSubmit: (text) =>
@@ -274,15 +259,14 @@ export function ConversationalOnboarding() {
     })
   }
 
-  const chosenDepartments = deptStep.status === 'done' ? deptStep.selected : []
-
   return (
-    <div className="relative flex min-h-screen flex-col lg:flex-row">
+    <div className="relative min-h-screen">
       <main
         id="main"
         tabIndex={-1}
-        className="relative flex min-h-screen flex-1 flex-col bg-bone-100"
+        className="relative flex min-h-screen flex-col bg-white"
       >
+        <AmbientGradient />
         <OnboardingAura state={aura} />
 
         {/* `.obtop` — logo, the "Guided setup" chip, the phase label, the bar. */}
@@ -358,29 +342,6 @@ export function ConversationalOnboarding() {
                 void guard('Saving…', async () => {
                   setState(await confirmBrief(corrections))
                   setCorrections({})
-                })
-              }
-            />
-          )}
-
-          {showDeptPicker && deptStep.status === 'choosing' && (
-            <DeptPicker
-              options={deptStep.options}
-              picking={deptPicking}
-              onToggle={(value) =>
-                setDeptPicking((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(value)) next.delete(value)
-                  else next.add(value)
-                  return next
-                })
-              }
-              disabled={busy !== null}
-              onConfirm={() =>
-                void guard('Saving your directors…', async () => {
-                  const values = Array.from(deptPicking)
-                  await saveDepartments(values)
-                  setDeptStep({ status: 'done', selected: values })
                 })
               }
             />
@@ -466,8 +427,6 @@ export function ConversationalOnboarding() {
           />
         )}
       </main>
-
-      <BrainPanel state={state} departments={chosenDepartments} />
     </div>
   )
 }
@@ -643,63 +602,6 @@ function BriefConfirm({
   )
 }
 
-/**
- * "Pick your directors" — the wireframe's `obDepts` beat, as quick-reply
- * chips. Excludes `executive`: Chief of Staff is automatic (never a choice)
- * per `services/api/app/domain/departments.py`, the same rule `AreasStage`
- * follows.
- */
-function DeptPicker({
-  options,
-  picking,
-  onToggle,
-  onConfirm,
-  disabled,
-}: {
-  options: DepartmentState[]
-  picking: Set<string>
-  onToggle: (value: string) => void
-  onConfirm: () => void
-  disabled: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <AgentBubble>
-        <p>Who should I build directors for? Pick what you actually run — you can change this later.</p>
-      </AgentBubble>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Choose your departments">
-        {options.map((option) => {
-          const checked = picking.has(option.value)
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={checked}
-              disabled={disabled}
-              onClick={() => onToggle(option.value)}
-              className={`min-h-[2.75rem] rounded-full border px-4 text-sm font-medium transition-colors disabled:opacity-50 ${
-                checked
-                  ? 'border-ink bg-ink text-bone-50'
-                  : 'border-bone-300 bg-white/70 text-ink-600 hover:border-steel-400'
-              }`}
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={disabled || picking.size === 0}
-        className="mt-1 min-h-[2.75rem] w-fit rounded-full bg-ink px-5 text-sm font-medium text-bone-50 disabled:opacity-50"
-      >
-        Continue
-      </button>
-    </div>
-  )
-}
-
 function Describe({
   domain,
   onSubmit,
@@ -811,17 +713,23 @@ function Composer({
   disabled: boolean
 }) {
   return (
-    <div className="sticky bottom-0 z-10 w-full border-t border-bone-200 bg-bone-50/95 pb-5 pt-4 backdrop-blur">
+    <div className="sticky bottom-0 z-10 w-full border-t border-bone-200 bg-white/95 pb-5 pt-4 backdrop-blur">
       <div className="mx-auto w-full max-w-2xl px-6">
         <label htmlFor="answer" className="text-xs font-medium text-ink-600">
           {label}
         </label>
-        <div className="mt-1 flex items-end gap-2">
+        {/* A rounded, self-contained pill rather than a bare textarea beside a
+            button — the focus ring moves to the whole container
+            (`focus-within`) so the control reads as one thing, and the send
+            button sits inline at the comfortable 44px touch target the rest
+            of the product uses. */}
+        <div className="mt-2 flex items-end gap-2 rounded-2xl border border-bone-300 bg-white px-3 py-2 shadow-e1 transition-[border-color,box-shadow] duration-base ease-out focus-within:border-steel-400 focus-within:shadow-e2 focus-within:ring-2 focus-within:ring-steel-500/40">
           <textarea
             id="answer"
             rows={2}
             value={value}
             disabled={disabled}
+            placeholder="Type your answer…"
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -829,15 +737,24 @@ function Composer({
                 if (value.trim()) onSubmit(value)
               }
             }}
-            className="w-full flex-1 rounded-xl border border-bone-300 bg-white px-3 py-2 text-sm text-ink"
+            className="w-full flex-1 resize-none bg-transparent px-1 py-1 text-sm text-ink placeholder:text-ink-300 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="button"
             onClick={() => onSubmit(value)}
             disabled={disabled || !value.trim()}
-            className="h-11 min-w-[2.75rem] rounded-full bg-ink px-4 text-sm text-bone-50 disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-bone-50 transition-transform duration-micro ease-out disabled:opacity-40 [@media(hover:hover)and(pointer:fine)]:hover:scale-105 active:scale-95 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steel-500"
           >
-            Send
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden fill="none">
+              <path
+                d="M4 12h15M13 5l7 7-7 7"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="sr-only">Send</span>
           </button>
         </div>
         {hint && <p className="mt-2 text-[11px] text-ink-400">{hint}</p>}

@@ -4,46 +4,61 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { OnboardingShell } from '@/components/onboarding/OnboardingShell'
 import { CompanyStage } from '@/components/onboarding/stages/CompanyStage'
+import { AreasStage } from '@/components/onboarding/stages/AreasStage'
 import { ConversationalOnboarding } from '@/components/onboarding/ConversationalOnboarding'
 import { AuthError } from '@/lib/auth-client'
-import { fetchCompany } from '@/lib/settings-client'
+import { fetchCompany, fetchDepartments } from '@/lib/settings-client'
 
 /**
- * Mounted at both `/register-company` and `/onboarding/agent` (ADR 0069 phase 1).
+ * Mounted at both `/register-company` and `/onboarding/agent` (ADR 0069 phase 1,
+ * amended by ADR 0071).
  *
- * ## Company details stay a step ahead of the chat
+ * ## Three beats ahead of the chat: company, then areas, then the conversation
  *
- * The conversational engine greets by name and reads the company's website —
- * both need a workspace to exist first. Rather than folding company creation
- * into the chat as its own turn, this reuses `CompanyStage` (already tested,
- * already wired to `registerCompany`/`looksLikeWebsite`/the domain-taken "ask
- * to join" path) as a single beat *before* the chat mounts. Two reasons:
+ * The conversational engine greets by name, reads the company's website, and —
+ * as of this amendment — recommends tools against the departments the founder
+ * already chose. All three need to exist before the chat mounts, so this
+ * resolves the founder's real position on every load rather than folding any
+ * of it into the chat as a turn:
  *
- * 1. **Account creation is a form, not a conversation.** A name field and a
- *    URL field with validation and a "this domain is already claimed" branch
- *    is exactly the shape `CompanyStage` already is. Re-deriving it as chat
- *    turns would be new surface for identical behaviour, and the domain-taken
- *    "ask to join" outcome reads far better as a form state than as something
- *    an agent apologises for mid-conversation.
- * 2. **Resume stays a single check.** `fetchCompany()` 403ing ("no workspace
- *    selected") is already the exact signal `StartFlow` resumes on. Mounting
- *    `CompanyStage` on that branch and the chat otherwise keeps the resume
- *    rule to one request, rather than teaching the chat engine to also handle
- *    "there is no company yet".
+ * 1. **`fetchCompany()` 403/401** — no workspace yet. Render `CompanyStage`
+ *    (already tested, already wired to `registerCompany`/`looksLikeWebsite`/
+ *    the domain-taken "ask to join" path). Account creation is a form, not a
+ *    conversation.
+ * 2. **`fetchDepartments()` with no non-`executive` department `running`** —
+ *    a workspace exists but Areas of Interest has never been saved. Render
+ *    `AreasStage` as its own tile-selection screen, the same component
+ *    `StartFlow` used — icon tiles, floor-of-one, `executive` excluded because
+ *    Chief of Staff is automatic and never a choice. This used to be an
+ *    in-chat quick-reply beat (`DeptPicker`, in `ConversationalOnboarding`);
+ *    ADR 0071 moves it ahead of the chat because picking the departments that
+ *    decide which directors exist is a bigger decision than a quick-reply
+ *    chip, and it is the same decision `ToolsStep`'s recommendations need
+ *    answered before the chat ever reaches the tools phase.
+ * 3. **Otherwise** — `ConversationalOnboarding` takes over: the website read,
+ *    the brief, discovery, documents, tools and the Persona/Company Brain
+ *    assembly. It still reads the chosen departments on its own boot (for the
+ *    Brain panel and the tools recommendations), but no longer collects them.
  *
- * Once a company exists, `ConversationalOnboarding` takes over entirely —
- * including department selection, which happens in the chat (its own doc
- * comment) rather than here.
+ * `CompanyStage`'s `onComplete` re-runs `resolve()` rather than jumping
+ * straight to `chat`, so a brand-new workspace lands on `areas` next, exactly
+ * as the resolution above would compute on a fresh page load.
  */
 
-type Resume = { status: 'loading' } | { status: 'error'; message: string } | { status: 'company' } | { status: 'chat' }
+type Resume =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'company' }
+  | { status: 'areas' }
+  | { status: 'chat' }
 
 export function OnboardingEntry() {
   const [resume, setResume] = useState<Resume>({ status: 'loading' })
 
   useEffect(() => {
     void resolve()
-    // Run once on mount — `CompanyStage`'s own `onComplete` advances us locally.
+    // Run once on mount — `CompanyStage`'s own `onComplete` re-runs `resolve()`
+    // itself, and `AreasStage`'s advances us locally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -51,12 +66,23 @@ export function OnboardingEntry() {
     setResume({ status: 'loading' })
     try {
       await fetchCompany()
-      setResume({ status: 'chat' })
     } catch (error) {
       if (error instanceof AuthError && (error.status === 403 || error.status === 401)) {
         setResume({ status: 'company' })
         return
       }
+      setResume({
+        status: 'error',
+        message: error instanceof AuthError ? error.message : 'Could not reach the account service.',
+      })
+      return
+    }
+
+    try {
+      const { departments } = await fetchDepartments()
+      const hasRunningDepartment = departments.some((d) => d.value !== 'executive' && d.running)
+      setResume({ status: hasRunningDepartment ? 'chat' : 'areas' })
+    } catch (error) {
       setResume({
         status: 'error',
         message: error instanceof AuthError ? error.message : 'Could not reach the account service.',
@@ -93,7 +119,15 @@ export function OnboardingEntry() {
   if (resume.status === 'company') {
     return (
       <OnboardingShell part={1} eyebrow="a minute, then we start learning" stageKey="company" aura="idle">
-        <CompanyStage onComplete={() => setResume({ status: 'chat' })} />
+        <CompanyStage onComplete={() => void resolve()} />
+      </OnboardingShell>
+    )
+  }
+
+  if (resume.status === 'areas') {
+    return (
+      <OnboardingShell part={2} eyebrow="Areas of interest" stageKey="areas" aura="idle">
+        <AreasStage onComplete={() => setResume({ status: 'chat' })} />
       </OnboardingShell>
     )
   }

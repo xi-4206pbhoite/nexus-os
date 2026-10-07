@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConversationalOnboarding } from '@/components/onboarding/ConversationalOnboarding'
@@ -63,10 +63,10 @@ function atDiscoveryOpening(): client.AgentState {
   }
 }
 
-const NO_DEPARTMENTS_CHOSEN: settings.Departments = {
+const SALES_RUNNING: settings.Departments = {
   departments: [
     { value: 'executive', label: 'Chief of Staff', running: true, capabilities: 1, answered: 0, unanswered: 0 },
-    { value: 'sales', label: 'Sales', running: false, capabilities: 2, answered: 0, unanswered: 2 },
+    { value: 'sales', label: 'Sales', running: true, capabilities: 2, answered: 0, unanswered: 2 },
     { value: 'finance', label: 'Finance', running: false, capabilities: 2, answered: 0, unanswered: 2 },
   ],
   may_administer: true,
@@ -76,48 +76,31 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('ConversationalOnboarding — department picker', () => {
-  it('asks for departments before the opening discovery question, and saves the choice', async () => {
+describe('ConversationalOnboarding — departments are chosen ahead of the chat', () => {
+  it('goes straight to the opening discovery question — no in-chat department picker', async () => {
     mocked.readState.mockResolvedValue(atDiscoveryOpening())
-    mockedSettings.fetchDepartments.mockResolvedValue(NO_DEPARTMENTS_CHOSEN)
-    mockedSettings.saveDepartments.mockResolvedValue({
-      departments: NO_DEPARTMENTS_CHOSEN.departments.map((d) =>
-        d.value === 'sales' ? { ...d, running: true } : d,
-      ),
-      may_administer: true,
-    })
+    mockedSettings.fetchDepartments.mockResolvedValue(SALES_RUNNING)
 
     render(<ConversationalOnboarding />)
 
-    // The opening discovery question must not appear until departments are chosen.
-    expect(
-      await screen.findByRole('group', { name: /choose your departments/i }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(/what are you responsible for, day to day\?/i)).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sales' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    await waitFor(() => expect(mockedSettings.saveDepartments).toHaveBeenCalledWith(['sales']))
-
-    // Departments resolved — the opening question now renders.
-    expect(await screen.findByText(/what are you responsible for, day to day\?/i)).toBeInTheDocument()
-  })
-
-  it('skips the picker on resume when departments were already chosen', async () => {
-    mocked.readState.mockResolvedValue(atDiscoveryOpening())
-    mockedSettings.fetchDepartments.mockResolvedValue({
-      departments: NO_DEPARTMENTS_CHOSEN.departments.map((d) =>
-        d.value === 'sales' ? { ...d, running: true } : d,
-      ),
-      may_administer: true,
-    })
-
-    render(<ConversationalOnboarding />)
-
+    // The opening discovery question appears directly; there is no beat in
+    // between asking the founder to choose departments — that happens on
+    // `AreasStage`, before this component ever mounts.
     expect(await screen.findByText(/what are you responsible for, day to day\?/i)).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: /choose your departments/i })).not.toBeInTheDocument()
     expect(mockedSettings.saveDepartments).not.toHaveBeenCalled()
+  })
+
+  it('reads the already-chosen departments on boot, for the Brain panel and tools recommendations', async () => {
+    mocked.readState.mockResolvedValue(atDiscoveryOpening())
+    mockedSettings.fetchDepartments.mockResolvedValue(SALES_RUNNING)
+
+    render(<ConversationalOnboarding />)
+
+    await waitFor(() => expect(mockedSettings.fetchDepartments).toHaveBeenCalled())
+    // Executive is never passed through — Chief of Staff is automatic, never
+    // a chosen area, the same rule `AreasStage` follows.
+    expect(await screen.findByText(/what are you responsible for, day to day\?/i)).toBeInTheDocument()
   })
 })
 
@@ -126,7 +109,7 @@ describe('ConversationalOnboarding — no model configured', () => {
     mocked.readState.mockRejectedValue(
       new ModelUnavailableError('A language model is not configured for this workspace.'),
     )
-    mockedSettings.fetchDepartments.mockResolvedValue(NO_DEPARTMENTS_CHOSEN)
+    mockedSettings.fetchDepartments.mockResolvedValue(SALES_RUNNING)
 
     render(<ConversationalOnboarding />)
 

@@ -63,6 +63,30 @@ export function OnboardingAura({ state }: { state: AuraState }) {
 }
 
 /**
+ * The white ground's own sense of life (ADR 0071), independent of `aura`'s
+ * state. Two blurred, low-opacity blobs from the existing palette tokens —
+ * `steel-100`/`gold-100`, the same tokens `tailwind.config.ts` already defines
+ * — rather than a new value invented for this one effect. Sits a layer behind
+ * `OnboardingAura`'s wash (`-z-20` to its `-z-10`), so the state signal still
+ * reads on top of it.
+ *
+ * `motion-safe:` gates the float/drift on top of the sitewide
+ * `prefers-reduced-motion` collapse in `globals.css` — belt and braces, since
+ * this is new motion rather than a rename of something the global rule already
+ * covered. Reduced motion leaves the tint itself in place; only the drift
+ * stops, which keeps the "something is alive here" signal rather than zeroing
+ * it out.
+ */
+export function AmbientGradient() {
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-20 overflow-hidden">
+      <div className="absolute -left-32 -top-40 h-[30rem] w-[30rem] rounded-full bg-gradient-to-br from-steel-100 via-gold-100/40 to-transparent opacity-60 blur-3xl motion-safe:animate-float" />
+      <div className="absolute -right-24 top-40 h-[24rem] w-[24rem] rounded-full bg-gradient-to-bl from-gold-100 to-transparent opacity-50 blur-3xl motion-safe:animate-drift" />
+    </div>
+  )
+}
+
+/**
  * The state, as one small mark.
  *
  * Concentric rather than blurred: at this size the two rings and the core are

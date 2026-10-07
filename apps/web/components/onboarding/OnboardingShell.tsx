@@ -2,7 +2,7 @@
 
 import { type ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { OnboardingAura, type AuraState } from '@/components/onboarding/OnboardingAura'
+import { AmbientGradient, OnboardingAura, type AuraState } from '@/components/onboarding/OnboardingAura'
 import { fadeUp, useMotionSafe } from '@/lib/motion'
 
 /**
@@ -17,6 +17,14 @@ import { fadeUp, useMotionSafe } from '@/lib/motion'
  * real, already-shipped "something is happening" signal that costs nothing
  * once it exists, so there is no reason to drop it just because the page
  * around it changed shape.
+ *
+ * **The ground is white, not bone** (ADR 0071). `AmbientGradient` sits further
+ * back than `OnboardingAura`'s wash — two soft, blurred tints from the
+ * existing palette tokens, never more than half-opaque and blurred past any
+ * edge — so the white canvas still reads as alive rather than inert, without
+ * the wash's job of carrying `aura`'s state changing. Both layers are
+ * `aria-hidden`, and `AmbientGradient`'s own motion is `motion-safe:`-gated on
+ * top of the sitewide `prefers-reduced-motion` collapse in `globals.css`.
  *
  * Each stage is given a single `fadeUp` entrance — "each new screen simply
  * rises in place," never sideways — which is the calmest of the three
@@ -42,7 +50,8 @@ export function OnboardingShell({
   const safe = useMotionSafe()
 
   return (
-    <main id="main" tabIndex={-1} className="min-h-screen bg-bone-50">
+    <main id="main" tabIndex={-1} className="min-h-screen bg-white">
+      <AmbientGradient />
       <OnboardingAura state={aura} />
       <motion.div
         key={stageKey}

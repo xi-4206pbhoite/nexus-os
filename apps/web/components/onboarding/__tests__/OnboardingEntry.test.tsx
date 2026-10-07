@@ -3,29 +3,58 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OnboardingEntry } from '@/components/onboarding/OnboardingEntry'
 import { AuthError } from '@/lib/auth-client'
-import { fetchCompany } from '@/lib/settings-client'
+import { fetchCompany, fetchDepartments } from '@/lib/settings-client'
 
 /**
  * `OnboardingEntry`'s whole job is resuming at the right beat — company
- * details first, the conversation once a workspace exists (its own doc
- * comment explains why company creation stays a form rather than a chat
- * turn). `ConversationalOnboarding` is stubbed here: its own boot sequence
- * against the agent client is covered by `ConversationalOnboarding.test.tsx`,
- * and exercising it for real would duplicate those mocks for a test that is
- * really about routing.
+ * details first, then Areas of Interest (`AreasStage`, its own tile screen) if
+ * no department has ever been chosen, then the conversation (ADR 0071 amends
+ * ADR 0069 to move department selection ahead of the chat). `CompanyStage`'s
+ * own tests cover its internals; `AreasStage`'s own tests cover its internals
+ * too — these tests are about routing between the three, not about what each
+ * stage does once it is showing. `ConversationalOnboarding` is stubbed for
+ * that reason: its own boot sequence against the agent client is covered by
+ * `ConversationalOnboarding.test.tsx`.
  */
 
 vi.mock('@/lib/settings-client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/settings-client')>()
-  return { ...actual, fetchCompany: vi.fn() }
+  return { ...actual, fetchCompany: vi.fn(), fetchDepartments: vi.fn() }
 })
 
 vi.mock('@/components/onboarding/ConversationalOnboarding', () => ({
   ConversationalOnboarding: () => <div>the conversation</div>,
 }))
 
+const NO_DEPARTMENT_RUNNING = {
+  departments: [
+    { value: 'executive', label: 'Chief of Staff', running: true, capabilities: 1, answered: 0, unanswered: 0 },
+    { value: 'marketing', label: 'Marketing', running: false, capabilities: 2, answered: 0, unanswered: 2 },
+  ],
+  may_administer: true,
+}
+
+const MARKETING_RUNNING = {
+  departments: [
+    { value: 'executive', label: 'Chief of Staff', running: true, capabilities: 1, answered: 0, unanswered: 0 },
+    { value: 'marketing', label: 'Marketing', running: true, capabilities: 2, answered: 0, unanswered: 2 },
+  ],
+  may_administer: true,
+}
+
+const COMPANY = {
+  workspace_id: 'w1',
+  name: 'Acme',
+  domain: 'acme.om',
+  website_url: 'https://acme.om',
+  domain_verified: false,
+  role: 'admin' as const,
+  may_administer: true,
+}
+
 beforeEach(() => {
   vi.mocked(fetchCompany).mockReset()
+  vi.mocked(fetchDepartments).mockReset()
 })
 
 describe('OnboardingEntry resume', () => {
@@ -37,16 +66,21 @@ describe('OnboardingEntry resume', () => {
     expect(await screen.findByText(/let.s start with your company/i)).toBeInTheDocument()
   })
 
-  it('goes straight to the conversation once a workspace exists', async () => {
-    vi.mocked(fetchCompany).mockResolvedValue({
-      workspace_id: 'w1',
-      name: 'Acme',
-      domain: 'acme.om',
-      website_url: 'https://acme.om',
-      domain_verified: false,
-      role: 'admin',
-      may_administer: true,
-    })
+  it('shows the Areas of Interest tile screen once a workspace exists but no department is running yet', async () => {
+    vi.mocked(fetchCompany).mockResolvedValue(COMPANY)
+    vi.mocked(fetchDepartments).mockResolvedValue(NO_DEPARTMENT_RUNNING)
+
+    render(<OnboardingEntry />)
+
+    expect(
+      await screen.findByText(/which parts of the business should nexus pay attention to/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('the conversation')).not.toBeInTheDocument()
+  })
+
+  it('goes straight to the conversation once a department is already running', async () => {
+    vi.mocked(fetchCompany).mockResolvedValue(COMPANY)
+    vi.mocked(fetchDepartments).mockResolvedValue(MARKETING_RUNNING)
 
     render(<OnboardingEntry />)
 

@@ -25,8 +25,11 @@ type Stage =
 
 /** The accent-per-department mapping already live on the marketing site's
  *  Directors section (`lib/content.ts`), reused here for recognisability
- *  rather than inventing a second colour code for the same six departments. */
-const ACCENT: Record<string, { markBg: string; markText: string; icon: ReactNode }> = {
+ *  rather than inventing a second colour code for the same six departments.
+ *  Exported so `ToolsStep` can give its tiles the same department-appropriate
+ *  marks rather than inventing a second icon set for the same six keys
+ *  (ADR 0071). */
+export const ACCENT: Record<string, { markBg: string; markText: string; icon: ReactNode }> = {
   marketing: {
     markBg: 'bg-steel-100',
     markText: 'text-steel-600',

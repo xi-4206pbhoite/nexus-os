@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { motion } from 'framer-motion'
 
 import { type Tool, type ToolCatalogue, readTools } from '@/lib/agent-onboarding-client'
+import { departmentLabel } from '@/lib/onboarding-client'
+import { ACCENT } from '@/components/onboarding/stages/AreasStage'
+import { duration, easing, staggerGroup, useMotionSafe } from '@/lib/motion'
 
 /**
  * The tools step: which systems this company runs on. The last thing before
@@ -26,6 +30,16 @@ import { type Tool, type ToolCatalogue, readTools } from '@/lib/agent-onboarding
  * its own surface it can do what it is for: show the stack, show what each
  * choice changes, and let somebody scan it.
  *
+ * **It is a tile-selection screen now, consistent with `AreasStage`'s tiles**
+ * (ADR 0071) — an icon mark, a name, a description, and the same absolute
+ * top-right checkmark badge, rather than a checkbox-card fieldset. The
+ * checkbox stays a real `<input type="checkbox">`, visually hidden with
+ * `peer sr-only` the same way `AreasStage` hides its own — it keeps its role,
+ * its keyboard behaviour and its accessible name, which a styled `div` with
+ * `onClick` would not. Icons are the same department accent `AreasStage`
+ * exports (`ACCENT`), so a tool's mark always matches the department tile the
+ * founder already picked it under.
+ *
  * **Selecting is configuring, and the panel is what makes that true.** Ticking
  * a box used to be a write into the dark. The count and the unlock list beside
  * the catalogue update as choices are made, so the screen answers "what does
@@ -42,18 +56,42 @@ import { type Tool, type ToolCatalogue, readTools } from '@/lib/agent-onboarding
  * to each other, so they are presented under one heading rather than as four
  * unrelated choices — but more than one can be ticked, because a company
  * mid-migration really does run two, and a radio group would force them to lie.
+ *
+ * **Recommendations add emphasis, they never filter.** `recommendedDepartments`
+ * is the Areas of Interest the founder already chose — a fact already on
+ * record, not a model's guess — so a tool is "recommended" purely because its
+ * department is one of those. The reason sentence names the departments
+ * verbatim rather than claiming analysis this screen did not do. Nothing
+ * recommended is hidden from the full catalogue below it, and nothing
+ * unrecommended is removed from it either: the badge and the "Recommended for
+ * you" shelf are a second view onto the same list, never a shorter one.
+ *
+ * Recommendations are **not** pre-ticked. A box ticked on the founder's behalf
+ * is a declaration they did not make — the same objection the rest of this
+ * docstring raises about writing into the dark — so "Add all recommended" is
+ * one deliberate click, and every individual recommended tool still toggles
+ * on its own.
  */
 export function ToolsStep({
   onContinue,
   disabled,
+  recommendedDepartments = [],
 }: {
   /** The ids to declare, and whether the person chose to skip the step. */
   onContinue: (providers: string[], skipped: boolean) => void
   disabled: boolean
+  /**
+   * The Areas of Interest the founder already chose, as department keys
+   * (`'sales'`, `'marketing'`, …). Optional and empty by default so the
+   * retired `AgentOnboarding` catalogue, which never collected an explicit
+   * Areas-of-Interest step, renders exactly what it always has.
+   */
+  recommendedDepartments?: string[]
 }) {
   const [catalogue, setCatalogue] = useState<ToolCatalogue | null>(null)
   const [picked, setPicked] = useState<Set<string> | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const safe = useMotionSafe()
 
   useEffect(() => {
     let live = true
@@ -103,6 +141,61 @@ export function ToolsStep({
     return out
   }, [catalogue])
 
+  /**
+   * Which tool ids count as recommended, and the human-readable department
+   * names the reason sentence names.
+   *
+   * A CRM is recommended as a group: the four are alternatives to each other
+   * and presented under one heading, so "we think you want a CRM" has to be
+   * true of the group, not of whichever one happens to come first in the
+   * catalogue.
+   */
+  const { recommendedIds, recommendedLabels } = useMemo(() => {
+    const wanted = new Set(recommendedDepartments)
+    const tools = catalogue?.tools ?? []
+    const crmWanted = tools.some((tool) => tool.kind === 'crm' && wanted.has(tool.department))
+
+    const ids = new Set<string>()
+    for (const tool of tools) {
+      const isRecommended = tool.kind === 'crm' ? crmWanted : wanted.has(tool.department)
+      if (isRecommended) ids.add(tool.id)
+    }
+
+    // The reason sentence names the chosen departments that actually produced a
+    // recommendation — not every chosen area. A chosen area with no tool of its
+    // own (Operations has none in the catalogue) would otherwise be named as
+    // though we were suggesting something for it, and named off its raw key
+    // ("operations") because no tool carried its label. Intersecting with the
+    // recommended tools' own departments fixes both: it drops the empty area,
+    // and it still names the chosen department that pulled in the CRM group
+    // (a chosen "sales" naming "Sales", never the CRM's own "marketing").
+    // Labels come from the canonical `departmentLabel`, so casing is right even
+    // for a department the catalogue never had a tool for.
+    const contributing = new Set<string>()
+    for (const tool of tools) {
+      if (ids.has(tool.id) && wanted.has(tool.department)) contributing.add(tool.department)
+    }
+    const labels: string[] = []
+    for (const department of recommendedDepartments) {
+      if (!contributing.has(department)) continue
+      const label = departmentLabel(department)
+      if (!labels.includes(label)) labels.push(label)
+    }
+    return { recommendedIds: ids, recommendedLabels: labels }
+  }, [catalogue, recommendedDepartments])
+
+  const recommendedTools = useMemo(
+    () => (catalogue?.tools ?? []).filter((tool) => recommendedIds.has(tool.id)),
+    [catalogue, recommendedIds],
+  )
+
+  const addAllRecommended = () =>
+    setPicked((prev) => {
+      const next = new Set(prev ?? [])
+      for (const id of Array.from(recommendedIds)) next.add(id)
+      return next
+    })
+
   const chosen = picked ?? new Set<string>()
 
   const toggle = (id: string) =>
@@ -138,6 +231,8 @@ export function ToolsStep({
   const nothingConnects =
     catalogue !== null && catalogue.tools.every((tool) => !tool.connectable)
 
+  const accentFor = (tool: Tool) => ACCENT[tool.department] ?? ACCENT.marketing
+
   return (
     <div className="flex flex-col gap-5">
       <div className="animate-rise rounded-2xl border border-bone-300 bg-white/90 p-5 backdrop-blur-sm">
@@ -149,71 +244,90 @@ export function ToolsStep({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
-        <div className="flex flex-col gap-5">
-          {groups.map((group, index) => (
-            <fieldset
-              key={group.key}
-              className="animate-rise rounded-2xl border border-bone-300 bg-white/90 p-4 backdrop-blur-sm"
-              style={{ animationDelay: `${60 + index * 60}ms` }}
+        <div className="flex flex-col gap-6">
+          {recommendedTools.length > 0 && (
+            <section
+              aria-labelledby="recommended-tools-heading"
+              className="animate-rise rounded-2xl border border-gold bg-gold/10 p-4"
             >
-              <legend className="px-1 font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400">
-                {group.label}
-              </legend>
-              {group.note && <p className="mt-1 text-xs text-ink-400">{group.note}</p>}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3
+                    id="recommended-tools-heading"
+                    className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-600"
+                  >
+                    Recommended for you
+                  </h3>
+                  {/* The reason is the fact that produced it and nothing more —
+                      the chosen Areas of Interest — never a claim about
+                      analysis this screen did not perform. */}
+                  <p className="mt-1 text-xs leading-relaxed text-ink-500">
+                    For the areas you chose: {recommendedLabels.join(', ')}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={addAllRecommended}
+                  className="min-h-[44px] rounded-full border border-steel-400 bg-white px-4 text-sm font-medium text-steel-700 transition-colors disabled:opacity-50 [@media(hover:hover)and(pointer:fine)]:hover:bg-steel-100 active:bg-steel-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steel-500"
+                >
+                  Add all recommended
+                </button>
+              </div>
 
-              {/* A grid of cards rather than a divided list. The rows were
-                  indistinguishable from the document asks two screens earlier,
-                  which are a list of things to read; these are things to
-                  choose, and a choice should look like one. */}
-              <ul className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                {group.tools.map((tool) => {
-                  const on = chosen.has(tool.id)
-                  return (
-                    <li key={tool.id}>
-                      {/* The checkbox stays a checkbox. It is styled as a card
-                          and it is still an `input` with the tool's name as its
-                          accessible name, so it keeps its role, its keyboard
-                          behaviour and its announcement — a `div` with
-                          `onClick` would have looked identical and been
-                          unreachable without a mouse. */}
-                      <label
-                        className={`flex h-full cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all duration-200 ${
-                          disabled ? 'cursor-not-allowed opacity-50' : ''
-                        } ${
-                          on
-                            ? 'border-steel-400 bg-steel-100 shadow-paper'
-                            : 'border-bone-200 bg-white hover:border-steel-300 hover:shadow-paper'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          disabled={disabled}
-                          onChange={() => toggle(tool.id)}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-steel-600"
-                        />
-                        <span className="min-w-0">
-                          <span
-                            className={`block text-sm font-medium transition-colors ${
-                              on ? 'text-steel-700' : 'text-ink'
-                            }`}
-                          >
-                            {tool.name}
-                          </span>
-                          {/* A capability, never a finding — or, for a tool no
-                              capability reads yet, what recording it does
-                              instead. Exactly one is set, so this never renders
-                              empty. */}
-                          <span className="mt-0.5 block text-xs leading-snug text-ink-400">
-                            {tool.unlocks ?? tool.records}
-                          </span>
-                        </span>
-                      </label>
-                    </li>
-                  )
-                })}
-              </ul>
-            </fieldset>
+              <motion.ul
+                variants={staggerGroup(safe)}
+                initial="hidden"
+                animate="show"
+                className="mt-3 grid gap-3 sm:grid-cols-2"
+              >
+                {recommendedTools.map((tool) => (
+                  <ToolTile
+                    key={`recommended-${tool.id}`}
+                    tool={tool}
+                    accent={accentFor(tool)}
+                    checked={chosen.has(tool.id)}
+                    disabled={disabled}
+                    recommended
+                    accessibleSuffix=" (recommended)"
+                    onToggle={() => toggle(tool.id)}
+                  />
+                ))}
+              </motion.ul>
+            </section>
+          )}
+
+          {groups.map((group) => (
+            <section key={group.key} aria-labelledby={`tool-group-${group.key}`}>
+              <div className="flex items-baseline gap-2">
+                <h3
+                  id={`tool-group-${group.key}`}
+                  className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-400"
+                >
+                  {group.label}
+                </h3>
+                {group.note && <p className="text-xs text-ink-400">{group.note}</p>}
+              </div>
+
+              <motion.ul
+                variants={staggerGroup(safe)}
+                initial="hidden"
+                animate="show"
+                className="mt-2.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              >
+                {group.tools.map((tool) => (
+                  <ToolTile
+                    key={tool.id}
+                    tool={tool}
+                    accent={accentFor(tool)}
+                    checked={chosen.has(tool.id)}
+                    disabled={disabled}
+                    recommended={recommendedIds.has(tool.id)}
+                    onToggle={() => toggle(tool.id)}
+                  />
+                ))}
+              </motion.ul>
+            </section>
           ))}
 
           {error && (
@@ -303,5 +417,101 @@ export function ToolsStep({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * One tile — icon mark, name, description, the same absolute top-right
+ * checkmark badge `AreasStage` uses. Shared between the "Recommended for you"
+ * shelf and the full catalogue below it, which is why the same tool can render
+ * twice: `accessibleSuffix` gives the shelf's copy a distinct accessible name
+ * (`"Google Analytics (recommended)"`) from its twin in the full catalogue,
+ * since the same tool id is now bound to two controls on the same screen.
+ */
+function ToolTile({
+  tool,
+  accent,
+  checked,
+  disabled,
+  recommended,
+  accessibleSuffix,
+  onToggle,
+}: {
+  tool: Tool
+  accent: { markBg: string; markText: string; icon: ReactNode }
+  checked: boolean
+  disabled: boolean
+  recommended: boolean
+  accessibleSuffix?: string
+  onToggle: () => void
+}) {
+  const safe = useMotionSafe()
+  return (
+    <motion.li>
+      <label className={`group relative block ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={onToggle}
+          className="peer sr-only"
+        />
+        <motion.span
+          whileTap={safe && !disabled ? { scale: 0.97 } : undefined}
+          transition={{ duration: duration.micro, ease: easing.out }}
+          className={`relative flex min-h-[8rem] flex-col rounded-card border-[1.5px] bg-white p-4 shadow-e1 transition-[border-color,box-shadow] duration-base ease-out peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-steel-500 ${
+            disabled ? 'opacity-60' : '[@media(hover:hover)and(pointer:fine)]:hover:shadow-e2'
+          } ${checked ? 'border-ink-800 shadow-e2' : 'border-bone-300'}`}
+        >
+          <span
+            className={`mb-2.5 flex h-10 w-10 items-center justify-center rounded-full ${accent.markBg} ${accent.markText}`}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+              {accent.icon}
+            </svg>
+          </span>
+          <span className="flex flex-wrap items-center gap-1.5 pr-6">
+            <span className={`text-sm font-semibold ${checked ? 'text-ink-800' : 'text-ink'}`}>
+              {tool.name}
+              {accessibleSuffix && <span className="sr-only">{accessibleSuffix}</span>}
+            </span>
+            {/* The badge is never the only signal — the word "Recommended" is
+                in its own text, not conveyed by colour alone. */}
+            {recommended && (
+              <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-600">
+                Recommended
+              </span>
+            )}
+          </span>
+          {/* A capability, never a finding — or, for a tool no capability
+              reads yet, what recording it does instead. Exactly one is set,
+              so this never renders empty. */}
+          <span className="mt-1 text-xs leading-snug text-ink-400">{tool.unlocks ?? tool.records}</span>
+
+          <span
+            aria-hidden
+            className={`absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full border-[1.5px] transition-colors duration-micro ease-out ${
+              checked ? 'border-ink-800 bg-ink-800' : 'border-bone-400 bg-white'
+            }`}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              className={`text-bone-50 ${checked ? 'opacity-100' : 'opacity-0'}`}
+            >
+              <path
+                d="M3 8.5l3 3 7-7"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </motion.span>
+      </label>
+    </motion.li>
   )
 }
